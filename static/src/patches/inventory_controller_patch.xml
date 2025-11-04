@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    
+    <t t-name="inventory_visual_enhanced.InventoryView" t-inherit="inventory_visual_enhanced.InventoryView" t-inherit-mode="extension" owl="1">
+        <xpath expr="//ProductRow" position="attributes">
+            <attribute name="isInCart.bind">isInCart</attribute>
+            <attribute name="toggleCartSelection.bind">toggleCartSelection</attribute>
+            <attribute name="areAllCurrentProductSelected.bind">areAllCurrentProductSelected</attribute>
+            <attribute name="selectAllCurrentProduct.bind">selectAllCurrentProduct</attribute>
+            <attribute name="deselectAllCurrentProduct.bind">deselectAllCurrentProduct</attribute>
+            <attribute name="cart">cart</attribute>
+        </xpath>
+    </t>
+    
+    <t t-name="inventory_visual_enhanced.ProductDetails" t-inherit="inventory_visual_enhanced.ProductDetails" t-inherit-mode="extension" owl="1">
+        <!-- Reemplazar el header del checkbox con seleccionar todo -->
+        <xpath expr="//thead/tr/th[@class='col-checkbox']" position="replace">
+            <th class="col-checkbox text-center" style="width: 50px;">
+                <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                    <input 
+                        type="checkbox" 
+                        class="cart-checkbox-all" 
+                        t-att-checked="props.areAllCurrentProductSelected()"
+                        t-on-click="(ev) => { ev.stopPropagation(); props.areAllCurrentProductSelected() ? props.deselectAllCurrentProduct() : props.selectAllCurrentProduct(); }"
+                        title="Seleccionar/Deseleccionar todo"
+                    />
+                    <small style="font-size: 10px; color: #666;">Todo</small>
+                </div>
+            </th>
+        </xpath>
+        
+        <!-- Modificar el checkbox individual en el body -->
+        <xpath expr="//td[@class='col-checkbox text-center']" position="replace">
+            <td class="col-checkbox text-center">
+                <input 
+                    type="checkbox"
+                    class="form-check-input cart-checkbox"
+                    t-att-checked="props.isInCart(detail.id)"
+                    t-on-click="(ev) => { ev.stopPropagation(); props.toggleCartSelection(detail); }"
+                />
+            </td>
+        </xpath>
+    </t>
+    
+</templates>

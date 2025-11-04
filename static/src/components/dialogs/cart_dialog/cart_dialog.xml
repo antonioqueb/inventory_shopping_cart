@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    
+    <t t-name="inventory_shopping_cart.CartDialog" owl="1">
+        <Dialog size="'xl'" title="'🛒 Carrito de Compra'">
+            <div class="cart-dialog-content">
+                <div class="alert alert-warning" t-if="hasHolds">
+                    <i class="fa fa-exclamation-triangle me-2"></i>
+                    <strong>Advertencia:</strong> Hay lotes apartados que no podrán venderse
+                </div>
+
+                <t t-foreach="Object.entries(cart.productGroups)" t-as="entry" t-key="entry[0]">
+                    <t t-set="productId" t-value="entry[0]"/>
+                    <t t-set="group" t-value="entry[1]"/>
+                    
+                    <div class="product-group mb-4">
+                        <div class="product-header">
+                            <h5><i class="fa fa-cube me-2"></i><t t-esc="group.name"/></h5>
+                            <span class="badge bg-secondary "><t t-esc="formatNumber(group.total_quantity)"/> m²</span>
+                        </div>
+                        
+                        <table class="table table-sm">
+                            <tbody>
+                                <t t-foreach="group.lots" t-as="lot" t-key="lot.id">
+                                    <tr>
+                                        <td><t t-esc="lot.lot_name"/></td>
+                                        <td><t t-esc="formatNumber(lot.quantity)"/> m²</td>
+                                        <td><t t-esc="lot.location_name"/></td>
+                                        <td>
+                                            <span t-if="lot.tiene_hold" class="badge bg-warning">🔒 Apartado</span>
+                                        </td>
+                                    </tr>
+                                </t>
+                            </tbody>
+                        </table>
+                    </div>
+                </t>
+
+                <div class="cart-summary-footer">
+                    <h4>Total: <t t-esc="formatNumber(cart.totalQuantity)"/> m²</h4>
+                    <p><t t-esc="cart.totalLots"/> lotes en <t t-esc="Object.keys(cart.productGroups).length"/> productos</p>
+                </div>
+            </div>
+
+            <t t-set-slot="footer">
+                <button class="btn btn-warning" t-if="hasHolds" t-on-click="removeHolds">
+                    <i class="fa fa-times"></i> Eliminar Apartados
+                </button>
+                <button class="btn btn-info" t-on-click="createHolds">
+                    <i class="fa fa-lock"></i> Apartar Todo
+                </button>
+                <button class="btn btn-primary" t-on-click="createSaleOrder">
+                    <i class="fa fa-file-text"></i> Crear Orden de Venta
+                </button>
+            </t>
+        </Dialog>
+    </t>
+    
+</templates>
