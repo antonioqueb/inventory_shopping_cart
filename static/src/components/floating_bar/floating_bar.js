@@ -1,4 +1,3 @@
-// inventory_shopping_cart/static/src/components/floating_bar/floating_bar.js
 /** @odoo-module **/
 
 import { patch } from "@web/core/utils/patch";
@@ -10,11 +9,13 @@ import { SaleOrderWizard } from "../dialogs/sale_order_wizard/sale_order_wizard"
 const InventoryVisualController = registry.category("actions").get("inventory_visual_enhanced");
 
 patch(InventoryVisualController.prototype, {
-    openCartDialog() {
+    async openCartDialog() {
         if (this.cart.totalLots === 0) {
             this.notification.add("El carrito está vacío", { type: "warning" });
             return;
         }
+        
+        await this.syncCartToDB();
         
         this.dialog.add(CartDialog, {
             cart: this.cart,
@@ -24,7 +25,9 @@ patch(InventoryVisualController.prototype, {
         });
     },
     
-    openHoldWizard() {
+    async openHoldWizard() {
+        await this.syncCartToDB();
+        
         this.dialog.add(HoldWizard, {
             selectedLots: this.cart.items.map(item => item.id),
             onSuccess: async () => {
@@ -34,13 +37,15 @@ patch(InventoryVisualController.prototype, {
         });
     },
     
-    openSaleOrderWizard() {
+    async openSaleOrderWizard() {
         const lotsWithHold = this.cart.items.filter(item => item.tiene_hold);
         
         if (lotsWithHold.length > 0) {
             this.notification.add("Hay lotes apartados en el carrito. Use 'Eliminar Apartados' primero.", { type: "warning", sticky: true });
             return;
         }
+        
+        await this.syncCartToDB();
         
         this.dialog.add(SaleOrderWizard, {
             productGroups: this.cart.productGroups,

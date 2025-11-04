@@ -1,4 +1,3 @@
-// ./static/src/components/dialogs/sale_order_wizard/sale_order_wizard.js
 /** @odoo-module **/
 
 import { Component, useState } from "@odoo/owl";
@@ -9,6 +8,9 @@ export class SaleOrderWizard extends Component {
     setup() {
         this.orm = useService("orm");
         this.notification = useService("notification");
+        
+        this.productIds = Object.keys(this.props.productGroups).map(id => parseInt(id));
+        this.currentProductIndex = 0;
         
         this.state = useState({
             searchPartnerTerm: '',
@@ -38,6 +40,44 @@ export class SaleOrderWizard extends Component {
         this.loadPricelists();
     }
     
+    get currentProductId() {
+        return this.productIds[this.currentProductIndex];
+    }
+    
+    get currentProductGroup() {
+        return this.props.productGroups[this.currentProductId];
+    }
+    
+    get isLastProduct() {
+        return this.currentProductIndex === this.productIds.length - 1;
+    }
+    
+    get isFirstProduct() {
+        return this.currentProductIndex === 0;
+    }
+    
+    get totalProducts() {
+        return this.productIds.length;
+    }
+    
+    nextProduct() {
+        if (!this.isLastProduct) {
+            if (!this.state.productPrices[this.currentProductId] || this.state.productPrices[this.currentProductId] <= 0) {
+                this.notification.add("Debe configurar un precio válido para este producto", { type: "warning" });
+                return;
+            }
+            
+            this.currentProductIndex++;
+            this.loadCurrentProductPrices();
+        }
+    }
+    
+    prevProduct() {
+        if (!this.isFirstProduct) {
+            this.currentProductIndex--;
+        }
+    }
+    
     async loadPricelists() {
         try {
             const pricelists = await this.orm.searchRead(
@@ -53,30 +93,28 @@ export class SaleOrderWizard extends Component {
                 this.state.selectedCurrency = 'USD';
             }
             
-            await this.loadProductPrices();
+            await this.loadCurrentProductPrices();
         } catch (error) {
             this.notification.add("Error al cargar listas de precios", { type: "warning" });
         }
     }
     
-    async loadProductPrices() {
+    async loadCurrentProductPrices() {
         try {
-            for (const [productId, group] of Object.entries(this.props.productGroups)) {
-                const prices = await this.orm.call(
-                    "product.template",
-                    "get_custom_prices",
-                    [],
-                    {
-                        product_id: parseInt(productId),
-                        currency_code: this.state.selectedCurrency
-                    }
-                );
-                
-                this.state.productPriceOptions[productId] = prices;
-                
-                if (prices.length > 0) {
-                    this.state.productPrices[productId] = prices[0].value;
+            const prices = await this.orm.call(
+                "product.template",
+                "get_custom_prices",
+                [],
+                {
+                    product_id: this.currentProductId,
+                    currency_code: this.state.selectedCurrency
                 }
+            );
+            
+            this.state.productPriceOptions[this.currentProductId] = prices;
+            
+            if (prices.length > 0 && !this.state.productPrices[this.currentProductId]) {
+                this.state.productPrices[this.currentProductId] = prices[0].value;
             }
         } catch (error) {
             this.notification.add("Error al cargar precios", { type: "danger" });
@@ -92,15 +130,15 @@ export class SaleOrderWizard extends Component {
             this.state.selectedPricelistId = pricelist.id;
         }
         
-        await this.loadProductPrices();
+        await this.loadCurrentProductPrices();
     }
     
-    onPriceChange(productId, value) {
+    onPriceChange(value) {
         const numValue = parseFloat(value);
-        const options = this.state.productPriceOptions[productId] || [];
+        const options = this.state.productPriceOptions[this.currentProductId] || [];
         
         if (options.length === 0) {
-            this.state.productPrices[productId] = numValue;
+            this.state.productPrices[this.currentProductId] = numValue;
             return;
         }
         
@@ -111,9 +149,9 @@ export class SaleOrderWizard extends Component {
                 `El precio no puede ser menor a ${this.formatNumber(minPrice)}`,
                 { type: "warning" }
             );
-            this.state.productPrices[productId] = minPrice;
+            this.state.productPrices[this.currentProductId] = minPrice;
         } else {
-            this.state.productPrices[productId] = numValue;
+            this.state.productPrices[this.currentProductId] = numValue;
         }
     }
     
@@ -198,15 +236,16 @@ export class SaleOrderWizard extends Component {
         }
         
         if (this.state.currentStep === 2) {
-            const hasInvalidPrice = Object.entries(this.state.productPrices).some(([pid, price]) => {
+            const hasInvalidPrice = this.productIds.some(pid => {
+                const price = this.state.productPrices[pid];
                 const options = this.state.productPriceOptions[pid] || [];
-                if (options.length === 0) return price <= 0;
+                if (options.length === 0) return !price || price <= 0;
                 const minPrice = Math.min(...options.map(opt => opt.value));
-                return price < minPrice;
+                return !price || price < minPrice;
             });
             
             if (hasInvalidPrice) {
-                this.notification.add("Hay precios inválidos", { type: "warning" });
+                this.notification.add("Hay productos sin precio configurado", { type: "warning" });
                 return;
             }
         }
@@ -219,6 +258,9 @@ export class SaleOrderWizard extends Component {
     prevStep() {
         if (this.state.currentStep > 1) {
             this.state.currentStep--;
+            if (this.state.currentStep === 2) {
+                this.currentProductIndex = 0;
+            }
         }
     }
     

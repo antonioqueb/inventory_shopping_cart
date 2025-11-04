@@ -10,8 +10,6 @@ patch(InventoryVisualController.prototype, {
     setup() {
         super.setup();
         
-        console.log('[CART] 🚀 Inicializando cart system');
-        
         if (!this.state.activeProductId) {
             this.state.activeProductId = null;
             this.state.activeProductName = '';
@@ -24,28 +22,39 @@ patch(InventoryVisualController.prototype, {
             productGroups: {}
         });
         
-        console.log('[CART] ✅ Cart inicializado con useState:', this.cart);
-        
         this.isInCart = this.isInCart.bind(this);
         this.toggleCartSelection = this.toggleCartSelection.bind(this);
         this.selectAllCurrentProduct = this.selectAllCurrentProduct.bind(this);
         this.deselectAllCurrentProduct = this.deselectAllCurrentProduct.bind(this);
         this.areAllCurrentProductSelected = this.areAllCurrentProductSelected.bind(this);
+        
+        this.loadCartFromDB();
+    },
+    
+    async loadCartFromDB() {
+        try {
+            const items = await this.orm.call('shopping.cart', 'get_cart_items', []);
+            this.cart.items = items;
+            this.updateCartSummary();
+        } catch (error) {
+            console.error('[CART] Error cargando carrito:', error);
+        }
+    },
+    
+    async syncCartToDB() {
+        try {
+            await this.orm.call('stock.quant', 'sync_cart_to_session', [this.cart.items]);
+        } catch (error) {
+            console.error('[CART] Error sincronizando carrito:', error);
+        }
     },
     
     async toggleProduct(productId, quantIds) {
-        console.log('[CART] 📦 toggleProduct llamado:', { productId, quantIds });
-        
         const isExpanded = this.state.expandedProducts.has(productId);
 
         this.state.activeProductId = productId;
         const product = this.state.products.find(p => p.product_id === productId);
         this.state.activeProductName = product ? product.product_name : '';
-        
-        console.log('[CART] 🎯 Producto activo actualizado:', {
-            activeProductId: this.state.activeProductId,
-            activeProductName: this.state.activeProductName
-        });
 
         if (isExpanded) {
             this.state.expandedProducts.delete(productId);
@@ -61,19 +70,15 @@ patch(InventoryVisualController.prototype, {
     },
     
     isInCart(detailId) {
-        const inCart = this.cart.items.some(item => item.id === detailId);
-        console.log('[CART] 🔍 isInCart:', { detailId, inCart, totalItems: this.cart.items.length });
-        return inCart;
+        return this.cart.items.some(item => item.id === detailId);
     },
     
-    toggleCartSelection(detail) {
-        console.log('[CART] 🔄 toggleCartSelection llamado:', detail);
-        
+    async toggleCartSelection(detail) {
         const index = this.cart.items.findIndex(item => item.id === detail.id);
         
         if (index >= 0) {
-            console.log('[CART] ➖ Removiendo del carrito:', { id: detail.id, index });
             this.cart.items.splice(index, 1);
+            await this.orm.call('shopping.cart', 'remove_from_cart', [detail.id]);
         } else {
             const newItem = {
                 id: detail.id,
@@ -86,126 +91,57 @@ patch(InventoryVisualController.prototype, {
                 tiene_hold: detail.tiene_hold,
                 hold_info: detail.hold_info
             };
-            console.log('[CART] ➕ Agregando al carrito:', newItem);
             this.cart.items.push(newItem);
+            
+            try {
+                await this.orm.call('shopping.cart', 'add_to_cart', [], {
+                    quant_id: newItem.id,
+                    lot_id: newItem.lot_id,
+                    product_id: newItem.product_id,
+                    quantity: newItem.quantity,
+                    location_name: newItem.location_name
+                });
+            } catch (error) {
+                console.error('[CART] Error agregando al carrito:', error);
+                this.cart.items.pop();
+                this.notification.add("Error al agregar al carrito", { type: "danger" });
+            }
         }
-        
-        console.log('[CART] 📊 Estado del carrito después de toggle:', {
-            totalItems: this.cart.items.length,
-            items: this.cart.items.map(i => ({ id: i.id, lot: i.lot_name }))
-        });
         
         this.updateCartSummary();
     },
     
-    selectAllCurrentProduct() {
-        console.log('[CART] ✅ selectAllCurrentProduct llamado');
-        console.log('[CART] 🎯 Producto activo:', {
-            activeProductId: this.state.activeProductId,
-            activeProductName: this.state.activeProductName
-        });
-        
-        if (!this.state.activeProductId) {
-            console.warn('[CART] ⚠️ No hay producto activo, abortando');
-            return;
-        }
+    async selectAllCurrentProduct() {
+        if (!this.state.activeProductId) return;
         
         const details = this.getProductDetails(this.state.activeProductId);
-        console.log('[CART] 📋 Detalles obtenidos:', {
-            totalDetails: details.length,
-            details: details.map(d => ({ id: d.id, lot: d.lot_name }))
-        });
         
-        let added = 0;
-        details.forEach(detail => {
-            const alreadyInCart = this.isInCart(detail.id);
-            console.log('[CART] 🔍 Evaluando detalle:', {
-                id: detail.id,
-                lot: detail.lot_name,
-                alreadyInCart
-            });
-            
-            if (!alreadyInCart) {
-                console.log('[CART] ➕ Agregando al carrito vía toggle:', detail.id);
-                this.toggleCartSelection(detail);
-                added++;
-            } else {
-                console.log('[CART] ⏭️ Ya está en carrito, saltando:', detail.id);
+        for (const detail of details) {
+            if (!this.isInCart(detail.id)) {
+                await this.toggleCartSelection(detail);
             }
-        });
-        
-        console.log('[CART] ✅ selectAllCurrentProduct finalizado:', {
-            added,
-            totalInCart: this.cart.items.length
-        });
+        }
     },
     
-    deselectAllCurrentProduct() {
-        console.log('[CART] ❌ deselectAllCurrentProduct llamado');
-        console.log('[CART] 🎯 Producto activo:', {
-            activeProductId: this.state.activeProductId,
-            activeProductName: this.state.activeProductName
-        });
-        
-        if (!this.state.activeProductId) {
-            console.warn('[CART] ⚠️ No hay producto activo, abortando');
-            return;
-        }
+    async deselectAllCurrentProduct() {
+        if (!this.state.activeProductId) return;
         
         const details = this.getProductDetails(this.state.activeProductId);
-        console.log('[CART] 📋 Detalles obtenidos para deselección:', {
-            totalDetails: details.length,
-            details: details.map(d => ({ id: d.id, lot: d.lot_name }))
-        });
         
-        let removed = 0;
-        details.forEach(detail => {
-            const inCart = this.isInCart(detail.id);
-            console.log('[CART] 🔍 Evaluando detalle para remover:', {
-                id: detail.id,
-                lot: detail.lot_name,
-                inCart
-            });
-            
-            if (inCart) {
-                console.log('[CART] ➖ Removiendo del carrito vía toggle:', detail.id);
-                this.toggleCartSelection(detail);
-                removed++;
-            } else {
-                console.log('[CART] ⏭️ No está en carrito, saltando:', detail.id);
+        for (const detail of details) {
+            if (this.isInCart(detail.id)) {
+                await this.toggleCartSelection(detail);
             }
-        });
-        
-        console.log('[CART] ✅ deselectAllCurrentProduct finalizado:', {
-            removed,
-            totalInCart: this.cart.items.length
-        });
+        }
     },
     
     areAllCurrentProductSelected() {
-        console.log('[CART] 🔍 areAllCurrentProductSelected llamado');
-        
-        if (!this.state.activeProductId) {
-            console.warn('[CART] ⚠️ No hay producto activo, retornando false');
-            return false;
-        }
+        if (!this.state.activeProductId) return false;
         
         const details = this.getProductDetails(this.state.activeProductId);
-        if (details.length === 0) {
-            console.warn('[CART] ⚠️ No hay detalles, retornando false');
-            return false;
-        }
+        if (details.length === 0) return false;
         
-        const allSelected = details.every(detail => this.isInCart(detail.id));
-        
-        console.log('[CART] 📊 Resultado de verificación:', {
-            totalDetails: details.length,
-            allSelected,
-            selectedCount: details.filter(d => this.isInCart(d.id)).length,
-            details: details.map(d => ({ id: d.id, lot: d.lot_name, inCart: this.isInCart(d.id) }))
-        });
-        
-        return allSelected;
+        return details.every(detail => this.isInCart(detail.id));
     },
     
     getCurrentProductId(detail) {
@@ -215,7 +151,6 @@ patch(InventoryVisualController.prototype, {
                 return product.product_id;
             }
         }
-        console.warn('[CART] ⚠️ No se encontró product_id para detail:', detail.id);
         return null;
     },
     
@@ -226,13 +161,10 @@ patch(InventoryVisualController.prototype, {
                 return product.product_name;
             }
         }
-        console.warn('[CART] ⚠️ No se encontró product_name para detail:', detail.id);
         return '';
     },
     
     updateCartSummary() {
-        console.log('[CART] 📊 updateCartSummary llamado');
-        
         this.cart.totalLots = this.cart.items.length;
         this.cart.totalQuantity = this.cart.items.reduce((sum, item) => sum + item.quantity, 0);
         
@@ -249,28 +181,22 @@ patch(InventoryVisualController.prototype, {
             groups[item.product_id].total_quantity += item.quantity;
         }
         this.cart.productGroups = groups;
-        
-        console.log('[CART] 📊 Resumen actualizado:', {
-            totalLots: this.cart.totalLots,
-            totalQuantity: this.cart.totalQuantity,
-            productGroups: Object.keys(groups).length
-        });
     },
     
-    clearCart() {
-        console.log('[CART] 🗑️ clearCart llamado');
+    async clearCart() {
         this.cart.items = [];
         this.updateCartSummary();
-        console.log('[CART] ✅ Carrito limpiado');
+        await this.orm.call('shopping.cart', 'clear_cart', []);
     },
     
-    removeLotsWithHold() {
-        console.log('[CART] 🔒 removeLotsWithHold llamado');
+    async removeLotsWithHold() {
         const before = this.cart.items.length;
         this.cart.items = this.cart.items.filter(item => !item.tiene_hold);
         const after = this.cart.items.length;
         this.updateCartSummary();
-        console.log('[CART] ✅ Lotes con hold removidos:', { before, after, removed: before - after });
+        
+        await this.orm.call('shopping.cart', 'remove_holds_from_cart', []);
+        
         this.notification.add("Lotes apartados eliminados del carrito", { type: "success" });
     },
     

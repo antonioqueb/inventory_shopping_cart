@@ -1,4 +1,3 @@
-# ./__manifest__.py
 {
     'name': 'Carrito de Compra para Inventario Visual',
     'version': '18.0.1.0.0',
@@ -8,6 +7,7 @@
     'website': 'https://alphaqueb.com',
     'depends': ['inventory_visual_enhanced', 'stock_lot_dimensions', 'sale'],
     'data': [
+        'security/ir.model.access.csv',
         'views/product_template_views.xml',
     ],
     'assets': {

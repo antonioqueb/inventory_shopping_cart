@@ -1,4 +1,3 @@
-# ./models/stock_quant.py
 # -*- coding: utf-8 -*-
 from odoo import models, api, fields
 
@@ -6,9 +5,25 @@ class StockQuant(models.Model):
     _inherit = 'stock.quant'
     
     @api.model
+    def sync_cart_to_session(self, items):
+        """Sincronizar carrito desde frontend a BD"""
+        cart_model = self.env['shopping.cart']
+        cart_model.clear_cart()
+        
+        for item in items:
+            cart_model.add_to_cart(
+                quant_id=item['id'],
+                lot_id=item['lot_id'],
+                product_id=item['product_id'],
+                quantity=item['quantity'],
+                location_name=item['location_name']
+            )
+        
+        return {'success': True}
+    
+    @api.model
     def create_holds_from_cart(self, partner_id=None, project_id=None, architect_id=None, 
                                 selected_lots=None, notes=None):
-        """Crear holds desde el carrito con validación completa"""
         if not partner_id or not selected_lots:
             return {
                 'success': 0, 
@@ -36,7 +51,6 @@ class StockQuant(models.Model):
         holds_created = []
         errors = []
         
-        # Calcular fecha de expiración (5 días hábiles)
         from datetime import timedelta
         fecha_inicio = fields.Datetime.now()
         fecha_actual = fecha_inicio
@@ -44,7 +58,7 @@ class StockQuant(models.Model):
         
         while dias_agregados < 5:
             fecha_actual += timedelta(days=1)
-            if fecha_actual.weekday() < 5:  # Lunes a viernes
+            if fecha_actual.weekday() < 5:
                 dias_agregados += 1
         
         fecha_expiracion = fecha_actual
@@ -89,6 +103,10 @@ class StockQuant(models.Model):
                     'lot_name': quant.lot_id.name, 
                     'error': str(e)
                 })
+        
+        # Limpiar carrito después de crear holds
+        if holds_created:
+            self.env['shopping.cart'].clear_cart()
         
         return {
             'success': len(holds_created),

@@ -11,7 +11,7 @@
                             <h5 class="mb-1 fw-bold">Crear Orden de Venta</h5>
                             <small class="text-muted">
                                 <i class="fa fa-cubes me-1"></i>
-                                <strong t-esc="Object.keys(props.productGroups).length"></strong> productos
+                                <strong t-esc="totalProducts"></strong> productos en el carrito
                             </small>
                         </div>
                     </div>
@@ -36,6 +36,7 @@
                     </div>
                 </div>
                 
+                <!-- PASO 1: CLIENTE -->
                 <div class="step-content" t-if="state.currentStep === 1">
                     <h5 class="mb-3">
                         <i class="fa fa-user text-primary me-2"></i>
@@ -153,86 +154,125 @@
                     </t>
                 </div>
                 
+                <!-- PASO 2: PRECIOS POR PRODUCTO -->
                 <div class="step-content" t-if="state.currentStep === 2">
-                    <h5 class="mb-3">
-                        <i class="fa fa-dollar text-primary me-2"></i>
-                        Configurar Precios
-                    </h5>
-                    
-                    <div class="mb-4">
-                        <label class="form-label fw-bold">Divisa / Lista de Precios *</label>
-                        <select class="form-select form-select-lg" t-model="state.selectedCurrency" t-on-change="onCurrencyChange">
-                            <option value="USD">USD - Dólares</option>
-                            <option value="MXN">MXN - Pesos</option>
-                        </select>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="mb-0">
+                            <i class="fa fa-dollar text-primary me-2"></i>
+                            Configurar Precio
+                        </h5>
+                        <span class="badge bg-secondary">
+                            Producto <t t-esc="currentProductIndex + 1"/> de <t t-esc="totalProducts"/>
+                        </span>
                     </div>
                     
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Precios por Producto</label>
-                        <t t-foreach="Object.entries(props.productGroups)" t-as="entry" t-key="entry[0]">
-                            <t t-set="productId" t-value="entry[0]"/>
-                            <t t-set="group" t-value="entry[1]"/>
-                            
-                            <div class="card mb-3 border">
-                                <div class="card-body">
-                                    <div class="row align-items-center">
-                                        <div class="col-md-5">
-                                            <strong t-esc="group.name"></strong><br/>
-                                            <small class="text-muted">
-                                                <i class="fa fa-cube me-1"></i>
-                                                <t t-esc="formatNumber(group.total_quantity)"/> m²
-                                            </small>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <t t-if="state.productPriceOptions[productId] and state.productPriceOptions[productId].length > 0">
-                                                <select 
-                                                    class="form-select"
-                                                    t-model.number="state.productPrices[productId]"
-                                                    t-on-change="(ev) => this.onPriceChange(productId, ev.target.value)"
-                                                >
-                                                    <t t-foreach="state.productPriceOptions[productId]" t-as="option" t-key="option_index">
-                                                        <option t-att-value="option.value">
-                                                            <t t-esc="option.label"/> - <t t-esc="formatNumber(option.value)"/>
-                                                        </option>
-                                                    </t>
-                                                </select>
-                                            </t>
-                                            <t t-else="">
-                                                <div class="alert alert-danger mb-0 p-2">
-                                                    <small>Sin precios configurados</small>
-                                                </div>
-                                            </t>
-                                        </div>
-                                        <div class="col-md-3">
-                                            <input 
-                                                type="number"
-                                                class="form-control"
-                                                placeholder="Precio personalizado"
-                                                t-model.number="state.productPrices[productId]"
-                                                t-on-change="(ev) => this.onPriceChange(productId, ev.target.value)"
-                                                step="0.01"
-                                            />
-                                        </div>
+                    <!-- Producto Actual -->
+                    <div class="card border-primary mb-3">
+                        <div class="card-header bg-primary text-white">
+                            <h6 class="mb-0">
+                                <i class="fa fa-cube me-2"></i>
+                                <t t-esc="currentProductGroup.name"/>
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <strong>Cantidad total:</strong>
+                                    <div class="text-muted">
+                                        <t t-esc="formatNumber(currentProductGroup.total_quantity)"/> m²
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Lotes:</strong>
+                                    <div class="text-muted">
+                                        <t t-esc="currentProductGroup.lots.length"/> lotes
                                     </div>
                                 </div>
                             </div>
-                        </t>
+                            
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Divisa / Lista de Precios *</label>
+                                <select class="form-select" t-model="state.selectedCurrency" t-on-change="onCurrencyChange">
+                                    <option value="USD">USD - Dólares</option>
+                                    <option value="MXN">MXN - Pesos</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Precio por m² *</label>
+                                <t t-if="state.productPriceOptions[currentProductId] and state.productPriceOptions[currentProductId].length > 0">
+                                    <select 
+                                        class="form-select mb-2"
+                                        t-model.number="state.productPrices[currentProductId]"
+                                        t-on-change="(ev) => this.onPriceChange(ev.target.value)"
+                                    >
+                                        <t t-foreach="state.productPriceOptions[currentProductId]" t-as="option" t-key="option_index">
+                                            <option t-att-value="option.value">
+                                                <t t-esc="option.label"/> - <t t-esc="formatNumber(option.value)"/>
+                                            </option>
+                                        </t>
+                                    </select>
+                                </t>
+                                <input 
+                                    type="number"
+                                    class="form-control"
+                                    placeholder="Precio personalizado"
+                                    t-model.number="state.productPrices[currentProductId]"
+                                    t-on-change="(ev) => this.onPriceChange(ev.target.value)"
+                                    step="0.01"
+                                />
+                            </div>
+                            
+                            <div class="alert alert-light border">
+                                <strong>Total estimado:</strong>
+                                <div class="h4 mb-0 text-primary">
+                                    <t t-esc="formatNumber(currentProductGroup.total_quantity * (state.productPrices[currentProductId] || 0))"/>
+                                    <small><t t-esc="state.selectedCurrency"/></small>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     
-                    <div class="row">
-                        <div class="col-md-12">
-                            <label class="form-label fw-bold">IVA</label>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" role="switch" t-model="state.applyTax" id="applyTaxSwitch"/>
-                                <label class="form-check-label" for="applyTaxSwitch">
-                                    <t t-if="state.applyTax">Aplicar IVA</t>
-                                    <t t-else="">Sin IVA (se agregará nota legal)</t>
-                                </label>
-                            </div>
+                    <!-- Navegación entre productos -->
+                    <div class="d-flex justify-content-between mt-3">
+                        <button 
+                            class="btn btn-outline-secondary"
+                            t-on-click="prevProduct"
+                            t-att-disabled="isFirstProduct"
+                        >
+                            <i class="fa fa-chevron-left me-2"></i>
+                            Anterior Producto
+                        </button>
+                        
+                        <button 
+                            class="btn btn-primary"
+                            t-on-click="nextProduct"
+                            t-if="!isLastProduct"
+                        >
+                            Siguiente Producto
+                            <i class="fa fa-chevron-right ms-2"></i>
+                        </button>
+                        
+                        <span class="btn btn-success" t-if="isLastProduct">
+                            <i class="fa fa-check me-2"></i>
+                            Todos los precios configurados
+                        </span>
+                    </div>
+                    
+                    <!-- IVA -->
+                    <div class="mt-4">
+                        <label class="form-label fw-bold">IVA</label>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" t-model="state.applyTax" id="applyTaxSwitch"/>
+                            <label class="form-check-label" for="applyTaxSwitch">
+                                <t t-if="state.applyTax">Aplicar IVA</t>
+                                <t t-else="">Sin IVA (se agregará nota legal)</t>
+                            </label>
                         </div>
                     </div>
                 </div>
                 
+                <!-- PASO 3: CONFIRMAR -->
                 <div class="step-content" t-if="state.currentStep === 3">
                     <h5 class="mb-3">
                         <i class="fa fa-check-circle text-success me-2"></i>

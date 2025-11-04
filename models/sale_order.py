@@ -1,4 +1,3 @@
-# ./models/sale_order.py
 # -*- coding: utf-8 -*-
 from odoo import models, fields, api
 from odoo.exceptions import UserError
@@ -57,6 +56,9 @@ class SaleOrder(models.Model):
                 picking = line.move_ids.mapped('picking_id')
                 if picking:
                     self._assign_specific_lots(picking, line.product_id, line.x_selected_lots)
+        
+        # Limpiar carrito después de crear orden
+        self.env['shopping.cart'].clear_cart()
         
         return {
             'success': True,
