@@ -16,7 +16,7 @@
                     <div class="product-group mb-4">
                         <div class="product-header">
                             <h5><i class="fa fa-cube me-2"></i><t t-esc="group.name"/></h5>
-                            <span class="badge bg-secondary "><t t-esc="formatNumber(group.total_quantity)"/> m²</span>
+                            <span class="badge bg-secondary"><t t-esc="formatNumber(group.total_quantity)"/> m²</span>
                         </div>
                         
                         <table class="table table-sm">
@@ -27,7 +27,9 @@
                                         <td><t t-esc="formatNumber(lot.quantity)"/> m²</td>
                                         <td><t t-esc="lot.location_name"/></td>
                                         <td>
-                                            <span t-if="lot.tiene_hold" class="badge bg-warning">🔒 Apartado</span>
+                                            <span t-if="lot.tiene_hold" class="badge bg-warning">
+                                                🔒 <t t-esc="lot.seller_name || 'Apartado'"/>
+                                            </span>
                                         </td>
                                     </tr>
                                 </t>

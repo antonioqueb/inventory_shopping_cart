@@ -1,6 +1,6 @@
 {
     'name': 'Carrito de Compra para Inventario Visual',
-    'version': '18.0.1.0.0',
+    'version': '19.0.1.0.0',
     'category': 'Inventory/Inventory',
     'summary': 'Sistema de carrito de compra y apartado múltiple desde inventario visual',
     'author': 'Alphaqueb Consulting SAS',
@@ -30,7 +30,7 @@
         ],
     },
     'installable': True,
-    'application': False,
+    'application': True,
     'auto_install': False,
     'license': 'LGPL-3',
 }

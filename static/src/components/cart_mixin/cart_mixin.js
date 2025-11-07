@@ -89,7 +89,8 @@ patch(InventoryVisualController.prototype, {
                 quantity: detail.quantity,
                 location_name: detail.location_name,
                 tiene_hold: detail.tiene_hold,
-                hold_info: detail.hold_info
+                hold_info: detail.hold_info,
+                seller_name: detail.seller_name || ''
             };
             this.cart.items.push(newItem);
             

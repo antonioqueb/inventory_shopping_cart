@@ -1,5 +1,4 @@
 /** @odoo-module **/
-
 import { Component, useState } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
 import { Dialog } from "@web/core/dialog/dialog";
@@ -8,6 +7,9 @@ export class HoldWizard extends Component {
     setup() {
         this.orm = useService("orm");
         this.notification = useService("notification");
+        
+        this.productIds = Object.keys(this.props.productGroups).map(id => parseInt(id));
+        this.currentProductIndex = 0;
         
         this.state = useState({
             // Cliente
@@ -38,15 +40,123 @@ export class HoldWizard extends Component {
             newArchitectVat: '',
             newArchitectRef: '',
             
+            // Precios
+            selectedCurrency: 'USD',
+            pricelists: [],
+            selectedPricelistId: null,
+            productPrices: {},
+            productPriceOptions: {},
+            
             // Notas
             notas: '',
             
+            // Vendedor
+            sellerName: '',
+            sellerId: null,
+            
             // UI
             isCreating: false,
-            currentStep: 1, // 1: Cliente, 2: Proyecto, 3: Arquitecto, 4: Confirmar
+            currentStep: 1,
         });
         
         this.searchTimeout = null;
+        this.loadCurrentUser();
+        this.loadPricelists();
+    }
+    
+    async loadCurrentUser() {
+        try {
+            const result = await this.orm.call(
+                'stock.quant',
+                'get_current_user_info',
+                []
+            );
+            this.state.sellerName = result.name;
+            this.state.sellerId = result.id;
+        } catch (error) {
+            console.error("Error obteniendo usuario actual:", error);
+            this.state.sellerName = 'Usuario Actual';
+        }
+    }
+    
+    async loadPricelists() {
+        try {
+            const pricelists = await this.orm.searchRead(
+                "product.pricelist",
+                [['name', 'in', ['USD', 'MXN']]],
+                ['id', 'name', 'currency_id']
+            );
+            this.state.pricelists = pricelists;
+            
+            const usd = pricelists.find(p => p.name === 'USD');
+            if (usd) {
+                this.state.selectedPricelistId = usd.id;
+                this.state.selectedCurrency = 'USD';
+            }
+            
+            await this.loadAllProductPrices();
+        } catch (error) {
+            console.error("Error cargando listas de precios:", error);
+            this.notification.add("Error al cargar listas de precios", { type: "warning" });
+        }
+    }
+    
+    async loadAllProductPrices() {
+        for (const productId of this.productIds) {
+            try {
+                const prices = await this.orm.call(
+                    "product.template",
+                    "get_custom_prices",
+                    [],
+                    {
+                        product_id: productId,
+                        currency_code: this.state.selectedCurrency
+                    }
+                );
+                
+                this.state.productPriceOptions[productId] = prices;
+                
+                if (prices.length > 0 && !this.state.productPrices[productId]) {
+                    this.state.productPrices[productId] = prices[0].value;
+                }
+            } catch (error) {
+                console.error(`Error cargando precios para producto ${productId}:`, error);
+            }
+        }
+    }
+    
+    async onCurrencyChange(ev) {
+        const pricelistName = ev.target.value;
+        this.state.selectedCurrency = pricelistName;
+        
+        const pricelist = this.state.pricelists.find(p => p.name === pricelistName);
+        if (pricelist) {
+            this.state.selectedPricelistId = pricelist.id;
+        }
+        
+        await this.loadAllProductPrices();
+    }
+    
+    onPriceChange(productId, value) {
+        const numValue = parseFloat(value);
+        const options = this.state.productPriceOptions[productId] || [];
+        
+        if (options.length === 0) {
+            this.state.productPrices[productId] = numValue;
+            return;
+        }
+        
+        const minPrice = Math.min(...options.map(opt => opt.value));
+        
+        if (numValue < minPrice) {
+            this.notification.add(
+                `El precio no puede ser menor a ${this.formatNumber(minPrice)}`,
+                { type: "warning" }
+            );
+            this.state.productPrices[productId] = minPrice;
+        } else {
+            this.state.productPrices[productId] = numValue;
+        }
     }
     
     // ========== CLIENTE ==========
@@ -292,8 +402,20 @@ export class HoldWizard extends Component {
             this.notification.add("Debe seleccionar o crear un arquitecto", { type: "warning" });
             return;
         }
+        if (this.state.currentStep === 4) {
+            // Validar precios
+            const hasInvalidPrice = this.productIds.some(pid => {
+                const price = this.state.productPrices[pid];
+                return !price || price <= 0;
+            });
+            
+            if (hasInvalidPrice) {
+                this.notification.add("Debe configurar precios para todos los productos", { type: "warning" });
+                return;
+            }
+        }
         
-        if (this.state.currentStep < 4) {
+        if (this.state.currentStep < 5) {
             this.state.currentStep++;
         }
     }
@@ -324,7 +446,9 @@ export class HoldWizard extends Component {
                     project_id: this.state.selectedProjectId,
                     architect_id: this.state.selectedArchitectId,
                     selected_lots: this.props.selectedLots,
-                    notes: this.state.notas
+                    notes: this.state.notas,
+                    currency_code: this.state.selectedCurrency,
+                    product_prices: this.state.productPrices
                 }
             );
             
@@ -351,6 +475,10 @@ export class HoldWizard extends Component {
             this.state.isCreating = false;
         }
     }
+    
+    formatNumber(num) {
+        return new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+    }
 }
 
 HoldWizard.template = "inventory_shopping_cart.HoldWizard";
@@ -358,5 +486,6 @@ HoldWizard.components = { Dialog };
 HoldWizard.props = {
     close: Function,
     selectedLots: Array,
+    productGroups: Object,
     onSuccess: Function,
 };

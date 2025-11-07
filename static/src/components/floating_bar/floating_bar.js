@@ -1,5 +1,4 @@
 /** @odoo-module **/
-
 import { patch } from "@web/core/utils/patch";
 import { registry } from "@web/core/registry";
 import { CartDialog } from "../dialogs/cart_dialog/cart_dialog";
@@ -30,6 +29,7 @@ patch(InventoryVisualController.prototype, {
         
         this.dialog.add(HoldWizard, {
             selectedLots: this.cart.items.map(item => item.id),
+            productGroups: this.cart.productGroups,
             onSuccess: async () => {
                 this.clearCart();
                 await this.searchProducts();
@@ -57,5 +57,4 @@ patch(InventoryVisualController.prototype, {
 });
 
 import { ProductRow } from "@inventory_visual_enhanced/components/product_row/product_row";
-
 patch(ProductRow.prototype, {});

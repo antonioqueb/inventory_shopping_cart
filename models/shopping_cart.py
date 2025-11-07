@@ -1,3 +1,4 @@
+# ./models/shopping_cart.py en inventory_shopping_cart
 # -*- coding: utf-8 -*-
 from odoo import models, fields, api
 
@@ -21,17 +22,29 @@ class ShoppingCart(models.Model):
     def get_cart_items(self):
         """Obtener items del carrito del usuario actual"""
         items = self.search([('user_id', '=', self.env.user.id)])
-        return [{
-            'id': item.quant_id.id,
-            'lot_id': item.lot_id.id,
-            'lot_name': item.lot_id.name,
-            'product_id': item.product_id.id,
-            'product_name': item.product_id.display_name,
-            'quantity': item.quantity,
-            'location_name': item.location_name,
-            'tiene_hold': item.quant_id.x_tiene_hold,
-            'hold_info': item.quant_id.x_hold_para if item.quant_id.x_tiene_hold else ''
-        } for item in items]
+        result = []
+        for item in items:
+            hold_info = ''
+            seller_name = ''
+            if item.quant_id.x_tiene_hold and item.quant_id.x_hold_activo_id:
+                hold = item.quant_id.x_hold_activo_id
+                hold_info = item.quant_id.x_hold_para
+                if hold.user_id:
+                    seller_name = hold.user_id.name
+            
+            result.append({
+                'id': item.quant_id.id,
+                'lot_id': item.lot_id.id,
+                'lot_name': item.lot_id.name,
+                'product_id': item.product_id.id,
+                'product_name': item.product_id.display_name,
+                'quantity': item.quantity,
+                'location_name': item.location_name,
+                'tiene_hold': item.quant_id.x_tiene_hold,
+                'hold_info': hold_info,
+                'seller_name': seller_name
+            })
+        return result
     
     @api.model
     def add_to_cart(self, quant_id=None, lot_id=None, product_id=None, quantity=None, location_name=None):
