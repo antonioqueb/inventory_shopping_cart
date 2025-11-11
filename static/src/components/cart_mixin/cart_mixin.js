@@ -126,8 +126,23 @@ patch(InventoryVisualController.prototype, {
             }
         }
         
-        // ✅ Forzar actualización final
-        this.cart.items = [...this.cart.items];
+        // ✅ FORZAR RE-RENDER: Colapsar y expandir el producto
+        const productId = this.state.activeProductId;
+        const product = this.state.products.find(p => p.product_id === productId);
+        
+        if (product) {
+            // Colapsar
+            this.state.expandedProducts.delete(productId);
+            this.state.expandedProducts = new Set(this.state.expandedProducts);
+            
+            // Pequeño delay para que el DOM se actualice
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
+            // Re-expandir
+            this.state.expandedProducts.add(productId);
+            await this.loadProductDetails(productId, product.quant_ids);
+            this.state.expandedProducts = new Set(this.state.expandedProducts);
+        }
     },
     
     async deselectAllCurrentProduct() {
@@ -141,8 +156,23 @@ patch(InventoryVisualController.prototype, {
             }
         }
         
-        // ✅ Forzar actualización final
-        this.cart.items = [...this.cart.items];
+        // ✅ FORZAR RE-RENDER: Colapsar y expandir el producto
+        const productId = this.state.activeProductId;
+        const product = this.state.products.find(p => p.product_id === productId);
+        
+        if (product) {
+            // Colapsar
+            this.state.expandedProducts.delete(productId);
+            this.state.expandedProducts = new Set(this.state.expandedProducts);
+            
+            // Pequeño delay para que el DOM se actualice
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
+            // Re-expandir
+            this.state.expandedProducts.add(productId);
+            await this.loadProductDetails(productId, product.quant_ids);
+            this.state.expandedProducts = new Set(this.state.expandedProducts);
+        }
     },
     
     areAllCurrentProductSelected() {
