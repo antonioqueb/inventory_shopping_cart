@@ -198,20 +198,26 @@ patch(InventoryVisualController.prototype, {
         this.updateCartSummary();
         await this.orm.call('shopping.cart', 'clear_cart', []);
         
-        // ✅ FORZAR RE-RENDERIZACIÓN de los detalles del producto activo
-        if (this.state.activeProductId && this.state.expandedProducts.has(this.state.activeProductId)) {
-            const productId = this.state.activeProductId;
-            const quantIds = this.state.products.find(p => p.product_id === productId)?.quant_ids || [];
-            
-            // Colapsar y expandir para forzar re-render
-            this.state.expandedProducts.delete(productId);
+        // ✅ OBTENER TODOS LOS PRODUCTOS QUE ESTÁN EXPANDIDOS
+        const expandedProductIds = Array.from(this.state.expandedProducts);
+        
+        if (expandedProductIds.length > 0) {
+            // ✅ COLAPSAR TODOS LOS PRODUCTOS EXPANDIDOS
+            this.state.expandedProducts.clear();
             this.state.expandedProducts = new Set(this.state.expandedProducts);
             
             // Pequeño delay para que el DOM se actualice
             await new Promise(resolve => setTimeout(resolve, 50));
             
-            this.state.expandedProducts.add(productId);
-            await this.loadProductDetails(productId, quantIds);
+            // ✅ RE-EXPANDIR TODOS LOS PRODUCTOS QUE ESTABAN EXPANDIDOS
+            for (const productId of expandedProductIds) {
+                const product = this.state.products.find(p => p.product_id === productId);
+                if (product) {
+                    this.state.expandedProducts.add(productId);
+                    await this.loadProductDetails(productId, product.quant_ids);
+                }
+            }
+            
             this.state.expandedProducts = new Set(this.state.expandedProducts);
         }
     },
@@ -229,18 +235,25 @@ patch(InventoryVisualController.prototype, {
         
         this.notification.add("Lotes apartados eliminados del carrito", { type: "success" });
         
-        // ✅ FORZAR RE-RENDERIZACIÓN si hay producto activo expandido
-        if (this.state.activeProductId && this.state.expandedProducts.has(this.state.activeProductId)) {
-            const productId = this.state.activeProductId;
-            const quantIds = this.state.products.find(p => p.product_id === productId)?.quant_ids || [];
-            
-            this.state.expandedProducts.delete(productId);
+        // ✅ OBTENER TODOS LOS PRODUCTOS QUE ESTÁN EXPANDIDOS
+        const expandedProductIds = Array.from(this.state.expandedProducts);
+        
+        if (expandedProductIds.length > 0) {
+            // ✅ COLAPSAR TODOS LOS PRODUCTOS EXPANDIDOS
+            this.state.expandedProducts.clear();
             this.state.expandedProducts = new Set(this.state.expandedProducts);
             
             await new Promise(resolve => setTimeout(resolve, 50));
             
-            this.state.expandedProducts.add(productId);
-            await this.loadProductDetails(productId, quantIds);
+            // ✅ RE-EXPANDIR TODOS LOS PRODUCTOS QUE ESTABAN EXPANDIDOS
+            for (const productId of expandedProductIds) {
+                const product = this.state.products.find(p => p.product_id === productId);
+                if (product) {
+                    this.state.expandedProducts.add(productId);
+                    await this.loadProductDetails(productId, product.quant_ids);
+                }
+            }
+            
             this.state.expandedProducts = new Set(this.state.expandedProducts);
         }
     },
