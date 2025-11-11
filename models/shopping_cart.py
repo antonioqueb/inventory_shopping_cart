@@ -1,4 +1,4 @@
-# ./models/shopping_cart.py en inventory_shopping_cart
+# ./models/shopping_cart.py
 # -*- coding: utf-8 -*-
 from odoo import models, fields, api
 
@@ -8,7 +8,7 @@ class ShoppingCart(models.Model):
     
     user_id = fields.Many2one('res.users', string='Usuario', required=True, default=lambda self: self.env.user, index=True)
     quant_id = fields.Many2one('stock.quant', string='Quant', required=True, ondelete='cascade')
-    lot_id = fields.Many2one('stock.production.lot', string='Lote', required=True)
+    lot_id = fields.Integer(string='Lote ID', required=True)
     product_id = fields.Many2one('product.product', string='Producto', required=True)
     quantity = fields.Float(string='Cantidad', required=True)
     location_name = fields.Char(string='Ubicación')
@@ -24,6 +24,11 @@ class ShoppingCart(models.Model):
         items = self.search([('user_id', '=', self.env.user.id)])
         result = []
         for item in items:
+            # ✅ CAMBIO: Usar 'stock.lot' en lugar de 'stock.production.lot'
+            lot = self.env['stock.lot'].browse(item.lot_id)
+            if not lot.exists():
+                continue
+                
             hold_info = ''
             seller_name = ''
             if item.quant_id.x_tiene_hold and item.quant_id.x_hold_activo_id:
@@ -34,8 +39,8 @@ class ShoppingCart(models.Model):
             
             result.append({
                 'id': item.quant_id.id,
-                'lot_id': item.lot_id.id,
-                'lot_name': item.lot_id.name,
+                'lot_id': lot.id,
+                'lot_name': lot.name,
                 'product_id': item.product_id.id,
                 'product_name': item.product_id.display_name,
                 'quantity': item.quantity,

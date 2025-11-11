@@ -75,6 +75,60 @@
     min-height: 400px;
     animation: fadeIn 0.3s ease-in;
   }
+  
+  // Estilos específicos para la tabla de precios
+  .table-responsive {
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+    
+    .table {
+      margin-bottom: 0;
+      
+      thead {
+        &.sticky-top {
+          position: sticky;
+          top: 0;
+          z-index: 10;
+        }
+        
+        th {
+          background-color: #f8f9fa;
+          border-bottom: 2px solid #dee2e6;
+          font-weight: 600;
+          padding: 12px;
+        }
+      }
+      
+      tbody {
+        tr {
+          transition: background-color 0.2s ease;
+          
+          &:hover {
+            background-color: #f8f9fa;
+          }
+          
+          td {
+            padding: 12px;
+            vertical-align: middle;
+          }
+        }
+      }
+      
+      tfoot {
+        th {
+          background-color: #f8f9fa;
+          border-top: 2px solid #dee2e6;
+          padding: 12px;
+          font-weight: 700;
+        }
+      }
+    }
+    
+    .form-select-sm,
+    .form-control-sm {
+      font-size: 0.875rem;
+    }
+  }
 }
 
 @keyframes fadeIn {

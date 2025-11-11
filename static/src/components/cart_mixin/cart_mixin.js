@@ -110,6 +110,9 @@ patch(InventoryVisualController.prototype, {
         }
         
         this.updateCartSummary();
+        
+        // ✅ FORZAR ACTUALIZACIÓN REACTIVA explícita
+        this.cart.items = [...this.cart.items];
     },
     
     async selectAllCurrentProduct() {
@@ -122,6 +125,9 @@ patch(InventoryVisualController.prototype, {
                 await this.toggleCartSelection(detail);
             }
         }
+        
+        // ✅ Forzar actualización final
+        this.cart.items = [...this.cart.items];
     },
     
     async deselectAllCurrentProduct() {
@@ -134,6 +140,9 @@ patch(InventoryVisualController.prototype, {
                 await this.toggleCartSelection(detail);
             }
         }
+        
+        // ✅ Forzar actualización final
+        this.cart.items = [...this.cart.items];
     },
     
     areAllCurrentProductSelected() {
@@ -188,6 +197,23 @@ patch(InventoryVisualController.prototype, {
         this.cart.items = [];
         this.updateCartSummary();
         await this.orm.call('shopping.cart', 'clear_cart', []);
+        
+        // ✅ FORZAR RE-RENDERIZACIÓN de los detalles del producto activo
+        if (this.state.activeProductId && this.state.expandedProducts.has(this.state.activeProductId)) {
+            const productId = this.state.activeProductId;
+            const quantIds = this.state.products.find(p => p.product_id === productId)?.quant_ids || [];
+            
+            // Colapsar y expandir para forzar re-render
+            this.state.expandedProducts.delete(productId);
+            this.state.expandedProducts = new Set(this.state.expandedProducts);
+            
+            // Pequeño delay para que el DOM se actualice
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
+            this.state.expandedProducts.add(productId);
+            await this.loadProductDetails(productId, quantIds);
+            this.state.expandedProducts = new Set(this.state.expandedProducts);
+        }
     },
     
     async removeLotsWithHold() {
@@ -198,7 +224,25 @@ patch(InventoryVisualController.prototype, {
         
         await this.orm.call('shopping.cart', 'remove_holds_from_cart', []);
         
+        // ✅ Forzar actualización reactiva
+        this.cart.items = [...this.cart.items];
+        
         this.notification.add("Lotes apartados eliminados del carrito", { type: "success" });
+        
+        // ✅ FORZAR RE-RENDERIZACIÓN si hay producto activo expandido
+        if (this.state.activeProductId && this.state.expandedProducts.has(this.state.activeProductId)) {
+            const productId = this.state.activeProductId;
+            const quantIds = this.state.products.find(p => p.product_id === productId)?.quant_ids || [];
+            
+            this.state.expandedProducts.delete(productId);
+            this.state.expandedProducts = new Set(this.state.expandedProducts);
+            
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
+            this.state.expandedProducts.add(productId);
+            await this.loadProductDetails(productId, quantIds);
+            this.state.expandedProducts = new Set(this.state.expandedProducts);
+        }
     },
     
     formatNumber(num) {
