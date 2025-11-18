@@ -61,44 +61,7 @@ class PriceAuthorization(models.Model):
         if not authorizers:
             return
         
-        products_summary = []
-        for line in self.line_ids:
-            products_summary.append(
-                f"• {line.product_id.display_name}: {line.quantity:.2f} m² "
-                f"(Precio solicitado: {line.requested_price:.2f} {self.currency_code})"
-            )
-        
-        message_body = f"""
-        <p><strong>Nueva solicitud de autorización de precio</strong></p>
-        <ul>
-            <li><strong>Solicitado por:</strong> {self.seller_id.name}</li>
-            <li><strong>Cliente:</strong> {self.partner_id.name}</li>
-            <li><strong>Tipo:</strong> {'Venta' if self.operation_type == 'sale' else 'Apartado'}</li>
-            <li><strong>Divisa:</strong> {self.currency_code}</li>
-        </ul>
-        <p><strong>Productos:</strong></p>
-        <ul>
-            {''.join(f'<li>{summary}</li>' for summary in products_summary)}
-        </ul>
-        """
-        
-        if self.notes:
-            message_body += f"<p><strong>Notas del vendedor:</strong><br/>{self.notes}</p>"
-        
-        # ✅ NOTIFICACIÓN AUTOMÁTICA EN CHATTER + INBOX
-        # Al usar partner_ids, Odoo crea automáticamente:
-        # 1. El mensaje en el chatter
-        # 2. Notificaciones en el inbox para cada partner
-        # 3. El subtype 'mail.mt_comment' hace que sea visible
-        self.message_post(
-            body=message_body,
-            subject=f"Solicitud de Autorización {self.name}",
-            partner_ids=authorizers.mapped('partner_id').ids,
-            message_type='comment',  # ✅ Cambiado de 'notification' a 'comment'
-            subtype_xmlid='mail.mt_comment'
-        )
-        
-        # Crear actividad para cada autorizador
+        # ✅ SOLO CREAR ACTIVIDAD (sin message_post ni email)
         activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
         if not activity_type:
             activity_type = self.env['mail.activity.type'].search([('name', '=', 'To Do')], limit=1)
@@ -106,7 +69,7 @@ class PriceAuthorization(models.Model):
         for authorizer in authorizers:
             self.activity_schedule(
                 activity_type_id=activity_type.id,
-                summary=f'Autorizar precio - {self.name}',
+                summary=f'Autorización {self.name}',
                 note=f"""
                     <p>Se requiere su autorización para:</p>
                     <ul>
@@ -115,70 +78,42 @@ class PriceAuthorization(models.Model):
                         <li><strong>Operación:</strong> {'Venta' if self.operation_type == 'sale' else 'Apartado'}</li>
                         <li><strong>Productos:</strong> {len(self.line_ids)} productos</li>
                     </ul>
-                    <p>Revise los precios solicitados y apruebe o rechace la solicitud.</p>
                 """,
                 user_id=authorizer.id
             )
-        
-        # Notificación adicional via correo
-        template = self.env.ref('inventory_shopping_cart.email_template_price_authorization_request', raise_if_not_found=False)
-        if template:
-            for authorizer in authorizers:
-                template.send_mail(
-                    self.id,
-                    force_send=True,
-                    email_values={'email_to': authorizer.email}
-                )
         
     def _notify_seller(self, approved=True):
         """Notifica al vendedor sobre la decisión"""
         self.ensure_one()
         
         if approved:
-            status = "✅ APROBADA"
-            message_text = f"Su solicitud de autorización {self.name} ha sido aprobada por {self.authorizer_id.name}."
+            status = "APROBADA"
+            activity_summary = f'Autorización Aprobada - {self.name}'
+            message_text = f"<p>Su solicitud {self.name} ha sido <strong>aprobada</strong> por {self.authorizer_id.name}.</p>"
             
             if self.operation_type == 'sale' and self.sale_order_id:
-                message_text += f"<br/>Se ha generado la orden de venta: <a href='/web#id={self.sale_order_id.id}&model=sale.order&view_type=form'>{self.sale_order_id.name}</a>"
+                message_text += f"<p>Orden de venta generada: <a href='/web#id={self.sale_order_id.id}&model=sale.order&view_type=form'>{self.sale_order_id.name}</a></p>"
             elif self.operation_type == 'hold':
-                message_text += "<br/>Los apartados han sido creados automáticamente."
+                message_text += "<p>Los apartados han sido creados automáticamente.</p>"
         else:
-            status = "❌ RECHAZADA"
-            message_text = f"Su solicitud de autorización {self.name} ha sido rechazada por {self.authorizer_id.name}."
+            status = "RECHAZADA"
+            activity_summary = f'Autorización Rechazada - {self.name}'
+            message_text = f"<p>Su solicitud {self.name} ha sido <strong>rechazada</strong> por {self.authorizer_id.name}.</p>"
         
         if self.authorization_notes:
-            message_text += f"<br/><br/><strong>Comentarios del autorizador:</strong><br/>{self.authorization_notes}"
+            message_text += f"<p><strong>Comentarios:</strong><br/>{self.authorization_notes}</p>"
         
-        # ✅ NOTIFICACIÓN AUTOMÁTICA EN CHATTER + INBOX
-        self.message_post(
-            body=message_text,
-            subject=f"Solicitud {status} - {self.name}",
-            partner_ids=[self.seller_id.partner_id.id],
-            message_type='comment',  # ✅ Cambiado de 'notification' a 'comment'
-            subtype_xmlid='mail.mt_comment'
-        )
-        
-        # Crear actividad para el vendedor
+        # ✅ SOLO CREAR ACTIVIDAD (sin message_post)
         activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
         if not activity_type:
             activity_type = self.env['mail.activity.type'].search([('name', '=', 'To Do')], limit=1)
         
-        activity_note = message_text
-        if approved and self.operation_type == 'sale' and self.sale_order_id:
-            activity_note += "<br/><br/>Por favor, continúe con el proceso de la orden de venta."
-        
         self.activity_schedule(
             activity_type_id=activity_type.id,
-            summary=f'Autorización {status} - {self.name}',
-            note=activity_note,
+            summary=activity_summary,
+            note=message_text,
             user_id=self.seller_id.id
         )
-        
-        # Notificación por correo
-        template_xmlid = 'inventory_shopping_cart.email_template_price_authorization_approved' if approved else 'inventory_shopping_cart.email_template_price_authorization_rejected'
-        template = self.env.ref(template_xmlid, raise_if_not_found=False)
-        if template:
-            template.send_mail(self.id, force_send=True)
     
     def action_approve(self):
         self.ensure_one()
@@ -192,11 +127,6 @@ class PriceAuthorization(models.Model):
             'authorizer_id': self.env.user.id,
             'authorization_date': fields.Datetime.now()
         })
-        
-        self.message_post(
-            body=f"Solicitud aprobada por {self.env.user.name}",
-            subject="Autorización Aprobada"
-        )
         
         self._process_approved_authorization()
         self._notify_seller(approved=True)
@@ -213,11 +143,6 @@ class PriceAuthorization(models.Model):
             'authorizer_id': self.env.user.id,
             'authorization_date': fields.Datetime.now()
         })
-        
-        self.message_post(
-            body=f"Solicitud rechazada por {self.env.user.name}",
-            subject="Autorización Rechazada"
-        )
         
         self._notify_seller(approved=False)
     
@@ -342,11 +267,6 @@ class PriceAuthorization(models.Model):
                     self.env['sale.order'].sudo()._assign_specific_lots(picking, line.product_id, line.x_selected_lots)
         
         self.write({'sale_order_id': sale_order.id})
-        
-        self.message_post(
-            body=f"Orden de venta {sale_order.name} creada automáticamente",
-            subject="Orden Creada"
-        )
     
     def _create_holds_from_authorization(self, temp_data):
         """Crea apartados desde autorización aprobada"""
@@ -367,21 +287,6 @@ class PriceAuthorization(models.Model):
             currency_code=self.currency_code,
             product_prices=product_prices
         )
-        
-        if result['success'] > 0:
-            self.message_post(
-                body=f"{result['success']} apartados creados automáticamente",
-                subject="Apartados Creados"
-            )
-        
-        if result['errors'] > 0:
-            error_msg = f"{result['errors']} apartados fallaron:\n"
-            for failed in result['failed']:
-                error_msg += f"\n• {failed['lot_name']}: {failed['error']}"
-            self.message_post(
-                body=error_msg,
-                subject="Errores en Apartados"
-            )
 
 class PriceAuthorizationLine(models.Model):
     _name = 'price.authorization.line'
