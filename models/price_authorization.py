@@ -278,8 +278,12 @@ class PriceAuthorization(models.Model):
         selected_lots = temp_data.get('selected_lots', [])
         architect_id = temp_data.get('architect_id')
         
-        # ✅ LLAMAR AL MÉTODO PERO SALTANDO LA VALIDACIÓN DE AUTORIZACIÓN
-        result = self.env['stock.quant'].with_context(skip_authorization_check=True).create_holds_from_cart(
+        # ✅ USAR EL VENDEDOR ORIGINAL (seller_id) EN LUGAR DEL USUARIO ACTUAL
+        # ✅ PASAR EL VENDEDOR AL CONTEXTO PARA QUE LO USE create_holds_from_cart
+        result = self.env['stock.quant'].with_context(
+            skip_authorization_check=True,
+            force_seller_id=self.seller_id.id  # ✅ AGREGAR ESTO
+        ).create_holds_from_cart(
             partner_id=self.partner_id.id,
             project_id=self.project_id.id if self.project_id else None,
             architect_id=architect_id,

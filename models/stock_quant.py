@@ -92,6 +92,11 @@ class StockQuant(models.Model):
                         'message': f'Solicitud de autorización {result["authorization_name"]} creada. Espere aprobación del autorizador.'
                     }
         
+        # ✅ DETERMINAR QUÉ VENDEDOR USAR
+        # Si viene del contexto (desde autorización), usar ese
+        # Si no, usar el usuario actual
+        seller_id = self.env.context.get('force_seller_id', self.env.user.id)
+        
         # ✅ SI NO REQUIERE AUTORIZACIÓN, CREAR APARTADOS NORMALMENTE
         success_count = 0
         error_count = 0
@@ -143,7 +148,7 @@ class StockQuant(models.Model):
                 hold_vals = {
                     'lot_id': quant.lot_id.id,
                     'partner_id': partner_id,
-                    'user_id': self.env.user.id,
+                    'user_id': seller_id,  # ✅ USAR EL VENDEDOR CORRECTO
                     'fecha_inicio': fecha_inicio,
                     'fecha_expiracion': fecha_expiracion,
                     'notas': full_notes,
