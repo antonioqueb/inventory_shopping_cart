@@ -139,9 +139,6 @@ export class HoldWizard extends Component {
     
     onPriceChange(productId, value) {
         const numValue = parseFloat(value);
-        
-        // ✅ PERMITIR CUALQUIER PRECIO (incluso menor al mínimo)
-        // El backend se encargará de validar si requiere autorización
         this.state.productPrices[productId] = numValue;
     }
     
@@ -389,7 +386,6 @@ export class HoldWizard extends Component {
             return;
         }
         if (this.state.currentStep === 4) {
-            // Validar precios
             const hasInvalidPrice = this.productIds.some(pid => {
                 const price = this.state.productPrices[pid];
                 return !price || price <= 0;
@@ -438,6 +434,18 @@ export class HoldWizard extends Component {
                 }
             );
             
+            // ✅ MANEJAR CASO DE AUTORIZACIÓN REQUERIDA
+            if (result.needs_authorization) {
+                this.notification.add(
+                    `${result.message}\n\nPuede ver el estado en "Autorizaciones de Precio"`, 
+                    { type: "warning", sticky: true }
+                );
+                this.props.onSuccess();
+                this.props.close();
+                return;
+            }
+            
+            // ✅ CASO NORMAL: APARTADOS CREADOS
             if (result.success > 0) {
                 this.notification.add(
                     `${result.success} lotes apartados correctamente`, 

@@ -41,6 +41,58 @@ class StockQuant(models.Model):
         if not selected_lots or not partner_id:
             return {'success': 0, 'errors': 1, 'failed': [{'error': 'Faltan parámetros requeridos'}]}
         
+        # ✅ VERIFICAR SI REQUIERE AUTORIZACIÓN (solo si no viene de una autorización aprobada)
+        if not self.env.context.get('skip_authorization_check'):
+            auth_check = self.env['product.template'].check_price_authorization_needed(
+                product_prices, 
+                currency_code
+            )
+            
+            if auth_check['needs_authorization']:
+                # Agrupar lotes por producto
+                product_groups = {}
+                for quant_id in selected_lots:
+                    quant = self.browse(quant_id)
+                    if not quant.exists() or not quant.lot_id:
+                        continue
+                        
+                    pid = quant.product_id.id
+                    if pid not in product_groups:
+                        product_groups[pid] = {
+                            'name': quant.product_id.display_name,
+                            'lots': [],
+                            'total_quantity': 0
+                        }
+                    
+                    product_groups[pid]['lots'].append({
+                        'id': quant_id,
+                        'lot_name': quant.lot_id.name,
+                        'quantity': quant.quantity
+                    })
+                    product_groups[pid]['total_quantity'] += quant.quantity
+                
+                result = self.create_price_authorization(
+                    operation_type='hold',
+                    partner_id=partner_id,
+                    project_id=project_id,
+                    selected_lots=selected_lots,
+                    currency_code=currency_code,
+                    product_prices=product_prices,
+                    product_groups=product_groups,
+                    notes=notes,
+                    architect_id=architect_id
+                )
+                
+                if result['success']:
+                    return {
+                        'success': False,
+                        'needs_authorization': True,
+                        'authorization_id': result['authorization_id'],
+                        'authorization_name': result['authorization_name'],
+                        'message': f'Solicitud de autorización {result["authorization_name"]} creada. Espere aprobación del autorizador.'
+                    }
+        
+        # ✅ SI NO REQUIERE AUTORIZACIÓN, CREAR APARTADOS NORMALMENTE
         success_count = 0
         error_count = 0
         failed_lots = []

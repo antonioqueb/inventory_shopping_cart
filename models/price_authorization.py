@@ -278,7 +278,8 @@ class PriceAuthorization(models.Model):
         selected_lots = temp_data.get('selected_lots', [])
         architect_id = temp_data.get('architect_id')
         
-        result = self.env['stock.quant'].create_holds_from_cart(
+        # ✅ LLAMAR AL MÉTODO PERO SALTANDO LA VALIDACIÓN DE AUTORIZACIÓN
+        result = self.env['stock.quant'].with_context(skip_authorization_check=True).create_holds_from_cart(
             partner_id=self.partner_id.id,
             project_id=self.project_id.id if self.project_id else None,
             architect_id=architect_id,
@@ -287,6 +288,12 @@ class PriceAuthorization(models.Model):
             currency_code=self.currency_code,
             product_prices=product_prices
         )
+        
+        if result.get('success', 0) == 0 and result.get('errors', 0) > 0:
+            error_msg = "Errores al crear apartados:\n"
+            for failed in result.get('failed', []):
+                error_msg += f"• {failed.get('lot_name', 'Lote')}: {failed.get('error', 'Error desconocido')}\n"
+            raise UserError(error_msg)
 
 class PriceAuthorizationLine(models.Model):
     _name = 'price.authorization.line'
