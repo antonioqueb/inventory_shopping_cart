@@ -139,24 +139,10 @@ export class HoldWizard extends Component {
     
     onPriceChange(productId, value) {
         const numValue = parseFloat(value);
-        const options = this.state.productPriceOptions[productId] || [];
         
-        if (options.length === 0) {
-            this.state.productPrices[productId] = numValue;
-            return;
-        }
-        
-        const minPrice = Math.min(...options.map(opt => opt.value));
-        
-        if (numValue < minPrice) {
-            this.notification.add(
-                `El precio no puede ser menor a ${this.formatNumber(minPrice)}`,
-                { type: "warning" }
-            );
-            this.state.productPrices[productId] = minPrice;
-        } else {
-            this.state.productPrices[productId] = numValue;
-        }
+        // ✅ PERMITIR CUALQUIER PRECIO (incluso menor al mínimo)
+        // El backend se encargará de validar si requiere autorización
+        this.state.productPrices[productId] = numValue;
     }
     
     // ========== CLIENTE ==========

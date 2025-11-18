@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Plantilla: Solicitud de Autorización -->
+    <record id="email_template_price_authorization_request" model="mail.template">
+        <field name="name">Solicitud de Autorización de Precio</field>
+        <field name="model_id" ref="model_price_authorization"/>
+        <field name="subject">🔔 Nueva Solicitud de Autorización - ${object.name}</field>
+        <field name="email_from">${(object.seller_id.email or user.email)|safe}</field>
+        <field name="email_to">${object.email}</field>
+        <field name="body_html" type="html">
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+    <div style="background: linear-gradient(135deg, #714B67 0%, #017E84 100%); color: white; padding: 20px; text-align: center;">
+        <h2 style="margin: 0;">🔔 Nueva Solicitud de Autorización</h2>
+    </div>
+    
+    <div style="padding: 20px; background: #f9f9f9;">
+        <p>Estimado(a) Autorizador,</p>
+        
+        <p>Se ha recibido una nueva solicitud de autorización de precio que requiere su atención:</p>
+        
+        <div style="background: white; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Referencia:</strong></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">${object.name}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Solicitado por:</strong></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">${object.seller_id.name}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Cliente:</strong></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">${object.partner_id.name}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Tipo:</strong></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">${'Venta' if object.operation_type == 'sale' else 'Apartado'}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Divisa:</strong></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">${object.currency_code}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px;"><strong>Productos:</strong></td>
+                    <td style="padding: 8px;">${len(object.line_ids)} productos</td>
+                </tr>
+            </table>
+        </div>
+        
+        % if object.notes:
+        <div style="background: #fffbea; border-left: 4px solid #f59e0b; padding: 10px; margin: 15px 0;">
+            <strong>Notas del vendedor:</strong><br/>
+            ${object.notes}
+        </div>
+        % endif
+        
+        <div style="text-align: center; margin: 25px 0;">
+            <a href="${object.get_base_url()}/web#id=${object.id}&amp;model=price.authorization&amp;view_type=form" 
+               style="background: #017E84; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                Ver Solicitud
+            </a>
+        </div>
+        
+        <p style="color: #666; font-size: 12px; margin-top: 20px;">
+            Este es un mensaje automático. Por favor, revise y autorice o rechace la solicitud a la brevedad posible.
+        </p>
+    </div>
+</div>
+        </field>
+    </record>
+    
+    <!-- Plantilla: Autorización Aprobada -->
+    <record id="email_template_price_authorization_approved" model="mail.template">
+        <field name="name">Autorización de Precio Aprobada</field>
+        <field name="model_id" ref="model_price_authorization"/>
+        <field name="subject">✅ Autorización Aprobada - ${object.name}</field>
+        <field name="email_from">${(object.authorizer_id.email or user.email)|safe}</field>
+        <field name="email_to">${object.seller_id.email}</field>
+        <field name="body_html" type="html">
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+    <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 20px; text-align: center;">
+        <h2 style="margin: 0;">✅ Autorización Aprobada</h2>
+    </div>
+    
+    <div style="padding: 20px; background: #f9f9f9;">
+        <p>Estimado(a) ${object.seller_id.name},</p>
+        
+        <p>Su solicitud de autorización ha sido <strong style="color: #10b981;">APROBADA</strong>:</p>
+        
+        <div style="background: white; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Referencia:</strong></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">${object.name}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Autorizado por:</strong></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">${object.authorizer_id.name}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Fecha:</strong></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">${format_datetime(object.authorization_date, dt_format='dd/MM/yyyy HH:mm')}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Cliente:</strong></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">${object.partner_id.name}</td>
+                </tr>
+                % if object.sale_order_id:
+                <tr>
+                    <td style="padding: 8px;"><strong>Orden Generada:</strong></td>
+                    <td style="padding: 8px;">
+                        <a href="${object.get_base_url()}/web#id=${object.sale_order_id.id}&amp;model=sale.order&amp;view_type=form">
+                            ${object.sale_order_id.name}
+                        </a>
+                    </td>
+                </tr>
+                % endif
+            </table>
+        </div>
+        
+        % if object.authorization_notes:
+        <div style="background: #eff6ff; border-left: 4px solid #3b82f6; padding: 10px; margin: 15px 0;">
+            <strong>Comentarios del autorizador:</strong><br/>
+            ${object.authorization_notes}
+        </div>
+        % endif
+        
+        % if object.operation_type == 'sale' and object.sale_order_id:
+        <div style="background: #d1fae5; border-left: 4px solid #10b981; padding: 10px; margin: 15px 0;">
+            <strong>✓ Acción siguiente:</strong> La orden de venta ha sido creada automáticamente. 
+            Por favor, continúe con el proceso correspondiente.
+        </div>
+        % elif object.operation_type == 'hold':
+        <div style="background: #d1fae5; border-left: 4px solid #10b981; padding: 10px; margin: 15px 0;">
+            <strong>✓ Acción siguiente:</strong> Los apartados han sido creados automáticamente.
+        </div>
+        % endif
+        
+        <div style="text-align: center; margin: 25px 0;">
+            <a href="${object.get_base_url()}/web#id=${object.id}&amp;model=price.authorization&amp;view_type=form" 
+               style="background: #10b981; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                Ver Detalles
+            </a>
+        </div>
+    </div>
+</div>
+        </field>
+    </record>
+    
+    <!-- Plantilla: Autorización Rechazada -->
+    <record id="email_template_price_authorization_rejected" model="mail.template">
+        <field name="name">Autorización de Precio Rechazada</field>
+        <field name="model_id" ref="model_price_authorization"/>
+        <field name="subject">❌ Autorización Rechazada - ${object.name}</field>
+        <field name="email_from">${(object.authorizer_id.email or user.email)|safe}</field>
+        <field name="email_to">${object.seller_id.email}</field>
+        <field name="body_html" type="html">
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+    <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; padding: 20px; text-align: center;">
+        <h2 style="margin: 0;">❌ Autorización Rechazada</h2>
+    </div>
+    
+    <div style="padding: 20px; background: #f9f9f9;">
+        <p>Estimado(a) ${object.seller_id.name},</p>
+        
+        <p>Su solicitud de autorización ha sido <strong style="color: #ef4444;">RECHAZADA</strong>:</p>
+        
+        <div style="background: white; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Referencia:</strong></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">${object.name}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Rechazado por:</strong></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">${object.authorizer_id.name}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Fecha:</strong></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">${format_datetime(object.authorization_date, dt_format='dd/MM/yyyy HH:mm')}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px;"><strong>Cliente:</strong></td>
+                    <td style="padding: 8px;">${object.partner_id.name}</td>
+                </tr>
+            </table>
+        </div>
+        
+        % if object.authorization_notes:
+        <div style="background: #fee2e2; border-left: 4px solid #ef4444; padding: 10px; margin: 15px 0;">
+            <strong>Motivo del rechazo:</strong><br/>
+            ${object.authorization_notes}
+        </div>
+        % endif
+        
+        <div style="background: #fffbea; border-left: 4px solid #f59e0b; padding: 10px; margin: 15px 0;">
+            <strong>⚠ Acción requerida:</strong> Por favor, ajuste los precios o condiciones y genere una nueva solicitud.
+        </div>
+        
+        <div style="text-align: center; margin: 25px 0;">
+            <a href="${object.get_base_url()}/web#id=${object.id}&amp;model=price.authorization&amp;view_type=form" 
+               style="background: #ef4444; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                Ver Detalles
+            </a>
+        </div>
+    </div>
+</div>
+        </field>
+    </record>
+</odoo>

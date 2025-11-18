@@ -129,24 +129,10 @@ export class SaleOrderWizard extends Component {
     
     onPriceChange(productId, value) {
         const numValue = parseFloat(value);
-        const options = this.state.productPriceOptions[productId] || [];
         
-        if (options.length === 0) {
-            this.state.productPrices[productId] = numValue;
-            return;
-        }
-        
-        const minPrice = Math.min(...options.map(opt => opt.value));
-        
-        if (numValue < minPrice) {
-            this.notification.add(
-                `El precio no puede ser menor a ${this.formatNumber(minPrice)}`,
-                { type: "warning" }
-            );
-            this.state.productPrices[productId] = minPrice;
-        } else {
-            this.state.productPrices[productId] = numValue;
-        }
+        // ✅ PERMITIR CUALQUIER PRECIO (incluso menor al mínimo)
+        // El backend se encargará de crear la autorización si es necesario
+        this.state.productPrices[productId] = numValue;
     }
     
     // ========== SERVICIOS ==========
@@ -533,9 +519,23 @@ export class SaleOrderWizard extends Component {
                 services: services,
                 notes: finalNotes,
                 pricelist_id: this.state.selectedPricelistId,
-                apply_tax: this.state.applyTax
+                apply_tax: this.state.applyTax,
+                project_id: this.state.selectedProjectId,
+                architect_id: this.state.selectedArchitectId
             });
             
+            // ✅ MANEJAR CASO DE AUTORIZACIÓN REQUERIDA
+            if (result.needs_authorization) {
+                this.notification.add(
+                    `${result.message}\n\nPuede ver el estado en "Autorizaciones de Precio"`, 
+                    { type: "warning", sticky: true }
+                );
+                this.props.onSuccess();
+                this.props.close();
+                return;
+            }
+            
+            // ✅ CASO NORMAL: ORDEN CREADA
             if (result.success) {
                 this.notification.add(`Orden ${result.order_name} creada exitosamente`, { type: "success" });
                 this.props.onSuccess();

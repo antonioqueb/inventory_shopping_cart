@@ -11,14 +11,74 @@ class SaleOrder(models.Model):
     _inherit = 'sale.order'
     
     @api.model
-    def create_from_shopping_cart(self, partner_id=None, products=None, services=None, notes=None, pricelist_id=None, apply_tax=True):
+    def create_from_shopping_cart(self, partner_id=None, products=None, services=None, notes=None, pricelist_id=None, apply_tax=True, project_id=None, architect_id=None):
         if not partner_id or not products:
             raise UserError("Faltan parámetros: partner_id o products")
         
         if not pricelist_id:
             raise UserError("Debe especificar una lista de precios")
         
-        # 🔑 OBTENER COMPAÑÍA DEL CONTEXTO O USUARIO ACTUAL
+        # 🔑 OBTENER DIVISA DE LA LISTA DE PRECIOS
+        pricelist = self.env['product.pricelist'].browse(pricelist_id)
+        currency_code = pricelist.name  # 'USD' o 'MXN'
+        
+        # 🔑 VERIFICAR SI REQUIERE AUTORIZACIÓN
+        product_prices = {}
+        for product in products:
+            product_prices[str(product['product_id'])] = product['price_unit']
+        
+        auth_check = self.env['product.template'].check_price_authorization_needed(
+            product_prices, 
+            currency_code
+        )
+        
+        # ✅ SI REQUIERE AUTORIZACIÓN, CREARLA Y RETORNAR
+        if auth_check['needs_authorization']:
+            # Preparar datos de productos agrupados
+            product_groups = {}
+            for product in products:
+                pid = product['product_id']
+                if pid not in product_groups:
+                    product_rec = self.env['product.product'].browse(pid)
+                    product_groups[pid] = {
+                        'name': product_rec.display_name,
+                        'lots': [],
+                        'total_quantity': 0
+                    }
+                
+                # Agregar lotes
+                for quant_id in product['selected_lots']:
+                    quant = self.env['stock.quant'].browse(quant_id)
+                    product_groups[pid]['lots'].append({
+                        'id': quant_id,
+                        'lot_name': quant.lot_id.name,
+                        'quantity': quant.quantity
+                    })
+                    product_groups[pid]['total_quantity'] += quant.quantity
+            
+            # Crear autorización
+            result = self.env['stock.quant'].create_price_authorization(
+                operation_type='sale',
+                partner_id=partner_id,
+                project_id=project_id,
+                selected_lots=[q_id for p in products for q_id in p['selected_lots']],
+                currency_code=currency_code,
+                product_prices=product_prices,
+                product_groups=product_groups,
+                notes=notes,
+                architect_id=architect_id
+            )
+            
+            if result['success']:
+                return {
+                    'success': False,
+                    'needs_authorization': True,
+                    'authorization_id': result['authorization_id'],
+                    'authorization_name': result['authorization_name'],
+                    'message': f'Solicitud de autorización {result["authorization_name"]} creada. Espere aprobación del autorizador.'
+                }
+        
+        # ✅ SI NO REQUIERE AUTORIZACIÓN, CREAR ORDEN NORMALMENTE
         company_id = self.env.context.get('company_id') or self.env.company.id
         
         # Verificar holds
@@ -30,23 +90,21 @@ class SaleOrder(models.Model):
                     if hold_partner.id != partner_id:
                         raise UserError(f"El lote {quant.lot_id.name} está apartado para {hold_partner.name}")
         
-        # 🔑 CREAR ORDEN CON CONTEXTO DE COMPAÑÍA
         sale_order = self.with_company(company_id).create({
             'partner_id': partner_id,
             'note': notes or '',
             'pricelist_id': pricelist_id,
-            'company_id': company_id,  # ✅ ASEGURAR company_id
+            'company_id': company_id,
         })
         
-        # Crear líneas de productos CON CONTEXTO DE COMPAÑÍA
+        # Crear líneas de productos
         for product in products:
             product_rec = self.env['product.product'].browse(product['product_id'])
             
-            # ✅ Usar 'tax_ids' (plural)
             if apply_tax and product_rec.taxes_id:
                 tax_ids = [(6, 0, product_rec.taxes_id.ids)]
             else:
-                tax_ids = [(5, 0, 0)]  # Limpiar impuestos
+                tax_ids = [(5, 0, 0)]
             
             self.env['sale.order.line'].with_company(company_id).create({
                 'order_id': sale_order.id,
@@ -55,10 +113,10 @@ class SaleOrder(models.Model):
                 'price_unit': product['price_unit'],
                 'tax_ids': tax_ids,
                 'x_selected_lots': [(6, 0, product['selected_lots'])],
-                'company_id': company_id,  # ✅ ASEGURAR company_id
+                'company_id': company_id,
             })
         
-        # Crear líneas de servicios si existen
+        # Crear líneas de servicios
         if services:
             for service in services:
                 service_product = self.env['product.product'].browse(service['product_id'])
@@ -77,7 +135,6 @@ class SaleOrder(models.Model):
                     'company_id': company_id,
                 })
         
-        # Confirmar orden CON CONTEXTO DE COMPAÑÍA
         sale_order.with_company(company_id).action_confirm()
         
         # Asignar lotes específicos

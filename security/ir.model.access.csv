@@ -1,2 +1,6 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_shopping_cart_user,shopping.cart.user,model_shopping_cart,base.group_user,1,1,1,1
+access_price_authorization_seller,price.authorization.seller,model_price_authorization,inventory_shopping_cart.group_seller,1,1,1,0
+access_price_authorization_authorizer,price.authorization.authorizer,model_price_authorization,inventory_shopping_cart.group_price_authorizer,1,1,1,1
+access_price_authorization_line_seller,price.authorization.line.seller,model_price_authorization_line,inventory_shopping_cart.group_seller,1,1,1,0
+access_price_authorization_line_authorizer,price.authorization.line.authorizer,model_price_authorization_line,inventory_shopping_cart.group_price_authorizer,1,1,1,1

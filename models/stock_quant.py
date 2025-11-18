@@ -122,3 +122,63 @@ class StockQuant(models.Model):
             'errors': error_count,
             'failed': failed_lots
         }
+    
+    @api.model
+    def create_price_authorization(self, operation_type, partner_id, project_id, 
+                                   selected_lots, currency_code, product_prices, 
+                                   product_groups, notes=None, architect_id=None):
+        """Crea solicitud de autorización de precio"""
+        
+        # ✅ NORMALIZAR: Convertir todas las claves de product_prices a string
+        if isinstance(product_prices, dict):
+            product_prices = {str(k): v for k, v in product_prices.items()}
+        
+        # ✅ CREAR LA AUTORIZACIÓN
+        auth = self.env['price.authorization'].create({
+            'seller_id': self.env.user.id,
+            'operation_type': operation_type,
+            'partner_id': partner_id,
+            'project_id': project_id,
+            'currency_code': currency_code,
+            'notes': notes or '',
+            'temp_data': {
+                'selected_lots': selected_lots,
+                'product_prices': product_prices,
+                'product_groups': product_groups,
+                'architect_id': architect_id
+            }
+        })
+        
+        # ✅ CREAR LÍNEAS CON EL PRECIO SOLICITADO CORRECTO
+        for product_id_str, group in product_groups.items():
+            product_id = int(product_id_str)
+            product = self.env['product.product'].browse(product_id)
+            
+            # Obtener precios según divisa
+            if currency_code == 'USD':
+                medium_price = product.product_tmpl_id.x_price_usd_2
+                minimum_price = product.product_tmpl_id.x_price_usd_3
+            else:  # MXN
+                medium_price = product.product_tmpl_id.x_price_mxn_2
+                minimum_price = product.product_tmpl_id.x_price_mxn_3
+            
+            # ✅ OBTENER EL PRECIO SOLICITADO CORRECTAMENTE (ahora las claves coinciden)
+            requested_price = float(product_prices.get(str(product_id), 0))
+            
+            # ✅ CREAR LÍNEA CON requested_price Y authorized_price
+            self.env['price.authorization.line'].create({
+                'authorization_id': auth.id,
+                'product_id': product_id,
+                'quantity': group['total_quantity'],
+                'lot_count': len(group['lots']),
+                'requested_price': requested_price,  # ✅ Precio que pidió el vendedor
+                'authorized_price': requested_price,  # ✅ Inicialmente igual, el autorizador puede cambiarlo
+                'medium_price': medium_price,
+                'minimum_price': minimum_price
+            })
+        
+        return {
+            'success': True,
+            'authorization_id': auth.id,
+            'authorization_name': auth.name
+        }
