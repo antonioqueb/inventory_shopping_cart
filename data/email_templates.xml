@@ -7,7 +7,7 @@
         <field name="subject">🔔 Nueva Solicitud de Autorización - ${object.name}</field>
         <field name="email_from">${(object.seller_id.email or user.email)|safe}</field>
         <field name="email_to">${object.email}</field>
-        <field name="body_html" type="html">
+        <field name="body_html"><![CDATA[
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
     <div style="background: linear-gradient(135deg, #714B67 0%, #017E84 100%); color: white; padding: 20px; text-align: center;">
         <h2 style="margin: 0;">🔔 Nueva Solicitud de Autorización</h2>
@@ -66,7 +66,7 @@
         </p>
     </div>
 </div>
-        </field>
+        ]]></field>
     </record>
     
     <!-- Plantilla: Autorización Aprobada -->
@@ -76,7 +76,7 @@
         <field name="subject">✅ Autorización Aprobada - ${object.name}</field>
         <field name="email_from">${(object.authorizer_id.email or user.email)|safe}</field>
         <field name="email_to">${object.seller_id.email}</field>
-        <field name="body_html" type="html">
+        <field name="body_html"><![CDATA[
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
     <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 20px; text-align: center;">
         <h2 style="margin: 0;">✅ Autorización Aprobada</h2>
@@ -144,7 +144,7 @@
         </div>
     </div>
 </div>
-        </field>
+        ]]></field>
     </record>
     
     <!-- Plantilla: Autorización Rechazada -->
@@ -154,7 +154,7 @@
         <field name="subject">❌ Autorización Rechazada - ${object.name}</field>
         <field name="email_from">${(object.authorizer_id.email or user.email)|safe}</field>
         <field name="email_to">${object.seller_id.email}</field>
-        <field name="body_html" type="html">
+        <field name="body_html"><![CDATA[
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
     <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; padding: 20px; text-align: center;">
         <h2 style="margin: 0;">❌ Autorización Rechazada</h2>
@@ -205,6 +205,6 @@
         </div>
     </div>
 </div>
-        </field>
+        ]]></field>
     </record>
 </odoo>
