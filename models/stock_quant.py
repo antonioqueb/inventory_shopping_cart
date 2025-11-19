@@ -14,6 +14,13 @@ class StockQuant(models.Model):
         }
     
     @api.model
+    def check_sales_permissions(self):
+        """Verifica si el usuario tiene permisos de ventas"""
+        return self.env.user.has_group('sales_team.group_sale_salesman') or \
+               self.env.user.has_group('sales_team.group_sale_salesman_all_leads') or \
+               self.env.user.has_group('sales_team.group_sale_manager')
+    
+    @api.model
     def sync_cart_to_session(self, items):
         """Sincronizar carrito desde frontend a BD"""
         cart_model = self.env['shopping.cart']

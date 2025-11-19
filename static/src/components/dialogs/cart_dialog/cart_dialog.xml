@@ -48,12 +48,22 @@
                 <button class="btn btn-warning" t-if="hasHolds" t-on-click="removeHolds">
                     <i class="fa fa-times"></i> Eliminar Apartados
                 </button>
-                <button class="btn btn-info" t-on-click="createHolds">
-                    <i class="fa fa-lock"></i> Apartar Todo
-                </button>
-                <button class="btn btn-primary" t-on-click="createSaleOrder">
-                    <i class="fa fa-file-text"></i> Crear Orden de Venta
-                </button>
+                
+                <!-- ✅ BOTONES CONDICIONADOS A PERMISOS DE VENTAS -->
+                <t t-if="cart.hasSalesPermissions">
+                    <button class="btn btn-info" t-on-click="createHolds">
+                        <i class="fa fa-lock"></i> Apartar Todo
+                    </button>
+                    <button class="btn btn-primary" t-on-click="createSaleOrder">
+                        <i class="fa fa-file-text"></i> Crear Orden de Venta
+                    </button>
+                </t>
+                
+                <!-- ✅ MENSAJE PARA USUARIOS SIN PERMISOS -->
+                <div t-if="!cart.hasSalesPermissions" class="alert alert-info mb-0 ms-3" style="flex: 1;">
+                    <i class="fa fa-info-circle me-2"></i>
+                    <strong>Permisos requeridos:</strong> Solo usuarios con acceso a ventas pueden crear apartados u órdenes de venta.
+                </div>
             </t>
         </Dialog>
     </t>

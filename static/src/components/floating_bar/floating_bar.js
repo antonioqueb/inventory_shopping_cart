@@ -1,4 +1,5 @@
 /** @odoo-module **/
+
 import { patch } from "@web/core/utils/patch";
 import { registry } from "@web/core/registry";
 import { CartDialog } from "../dialogs/cart_dialog/cart_dialog";
@@ -25,6 +26,15 @@ patch(InventoryVisualController.prototype, {
     },
     
     async openHoldWizard() {
+        // ✅ VALIDACIÓN DE PERMISOS
+        if (!this.cart.hasSalesPermissions) {
+            this.notification.add(
+                "No tiene permisos para crear apartados. Contacte al administrador.", 
+                { type: "warning" }
+            );
+            return;
+        }
+        
         await this.syncCartToDB();
         
         this.dialog.add(HoldWizard, {
@@ -38,6 +48,15 @@ patch(InventoryVisualController.prototype, {
     },
     
     async openSaleOrderWizard() {
+        // ✅ VALIDACIÓN DE PERMISOS
+        if (!this.cart.hasSalesPermissions) {
+            this.notification.add(
+                "No tiene permisos para crear órdenes de venta. Contacte al administrador.", 
+                { type: "warning" }
+            );
+            return;
+        }
+        
         const lotsWithHold = this.cart.items.filter(item => item.tiene_hold);
         
         if (lotsWithHold.length > 0) {

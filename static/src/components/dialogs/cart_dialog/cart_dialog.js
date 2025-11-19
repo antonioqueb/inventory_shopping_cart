@@ -20,11 +20,21 @@ export class CartDialog extends Component {
     }
     
     createHolds() {
+        // ✅ VALIDACIÓN DE PERMISOS
+        if (!this.cart.hasSalesPermissions) {
+            this.props.close();
+            return;
+        }
         this.props.close();
         this.props.onCreateHolds();
     }
     
     createSaleOrder() {
+        // ✅ VALIDACIÓN DE PERMISOS
+        if (!this.cart.hasSalesPermissions) {
+            this.props.close();
+            return;
+        }
         this.props.close();
         this.props.onCreateSaleOrder();
     }

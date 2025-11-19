@@ -19,7 +19,8 @@ patch(InventoryVisualController.prototype, {
             items: [],
             totalQuantity: 0,
             totalLots: 0,
-            productGroups: {}
+            productGroups: {},
+            hasSalesPermissions: false 
         });
         
         this.isInCart = this.isInCart.bind(this);
@@ -29,6 +30,17 @@ patch(InventoryVisualController.prototype, {
         this.areAllCurrentProductSelected = this.areAllCurrentProductSelected.bind(this);
         
         this.loadCartFromDB();
+        this.loadSalesPermissions();
+    },
+
+    async loadSalesPermissions() {
+        try {
+            const result = await this.orm.call('stock.quant', 'check_sales_permissions', []);
+            this.cart.hasSalesPermissions = result;
+        } catch (error) {
+            console.error('[CART] Error verificando permisos:', error);
+            this.cart.hasSalesPermissions = false;
+        }
     },
     
     async loadCartFromDB() {
