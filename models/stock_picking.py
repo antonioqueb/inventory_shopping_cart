@@ -36,9 +36,6 @@ class StockPicking(models.Model):
             if not quant.exists():
                 continue
             
-            # ❌ ELIMINADO: Ya no validamos si tiene hold
-            # Los lotes apartados SÍ pueden trasladarse (ej: a zona de apartados)
-            
             # Verificar disponibilidad
             if quant.quantity <= 0:
                 raise UserError(f"El lote {quant.lot_id.name} no tiene cantidad disponible")
@@ -87,9 +84,8 @@ class StockPicking(models.Model):
                 product = self.env['product.product'].browse(product_id)
                 total_quantity = sum(q.quantity for q in product_quants)
                 
-                # Crear el stock.move
+                # ✅ CREAR EL stock.move SIN EL CAMPO 'name' (se genera automáticamente)
                 move_vals = {
-                    'name': product.display_name,
                     'product_id': product_id,
                     'product_uom_qty': total_quantity,
                     'product_uom': product.uom_id.id,
