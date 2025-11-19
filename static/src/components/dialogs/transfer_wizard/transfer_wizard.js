@@ -121,7 +121,8 @@ export class TransferWizard extends Component {
                 {
                     selected_lots: this.props.selectedLots,
                     location_dest_id: this.state.selectedLocationId,
-                    notes: this.state.notes
+                    notes: this.state.notes,
+                    partner_id: this.state.userId  // ✅ AGREGAR USUARIO ACTUAL
                 }
             );
             
