@@ -8,7 +8,7 @@ class StockPicking(models.Model):
     _inherit = 'stock.picking'
     
     @api.model
-    def create_transfer_from_shopping_cart(self, selected_lots=None, location_dest_id=None, notes=None):
+    def create_transfer_from_shopping_cart(self, selected_lots=None, location_dest_id=None, notes=None, partner_id=None):
         """
         Crea traslados internos desde el carrito de compras
         Agrupa los lotes por ubicación origen y crea un picking por cada ubicación
@@ -66,7 +66,7 @@ class StockPicking(models.Model):
             for quant in quants_list:
                 product_groups[quant.product_id.id].append(quant)
             
-            # Crear el picking
+            # ✅ CREAR EL PICKING CON PARTNER_ID
             picking_vals = {
                 'picking_type_id': picking_type.id,
                 'location_id': location_origin_id,
@@ -76,6 +76,10 @@ class StockPicking(models.Model):
                 'user_id': current_user.id,
                 'move_type': 'direct',
             }
+            
+            # ✅ AGREGAR PARTNER_ID SI SE PROPORCIONA
+            if partner_id:
+                picking_vals['partner_id'] = partner_id
             
             picking = self.create(picking_vals)
             
