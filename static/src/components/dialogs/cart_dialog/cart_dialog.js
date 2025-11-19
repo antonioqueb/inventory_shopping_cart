@@ -39,6 +39,16 @@ export class CartDialog extends Component {
         this.props.onCreateSaleOrder();
     }
     
+    createTransfer() {
+        // ✅ VALIDACIÓN DE PERMISOS
+        if (!this.cart.hasInventoryPermissions) {
+            this.props.close();
+            return;
+        }
+        this.props.close();
+        this.props.onCreateTransfer();
+    }
+    
     formatNumber(num) {
         return new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
     }
@@ -52,4 +62,5 @@ CartDialog.props = {
     onRemoveHolds: Function,
     onCreateHolds: Function,
     onCreateSaleOrder: Function,
+    onCreateTransfer: Function,
 };

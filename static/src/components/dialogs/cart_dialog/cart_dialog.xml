@@ -49,7 +49,7 @@
                     <i class="fa fa-times"></i> Eliminar Apartados
                 </button>
                 
-                <!-- ✅ BOTONES CONDICIONADOS A PERMISOS DE VENTAS -->
+                <!-- ✅ BOTONES PARA USUARIOS CON PERMISOS DE VENTAS -->
                 <t t-if="cart.hasSalesPermissions">
                     <button class="btn btn-info" t-on-click="createHolds">
                         <i class="fa fa-lock"></i> Apartar Todo
@@ -59,10 +59,18 @@
                     </button>
                 </t>
                 
-                <!-- ✅ MENSAJE PARA USUARIOS SIN PERMISOS -->
-                <div t-if="!cart.hasSalesPermissions" class="alert alert-info mb-0 ms-3" style="flex: 1;">
+                <!-- ✅ BOTÓN TRASLADAR PARA USUARIOS CON PERMISOS DE INVENTARIO -->
+                <t t-if="cart.hasInventoryPermissions">
+                    <button class="btn btn-warning" t-on-click="createTransfer">
+                        <i class="fa fa-exchange"></i> Trasladar
+                    </button>
+                </t>
+                
+                <!-- ✅ MENSAJE PARA USUARIOS SIN NINGÚN PERMISO -->
+                <div t-if="!cart.hasSalesPermissions and !cart.hasInventoryPermissions" 
+                     class="alert alert-info mb-0 ms-3" style="flex: 1;">
                     <i class="fa fa-info-circle me-2"></i>
-                    <strong>Permisos requeridos:</strong> Solo usuarios con acceso a ventas pueden crear apartados u órdenes de venta.
+                    <strong>Permisos requeridos:</strong> Necesita permisos de ventas o inventario para realizar operaciones.
                 </div>
             </t>
         </Dialog>

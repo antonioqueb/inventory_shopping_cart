@@ -21,6 +21,31 @@ class StockQuant(models.Model):
                self.env.user.has_group('sales_team.group_sale_manager')
     
     @api.model
+    def check_inventory_permissions(self):
+        """Verifica si el usuario tiene permisos de inventario"""
+        return self.env.user.has_group('stock.group_stock_user')
+    
+    @api.model
+    def get_internal_locations(self, search_term=''):
+        """Obtener ubicaciones internas para traslados"""
+        domain = [('usage', '=', 'internal')]
+        
+        if search_term:
+            domain = ['&'] + domain + [
+                '|', ('name', 'ilike', search_term),
+                ('complete_name', 'ilike', search_term)
+            ]
+        
+        locations = self.env['stock.location'].search(domain, limit=50)
+        
+        return [{
+            'id': loc.id,
+            'name': loc.name,
+            'complete_name': loc.complete_name,
+            'parent_name': loc.location_id.name if loc.location_id else ''
+        } for loc in locations]
+    
+    @api.model
     def sync_cart_to_session(self, items):
         """Sincronizar carrito desde frontend a BD"""
         cart_model = self.env['shopping.cart']
