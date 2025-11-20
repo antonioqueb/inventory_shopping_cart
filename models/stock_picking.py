@@ -66,7 +66,7 @@ class StockPicking(models.Model):
             for quant in quants_list:
                 product_groups[quant.product_id.id].append(quant)
             
-            # ✅ CREAR EL PICKING CON PARTNER_ID
+            # ✅ CREAR EL PICKING SIN PARTNER_ID
             picking_vals = {
                 'picking_type_id': picking_type.id,
                 'location_id': location_origin_id,
@@ -76,10 +76,6 @@ class StockPicking(models.Model):
                 'user_id': current_user.id,
                 'move_type': 'direct',
             }
-            
-            # ✅ AGREGAR PARTNER_ID SI SE PROPORCIONA
-            if partner_id:
-                picking_vals['partner_id'] = partner_id
             
             picking = self.create(picking_vals)
             
