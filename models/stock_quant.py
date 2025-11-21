@@ -1,6 +1,7 @@
 # ./models/stock_quant.py en inventory_shopping_cart
 # -*- coding: utf-8 -*-
 from odoo import models, api
+from datetime import datetime, timedelta
 
 
 class StockQuant(models.Model):
@@ -97,7 +98,7 @@ class StockQuant(models.Model):
             )
 
             if auth_check.get('needs_authorization'):
-                # Agrupar lotes por producto (mismo código que tenías antes)
+                # Agrupar lotes por producto
                 product_groups = {}
                 for quant_id in selected_lots:
                     quant = self.browse(quant_id)
@@ -144,32 +145,40 @@ class StockQuant(models.Model):
                     }
 
         # ✅ DETERMINAR QUÉ VENDEDOR USAR
-        # Si viene del contexto (desde autorización), usar ese
-        # Si no, usar el usuario actual
         seller_id = self.env.context.get('force_seller_id', self.env.user.id)
 
-        # ✅ CONSTRUIR NOTAS CON PRECIOS (si vienen del frontend)
+        # ✅ CONSTRUIR NOTAS CON PRECIOS (evitar duplicados por producto)
         full_notes = notes or ''
         if product_prices and isinstance(product_prices, dict):
-            # Normalizamos claves a string para buscar por product_id
-            normalized_prices = {str(k): v for k, v in product_prices.items()}
-            price_lines = []
+            normalized_prices = {str(k): float(v) for k, v in product_prices.items()}
+            price_by_product = {}
+
             for quant_id in selected_lots:
                 quant = self.browse(quant_id)
                 if not quant.exists():
                     continue
                 pid = quant.product_id.id
-                if str(pid) in normalized_prices:
-                    price = float(normalized_prices[str(pid)])
-                    price_lines.append(
-                        f'• {quant.product_id.display_name}: {price:.2f} {currency_code}/m²'
-                    )
+                if str(pid) in normalized_prices and pid not in price_by_product:
+                    price_by_product[pid] = {
+                        'name': quant.product_id.display_name,
+                        'price': normalized_prices[str(pid)],
+                    }
 
-            if price_lines:
+            if price_by_product:
                 full_notes += '\n\n=== PRECIOS SOLICITADOS ({}) ===\n'.format(currency_code)
-                full_notes += '\n'.join(price_lines)
+                for data in price_by_product.values():
+                    full_notes += f'• {data["name"]}: {data["price"]:.2f} {currency_code}/m²\n'
 
-        # ✅ CREAR LA ORDEN DE RESERVA
+        # ✅ CALCULAR FECHA DE ORDEN Y FECHA DE EXPIRACIÓN (5 días hábiles)
+        fecha_orden = datetime.now()
+        fecha_expiracion = fecha_orden
+        dias_agregados = 0
+        while dias_agregados < 5:
+            fecha_expiracion += timedelta(days=1)
+            if fecha_expiracion.weekday() < 5:  # 0-4 = Lunes a Viernes
+                dias_agregados += 1
+
+        # ✅ CREAR LA ORDEN DE RESERVA (llenando fecha_expiracion obligatoria)
         hold_order_vals = {
             'partner_id': partner_id,
             'user_id': seller_id,
@@ -177,6 +186,8 @@ class StockQuant(models.Model):
             'arquitecto_id': architect_id,
             'notas': full_notes,
             'company_id': self.env.company.id,
+            'fecha_orden': fecha_orden,
+            'fecha_expiracion': fecha_expiracion,
         }
         order = self.env['stock.lot.hold.order'].create(hold_order_vals)
 
@@ -288,7 +299,6 @@ class StockQuant(models.Model):
 
         # ✅ CREAR LÍNEAS CON EL PRECIO SOLICITADO CORRECTO
         for product_id_key, group in product_groups.items():
-            # Puede venir como int o como string, lo normalizamos
             product_id = int(product_id_key)
             product = self.env['product.product'].browse(product_id)
 
@@ -309,8 +319,8 @@ class StockQuant(models.Model):
                 'product_id': product_id,
                 'quantity': group['total_quantity'],
                 'lot_count': len(group['lots']),
-                'requested_price': requested_price,   # Precio que pidió el vendedor
-                'authorized_price': requested_price,  # Inicialmente igual, el autorizador puede cambiarlo
+                'requested_price': requested_price,
+                'authorized_price': requested_price,
                 'medium_price': medium_price,
                 'minimum_price': minimum_price,
             })
