@@ -1,4 +1,4 @@
-# ./models/stock_quant.py en inventory_shopping_cart
+# ./models/stock_quant.py en inventory_shopping_cart...
 # -*- coding: utf-8 -*-
 from odoo import models, api
 from datetime import datetime, timedelta
