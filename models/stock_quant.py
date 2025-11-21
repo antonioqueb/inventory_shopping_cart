@@ -1,4 +1,4 @@
-# ./models/stock_quant.py en inventory_shopping_cart...
+# ./models/stock_quant.py en inventory_shopping_cart
 # -*- coding: utf-8 -*-
 from odoo import models, api
 from datetime import datetime, timedelta
@@ -90,6 +90,11 @@ class StockQuant(models.Model):
                 }]
             }
 
+        # ✅ OBTENER LA MONEDA CORRECTA
+        currency = self.env['res.currency'].search([('name', '=', currency_code)], limit=1)
+        if not currency:
+            currency = self.env.company.currency_id
+
         # ✅ VERIFICAR SI REQUIERE AUTORIZACIÓN (solo si no viene de una autorización aprobada)
         if not self.env.context.get('skip_authorization_check'):
             auth_check = self.env['product.template'].check_price_authorization_needed(
@@ -178,7 +183,7 @@ class StockQuant(models.Model):
             if fecha_expiracion.weekday() < 5:  # 0-4 = Lunes a Viernes
                 dias_agregados += 1
 
-        # ✅ CREAR LA ORDEN DE RESERVA (llenando fecha_expiracion obligatoria)
+        # ✅ CREAR LA ORDEN DE RESERVA CON MONEDA
         hold_order_vals = {
             'partner_id': partner_id,
             'user_id': seller_id,
@@ -188,10 +193,16 @@ class StockQuant(models.Model):
             'company_id': self.env.company.id,
             'fecha_orden': fecha_orden,
             'fecha_expiracion': fecha_expiracion,
+            'currency_id': currency.id,  # ✅ AGREGAR MONEDA
         }
         order = self.env['stock.lot.hold.order'].create(hold_order_vals)
 
-        # ✅ CREAR LÍNEAS EN LA ORDEN
+        # ✅ NORMALIZAR product_prices PARA BÚSQUEDA RÁPIDA
+        normalized_prices = {}
+        if product_prices and isinstance(product_prices, dict):
+            normalized_prices = {str(k): float(v) for k, v in product_prices.items()}
+
+        # ✅ CREAR LÍNEAS EN LA ORDEN CON PRECIOS
         success_count = 0
         error_count = 0
         failed_lots = []
@@ -217,11 +228,16 @@ class StockQuant(models.Model):
                     })
                     continue
 
-                # ✅ CREAR LÍNEA EN LA ORDEN (sin hold_id por ahora)
+                # ✅ OBTENER EL PRECIO PARA ESTE PRODUCTO
+                product_id = quant.product_id.id
+                precio_unitario = normalized_prices.get(str(product_id), 0.0)
+
+                # ✅ CREAR LÍNEA EN LA ORDEN CON PRECIO
                 self.env['stock.lot.hold.order.line'].create({
                     'order_id': order.id,
                     'quant_id': quant.id,
                     'lot_id': quant.lot_id.id,
+                    'precio_unitario': precio_unitario,  # ✅ AGREGAR PRECIO
                 })
 
                 success_count += 1

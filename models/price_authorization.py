@@ -167,6 +167,7 @@ class PriceAuthorization(models.Model):
     def _create_sale_order_from_authorization(self, pricelist, temp_data):
         """Crea orden de venta desde autorización aprobada"""
         
+        # ✅ USAR PRECIOS AUTORIZADOS (no los solicitados)
         product_prices = {}
         for line in self.line_ids:
             product_prices[str(line.product_id.id)] = line.authorized_price
@@ -271,6 +272,7 @@ class PriceAuthorization(models.Model):
     def _create_holds_from_authorization(self, temp_data):
         """Crea apartados desde autorización aprobada"""
         
+        # ✅ USAR PRECIOS AUTORIZADOS (no los solicitados)
         product_prices = {}
         for line in self.line_ids:
             product_prices[str(line.product_id.id)] = line.authorized_price
@@ -278,19 +280,25 @@ class PriceAuthorization(models.Model):
         selected_lots = temp_data.get('selected_lots', [])
         architect_id = temp_data.get('architect_id')
         
-        # ✅ USAR EL VENDEDOR ORIGINAL (seller_id) EN LUGAR DEL USUARIO ACTUAL
-        # ✅ PASAR EL VENDEDOR AL CONTEXTO PARA QUE LO USE create_holds_from_cart
+        # ✅ CONSTRUIR NOTAS CON INFORMACIÓN DE AUTORIZACIÓN
+        full_notes = self.notes or ''
+        full_notes += f'\n\n=== AUTORIZACIÓN DE PRECIO ===\n'
+        full_notes += f'Autorización: {self.name}\n'
+        full_notes += f'Autorizado por: {self.authorizer_id.name}\n'
+        full_notes += f'Fecha: {self.authorization_date}\n'
+        
+        # ✅ USAR EL VENDEDOR ORIGINAL Y PASAR LOS PRECIOS AUTORIZADOS
         result = self.env['stock.quant'].with_context(
             skip_authorization_check=True,
-            force_seller_id=self.seller_id.id  # ✅ AGREGAR ESTO
+            force_seller_id=self.seller_id.id
         ).create_holds_from_cart(
             partner_id=self.partner_id.id,
             project_id=self.project_id.id if self.project_id else None,
             architect_id=architect_id,
             selected_lots=selected_lots,
-            notes=self.notes,
+            notes=full_notes,  # ✅ NOTAS CON INFO DE AUTORIZACIÓN
             currency_code=self.currency_code,
-            product_prices=product_prices
+            product_prices=product_prices  # ✅ PRECIOS AUTORIZADOS
         )
         
         if result.get('success', 0) == 0 and result.get('errors', 0) > 0:
