@@ -64,6 +64,33 @@ class StockQuant(models.Model):
 
         return {'success': True}
 
+    def _get_partner_delivery_address(self, partner):
+        """Construir dirección de entrega del cliente"""
+        if not partner:
+            return ''
+        
+        address_parts = []
+        if partner.street:
+            address_parts.append(partner.street)
+        if partner.street2:
+            address_parts.append(partner.street2)
+        
+        city_parts = []
+        if partner.city:
+            city_parts.append(partner.city)
+        if partner.state_id:
+            city_parts.append(partner.state_id.name)
+        if partner.zip:
+            city_parts.append(f"C.P. {partner.zip}")
+        
+        if city_parts:
+            address_parts.append(', '.join(city_parts))
+        
+        if partner.country_id:
+            address_parts.append(partner.country_id.name)
+        
+        return '\n'.join(address_parts) if address_parts else ''
+
     @api.model
     def create_holds_from_cart(
         self,
@@ -183,7 +210,11 @@ class StockQuant(models.Model):
             if fecha_expiracion.weekday() < 5:  # 0-4 = Lunes a Viernes
                 dias_agregados += 1
 
-        # ✅ CREAR LA ORDEN DE RESERVA CON MONEDA
+        # ✅ OBTENER CLIENTE Y CONSTRUIR DIRECCIÓN
+        partner = self.env['res.partner'].browse(partner_id)
+        delivery_address = self._get_partner_delivery_address(partner)
+
+        # ✅ CREAR LA ORDEN DE RESERVA CON MONEDA Y DIRECCIÓN
         hold_order_vals = {
             'partner_id': partner_id,
             'user_id': seller_id,
@@ -193,7 +224,8 @@ class StockQuant(models.Model):
             'company_id': self.env.company.id,
             'fecha_orden': fecha_orden,
             'fecha_expiracion': fecha_expiracion,
-            'currency_id': currency.id,  # ✅ AGREGAR MONEDA
+            'currency_id': currency.id,
+            'delivery_address': delivery_address,  # ✅ AGREGAR DIRECCIÓN
         }
         order = self.env['stock.lot.hold.order'].create(hold_order_vals)
 
@@ -237,7 +269,7 @@ class StockQuant(models.Model):
                     'order_id': order.id,
                     'quant_id': quant.id,
                     'lot_id': quant.lot_id.id,
-                    'precio_unitario': precio_unitario,  # ✅ AGREGAR PRECIO
+                    'precio_unitario': precio_unitario,
                 })
 
                 success_count += 1
