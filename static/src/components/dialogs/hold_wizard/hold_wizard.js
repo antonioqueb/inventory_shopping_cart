@@ -441,7 +441,7 @@ export class HoldWizard extends Component {
                     `${result.message}\n\nPuede ver el estado en "Autorizaciones de Precio"`, 
                     { type: "warning", sticky: true }
                 );
-                this.props.onSuccess();
+                await this.props.onSuccess(); // Limpiar carrito
                 this.props.close();
                 return;
             }
@@ -453,7 +453,15 @@ export class HoldWizard extends Component {
                     { type: "success" }
                 );
                 
-                // ✅ ABRIR LA ORDEN DE APARTADO CREADA
+                // ✅ PASO 1: Limpiar carrito y actualizar UI (Esperar a que termine)
+                // Esto previene el error "Component is destroyed" porque el componente
+                // sigue vivo mientras esto se ejecuta.
+                await this.props.onSuccess(); 
+
+                // ✅ PASO 2: Cerrar el diálogo modal
+                this.props.close();
+
+                // ✅ PASO 3: Navegar (Ahora es seguro porque ya limpiamos y cerramos)
                 if (result.order_id) {
                     await this.action.doAction({
                         type: 'ir.actions.act_window',
@@ -463,9 +471,6 @@ export class HoldWizard extends Component {
                         target: 'current',
                     });
                 }
-
-                this.props.onSuccess();
-                this.props.close();
             }
             
             if (result.errors > 0) {
@@ -479,7 +484,11 @@ export class HoldWizard extends Component {
             console.error("Error creando apartados:", error);
             this.notification.add("Error al crear apartados", { type: "danger" });
         } finally {
-            this.state.isCreating = false;
+            // Solo actualizar el estado si el componente no ha sido desmontado
+            // (aunque si navegamos, se desmontará, pero `finally` corre de todas formas)
+            if (this.state) {
+                this.state.isCreating = false;
+            }
         }
     }
     
