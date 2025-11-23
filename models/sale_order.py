@@ -154,12 +154,17 @@ class SaleOrder(models.Model):
         }
     
     def _assign_specific_lots(self, picking, product, quants):
+        """
+        Asigna lotes específicos al picking y copia las dimensiones
+        del lote a la línea de movimiento para que aparezcan en la entrega.
+        """
         for move in picking.move_ids.filtered(lambda m: m.product_id == product):
             move.move_line_ids.unlink()
             move_line_model = self.env['stock.move.line'].with_context(skip_hold_validation=True)
             
             for quant in quants:
-                move_line_model.create({
+                # Valores base para crear la línea de movimiento
+                vals = {
                     'move_id': move.id,
                     'picking_id': picking.id,
                     'product_id': product.id,
@@ -168,4 +173,26 @@ class SaleOrder(models.Model):
                     'location_dest_id': move.location_dest_id.id,
                     'quantity': quant.quantity,
                     'product_uom_id': move.product_uom.id,
-                })
+                }
+
+                # === CORRECCIÓN: COPIAR DIMENSIONES DEL LOTE A LA LÍNEA ===
+                # Esto es necesario porque al crear via código no se ejecuta el onchange
+                # que normalmente llenaría estos campos 'temp'.
+                if quant.lot_id:
+                    vals.update({
+                        'x_grosor_temp': quant.lot_id.x_grosor,
+                        'x_alto_temp': quant.lot_id.x_alto,
+                        'x_ancho_temp': quant.lot_id.x_ancho,
+                        'x_bloque_temp': quant.lot_id.x_bloque,
+                        'x_atado_temp': quant.lot_id.x_atado,
+                        'x_tipo_temp': quant.lot_id.x_tipo,
+                        'x_pedimento_temp': quant.lot_id.x_pedimento,
+                        'x_contenedor_temp': quant.lot_id.x_contenedor,
+                        'x_referencia_proveedor_temp': quant.lot_id.x_referencia_proveedor,
+                    })
+                    
+                    # El campo x_grupo_temp es Many2many, requiere formato especial
+                    if quant.lot_id.x_grupo:
+                        vals['x_grupo_temp'] = [(6, 0, quant.lot_id.x_grupo.ids)]
+
+                move_line_model.create(vals)
