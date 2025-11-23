@@ -7,6 +7,7 @@ export class HoldWizard extends Component {
     setup() {
         this.orm = useService("orm");
         this.notification = useService("notification");
+        this.action = useService("action"); // ✅ AGREGADO: Servicio action
         
         this.productIds = Object.keys(this.props.productGroups).map(id => parseInt(id));
         this.currentProductIndex = 0;
@@ -451,6 +452,18 @@ export class HoldWizard extends Component {
                     `${result.success} lotes apartados correctamente`, 
                     { type: "success" }
                 );
+                
+                // ✅ ABRIR LA ORDEN DE APARTADO CREADA
+                if (result.order_id) {
+                    await this.action.doAction({
+                        type: 'ir.actions.act_window',
+                        res_model: 'stock.lot.hold.order',
+                        res_id: result.order_id,
+                        views: [[false, 'form']],
+                        target: 'current',
+                    });
+                }
+
                 this.props.onSuccess();
                 this.props.close();
             }
