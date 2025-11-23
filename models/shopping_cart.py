@@ -1,7 +1,7 @@
 # ./models/shopping_cart.py
 # -*- coding: utf-8 -*-
 from odoo import models, fields, api
-from odoo.models import Constraint  # Requerido para Odoo 19
+from odoo.models import Constraint
 
 class ShoppingCart(models.Model):
     _name = 'shopping.cart'
@@ -15,7 +15,8 @@ class ShoppingCart(models.Model):
     location_name = fields.Char(string='Ubicación')
     added_at = fields.Datetime(string='Agregado', default=fields.Datetime.now)
     
-    unique_user_quant = Constraint(
+    # === CORRECCIÓN: El nombre de la variable DEBE empezar con guion bajo (_) ===
+    _unique_user_quant = Constraint(
         'unique(user_id, quant_id)',
         'Este lote ya está en tu carrito'
     )
@@ -26,19 +27,25 @@ class ShoppingCart(models.Model):
         items = self.search([('user_id', '=', self.env.user.id)])
         result = []
         for item in items:
-            # Usar 'stock.lot' (correcto para Odoo 16+)
+            # Usar 'stock.lot'
             lot = self.env['stock.lot'].browse(item.lot_id)
             if not lot.exists():
                 continue
                 
             hold_info = ''
             seller_name = ''
-            # Verificamos si el quant tiene hold (depende de stock_lot_dimensions)
-            if hasattr(item.quant_id, 'x_tiene_hold') and item.quant_id.x_tiene_hold and item.quant_id.x_hold_activo_id:
-                hold = item.quant_id.x_hold_activo_id
-                hold_info = item.quant_id.x_hold_para
-                if hold.user_id:
-                    seller_name = hold.user_id.name
+            
+            # Verificación segura de campos que dependen de otros módulos
+            tiene_hold = False
+            if hasattr(item.quant_id, 'x_tiene_hold'):
+                tiene_hold = item.quant_id.x_tiene_hold
+                
+                if tiene_hold and hasattr(item.quant_id, 'x_hold_activo_id') and item.quant_id.x_hold_activo_id:
+                    hold = item.quant_id.x_hold_activo_id
+                    if hasattr(item.quant_id, 'x_hold_para'):
+                        hold_info = item.quant_id.x_hold_para
+                    if hold.user_id:
+                        seller_name = hold.user_id.name
             
             result.append({
                 'id': item.quant_id.id,
@@ -48,7 +55,7 @@ class ShoppingCart(models.Model):
                 'product_name': item.product_id.display_name,
                 'quantity': item.quantity,
                 'location_name': item.location_name,
-                'tiene_hold': getattr(item.quant_id, 'x_tiene_hold', False),
+                'tiene_hold': tiene_hold,
                 'hold_info': hold_info,
                 'seller_name': seller_name
             })
@@ -57,11 +64,9 @@ class ShoppingCart(models.Model):
     @api.model
     def add_to_cart(self, quant_id=None, lot_id=None, product_id=None, quantity=None, location_name=None):
         """Agregar item al carrito"""
-        # Validación de parámetros (quantity=0 es válido, pero None no)
         if not all([quant_id, lot_id, product_id, quantity is not None]):
             return {'success': False, 'message': 'Faltan parámetros'}
         
-        # Validación Python previa para evitar error de SQL
         existing = self.search([('user_id', '=', self.env.user.id), ('quant_id', '=', quant_id)])
         if existing:
             return {'success': False, 'message': 'Ya está en el carrito'}
