@@ -2,7 +2,7 @@
 <templates xml:space="preserve">
     
     <t t-name="inventory_shopping_cart.HoldWizard" owl="1">
-        <Dialog size="'lg'">
+        <Dialog size="'xl'">
             <div class="hold-wizard-content">
                 <!-- Header con total de lotes -->
                 <div class="alert alert-light border-start border-4 border-secondary mb-4">
@@ -18,7 +18,7 @@
                     </div>
                 </div>
                 
-                <!-- Indicador de pasos -->
+                <!-- Indicador de pasos (6 pasos ahora) -->
                 <div class="steps-indicator mb-4">
                     <div class="d-flex justify-content-between align-items-center">
                         <div class="step-item" t-att-class="{ active: state.currentStep >= 1, completed: state.currentStep > 1 }">
@@ -26,23 +26,35 @@
                             <div class="step-label">Cliente</div>
                         </div>
                         <div class="step-line" t-att-class="{ active: state.currentStep > 1 }"></div>
+                        
                         <div class="step-item" t-att-class="{ active: state.currentStep >= 2, completed: state.currentStep > 2 }">
                             <div class="step-number">2</div>
                             <div class="step-label">Proyecto</div>
                         </div>
                         <div class="step-line" t-att-class="{ active: state.currentStep > 2 }"></div>
+                        
                         <div class="step-item" t-att-class="{ active: state.currentStep >= 3, completed: state.currentStep > 3 }">
                             <div class="step-number">3</div>
                             <div class="step-label">Arquitecto</div>
                         </div>
                         <div class="step-line" t-att-class="{ active: state.currentStep > 3 }"></div>
+                        
                         <div class="step-item" t-att-class="{ active: state.currentStep >= 4, completed: state.currentStep > 4 }">
                             <div class="step-number">4</div>
                             <div class="step-label">Precios</div>
                         </div>
                         <div class="step-line" t-att-class="{ active: state.currentStep > 4 }"></div>
-                        <div class="step-item" t-att-class="{ active: state.currentStep >= 5 }">
+                        
+                        <!-- NUEVO PASO 5: SERVICIOS -->
+                        <div class="step-item" t-att-class="{ active: state.currentStep >= 5, completed: state.currentStep > 5 }">
                             <div class="step-number">5</div>
+                            <div class="step-label">Servicios</div>
+                        </div>
+                        <div class="step-line" t-att-class="{ active: state.currentStep > 5 }"></div>
+                        
+                        <!-- PASO 6: CONFIRMAR -->
+                        <div class="step-item" t-att-class="{ active: state.currentStep >= 6 }">
+                            <div class="step-number">6</div>
                             <div class="step-label">Confirmar</div>
                         </div>
                     </div>
@@ -431,9 +443,139 @@
                         </div>
                     </t>
                 </div>
-                
-                <!-- PASO 5: CONFIRMAR -->
+
+                <!-- PASO 5: SERVICIOS (NUEVO) -->
                 <div class="step-content" t-if="state.currentStep === 5">
+                    <h5 class="mb-3">
+                        <i class="fa fa-wrench text-secondary me-2"></i>
+                        Agregar Servicios (Opcional)
+                    </h5>
+                    
+                    <div class="alert alert-info mb-3">
+                        <i class="fa fa-info-circle me-2"></i>
+                        Agrega servicios como fletes, maniobras, seguros, etc. Puedes continuar sin agregar servicios.
+                        Estos servicios se incluirán en el presupuesto.
+                    </div>
+                    
+                    <!-- Buscador de servicios -->
+                    <div class="card border mb-3">
+                        <div class="card-body">
+                            <h6 class="card-title mb-3">Buscar Servicio</h6>
+                            <div class="input-group mb-2">
+                                <span class="input-group-text">
+                                    <i class="fa fa-search"></i>
+                                </span>
+                                <input 
+                                    type="text"
+                                    class="form-control"
+                                    placeholder="Buscar por nombre o código..."
+                                    t-model="state.searchServiceTerm"
+                                    t-on-input="onSearchService"
+                                />
+                            </div>
+                            
+                            <div class="list-group" style="max-height: 200px; overflow-y: auto;" t-if="state.availableServices.length > 0">
+                                <t t-foreach="state.availableServices" t-as="service" t-key="service.id">
+                                    <button 
+                                        type="button"
+                                        class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                                        t-on-click="() => this.addService(service)"
+                                    >
+                                        <div>
+                                            <strong t-esc="service.display_name"></strong>
+                                            <br/>
+                                            <small class="text-muted">
+                                                Precio: <t t-esc="formatNumber(service.list_price)"/> <t t-esc="state.selectedCurrency"/>
+                                            </small>
+                                        </div>
+                                        <i class="fa fa-plus-circle text-primary"></i>
+                                    </button>
+                                </t>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Lista de servicios seleccionados -->
+                    <div class="card border" t-if="state.selectedServices.length > 0">
+                        <div class="card-body">
+                            <h6 class="card-title mb-3">Servicios Seleccionados</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th style="width: 40%;">Servicio</th>
+                                            <th class="text-center" style="width: 20%;">Cantidad</th>
+                                            <th class="text-end" style="width: 20%;">Precio Unit.</th>
+                                            <th class="text-end" style="width: 15%;">Total</th>
+                                            <th style="width: 5%;"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <t t-foreach="state.selectedServices" t-as="service" t-key="service_index">
+                                            <tr>
+                                                <td>
+                                                    <strong t-esc="service.display_name"></strong>
+                                                    <br/>
+                                                    <small class="text-muted" t-esc="service.uom_name"></small>
+                                                </td>
+                                                <td class="text-center">
+                                                    <input 
+                                                        type="number"
+                                                        class="form-control form-control-sm text-center"
+                                                        t-model.number="service.quantity"
+                                                        t-on-change="(ev) => this.updateServiceQuantity(service_index, ev.target.value)"
+                                                        min="0.01"
+                                                        step="0.01"
+                                                        style="width: 80px; display: inline-block;"
+                                                    />
+                                                </td>
+                                                <td class="text-end">
+                                                    <input 
+                                                        type="number"
+                                                        class="form-control form-control-sm text-end"
+                                                        t-model.number="service.price_unit"
+                                                        t-on-change="(ev) => this.updateServicePrice(service_index, ev.target.value)"
+                                                        min="0"
+                                                        step="0.01"
+                                                        style="width: 100px; display: inline-block;"
+                                                    />
+                                                </td>
+                                                <td class="text-end">
+                                                    <strong t-esc="formatNumber(service.quantity * service.price_unit)"></strong>
+                                                </td>
+                                                <td class="text-center">
+                                                    <button 
+                                                        type="button"
+                                                        class="btn btn-sm btn-link text-danger p-0"
+                                                        t-on-click="() => this.removeService(service_index)"
+                                                        title="Eliminar"
+                                                    >
+                                                        <i class="fa fa-trash"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        </t>
+                                    </tbody>
+                                    <tfoot class="table-light">
+                                        <tr>
+                                            <th colspan="3">TOTAL SERVICIOS</th>
+                                            <th class="text-end">
+                                                <strong class="text-success">
+                                                    <t t-esc="formatNumber(getTotalServices())"/>
+                                                    <small><t t-esc="state.selectedCurrency"/></small>
+                                                </strong>
+                                            </th>
+                                            <th></th>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- PASO 6: CONFIRMAR -->
+                <div class="step-content" t-if="state.currentStep === 6">
                     <h5 class="mb-3">
                         <i class="fa fa-check-circle text-success me-2"></i>
                         Confirmar Apartados
@@ -475,16 +617,19 @@
                         </div>
                     </div>
                     
+                    <!-- Tabla de Precios de Productos -->
                     <div class="card border mb-3">
-                        <div class="card-body">
-                            <h6 class="card-title mb-3">Precios Configurados</h6>
-                            <table class="table table-sm">
+                        <div class="card-header bg-light">
+                            <strong>Productos</strong>
+                        </div>
+                        <div class="card-body p-0">
+                            <table class="table table-sm mb-0">
                                 <thead>
                                     <tr>
                                         <th>Producto</th>
                                         <th class="text-end">Cantidad</th>
                                         <th class="text-end">Precio/m²</th>
-                                        <th class="text-end">Total Estimado</th>
+                                        <th class="text-end">Subtotal</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -501,6 +646,44 @@
                                 </tbody>
                             </table>
                         </div>
+                    </div>
+
+                    <!-- Tabla de Servicios Adicionales (si existen) -->
+                    <div class="card border mb-3" t-if="state.selectedServices.length > 0">
+                        <div class="card-header bg-light">
+                            <strong>Servicios Adicionales</strong>
+                        </div>
+                        <div class="card-body p-0">
+                            <table class="table table-sm mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Servicio</th>
+                                        <th class="text-end">Cantidad</th>
+                                        <th class="text-end">Precio Unit.</th>
+                                        <th class="text-end">Subtotal</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <t t-foreach="state.selectedServices" t-as="svc" t-key="svc_index">
+                                        <tr>
+                                            <td><t t-esc="svc.display_name"/></td>
+                                            <td class="text-end"><t t-esc="formatNumber(svc.quantity)"/></td>
+                                            <td class="text-end"><t t-esc="formatNumber(svc.price_unit)"/> <t t-esc="state.selectedCurrency"/></td>
+                                            <td class="text-end"><t t-esc="formatNumber(svc.quantity * svc.price_unit)"/> <t t-esc="state.selectedCurrency"/></td>
+                                        </tr>
+                                    </t>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Total General -->
+                    <div class="alert alert-secondary border d-flex justify-content-between align-items-center">
+                        <strong style="font-size: 1.1em;">TOTAL ESTIMADO:</strong>
+                        <h4 class="mb-0 text-primary">
+                            <t t-set="totalProducts" t-value="Object.entries(props.productGroups).reduce((sum, [pid, g]) => sum + (g.total_quantity * state.productPrices[pid]), 0)"/>
+                            <t t-esc="formatNumber(totalProducts + getTotalServices())"/> <t t-esc="state.selectedCurrency"/>
+                        </h4>
                     </div>
                     
                     <div class="mb-3">
@@ -534,7 +717,7 @@
                 <button 
                     class="btn btn-light border btn-lg"
                     t-on-click="prevStep"
-                    t-if="state.currentStep > 1 and state.currentStep &lt; 5"
+                    t-if="state.currentStep > 1 and state.currentStep &lt; 6"
                 >
                     <i class="fa fa-chevron-left me-2"></i>
                     Anterior
@@ -552,7 +735,7 @@
                 <button 
                     class="btn btn-secondary btn-lg"
                     t-on-click="nextStep"
-                    t-if="state.currentStep &lt; 5"
+                    t-if="state.currentStep &lt; 6"
                 >
                     Siguiente
                     <i class="fa fa-chevron-right ms-2"></i>
@@ -561,7 +744,7 @@
                 <button 
                     class="btn btn-light border btn-lg"
                     t-on-click="prevStep"
-                    t-if="state.currentStep === 5"
+                    t-if="state.currentStep === 6"
                 >
                     <i class="fa fa-chevron-left me-2"></i>
                     Anterior
@@ -570,7 +753,7 @@
                 <button 
                     class="btn btn-primary btn-lg"
                     t-on-click="createHolds"
-                    t-if="state.currentStep === 5"
+                    t-if="state.currentStep === 6"
                     t-att-disabled="state.isCreating"
                 >
                     <t t-if="!state.isCreating">

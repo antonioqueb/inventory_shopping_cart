@@ -101,9 +101,12 @@ class StockQuant(models.Model):
         notes=None,
         currency_code='USD',
         product_prices=None,
+        services=None,  # ✅ NUEVO PARÁMETRO
     ):
         """
-        Crear múltiples apartados desde el carrito SIEMPRE con orden
+        Crear múltiples apartados desde el carrito SIEMPRE con orden.
+        Ahora soporta la inclusión de SERVICIOS en la orden de reserva.
+        
         - Si requiere autorización: crea la solicitud y NO crea apartados.
         - Si no requiere autorización: crea stock.lot.hold.order + líneas
           y confirma, lo que genera los holds individuales.
@@ -234,7 +237,7 @@ class StockQuant(models.Model):
         if product_prices and isinstance(product_prices, dict):
             normalized_prices = {str(k): float(v) for k, v in product_prices.items()}
 
-        # ✅ CREAR LÍNEAS EN LA ORDEN CON PRECIOS
+        # ✅ CREAR LÍNEAS DE PRODUCTOS (LOTES) EN LA ORDEN CON PRECIOS
         success_count = 0
         error_count = 0
         failed_lots = []
@@ -285,8 +288,22 @@ class StockQuant(models.Model):
                     'error': str(e),
                 })
 
-        # ✅ SI AGREGAMOS LÍNEAS, CONFIRMAR LA ORDEN (esto crea los holds)
-        if success_count > 0:
+        # ✅ NUEVA LÓGICA: AGREGAR SERVICIOS A LA ORDEN
+        if services and order:
+            for service in services:
+                # service estructura: {'product_id': int, 'quantity': float, 'price_unit': float}
+                self.env['stock.lot.hold.order.line'].create({
+                    'order_id': order.id,
+                    'product_id': service['product_id'],
+                    'lot_id': False,  # No aplica lote para servicios
+                    'quant_id': False,  # No aplica stock físico para servicios
+                    'cantidad_m2': service['quantity'],  # Usamos este campo para la cantidad
+                    'precio_unitario': service['price_unit'],
+                })
+
+        # ✅ SI AGREGAMOS LÍNEAS (PRODUCTOS O SERVICIOS), CONFIRMAR LA ORDEN
+        # Se permite confirmar si hay éxitos en lotes O si hay servicios añadidos
+        if success_count > 0 or (services and len(services) > 0):
             try:
                 order.action_confirm()
             except Exception as e:
@@ -298,9 +315,10 @@ class StockQuant(models.Model):
                     }],
                 }
         else:
-            # Si no hubo éxitos, eliminar la orden vacía
-            order.unlink()
-            order = False
+            # Si no hubo éxitos ni servicios, eliminar la orden vacía
+            if order:
+                order.unlink()
+                order = False
 
         return {
             'success': success_count,

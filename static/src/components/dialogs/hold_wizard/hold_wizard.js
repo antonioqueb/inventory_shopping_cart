@@ -7,7 +7,7 @@ export class HoldWizard extends Component {
     setup() {
         this.orm = useService("orm");
         this.notification = useService("notification");
-        this.action = useService("action"); // ✅ AGREGADO: Servicio action
+        this.action = useService("action"); 
         
         this.productIds = Object.keys(this.props.productGroups).map(id => parseInt(id));
         this.currentProductIndex = 0;
@@ -48,6 +48,11 @@ export class HoldWizard extends Component {
             productPrices: {},
             productPriceOptions: {},
             
+            // === NUEVO: Servicios ===
+            searchServiceTerm: '',
+            availableServices: [],
+            selectedServices: [], // Array de {product_id, display_name, quantity, price_unit, uom_name}
+
             // Notas
             notas: '',
             
@@ -370,6 +375,80 @@ export class HoldWizard extends Component {
             this.notification.add("Error al crear arquitecto", { type: "danger" });
         }
     }
+
+    // ========== SERVICIOS (NUEVO) ==========
+    
+    onSearchService(ev) {
+        const value = ev.target.value;
+        this.state.searchServiceTerm = value;
+        
+        if (this.searchTimeout) {
+            clearTimeout(this.searchTimeout);
+        }
+        
+        this.searchTimeout = setTimeout(() => {
+            this.searchServices();
+        }, 300);
+    }
+    
+    async searchServices() {
+        try {
+            const services = await this.orm.searchRead(
+                "product.product",
+                [
+                    ['type', '=', 'service'],
+                    ['sale_ok', '=', true],
+                    '|',
+                    ['name', 'ilike', this.state.searchServiceTerm.trim()],
+                    ['default_code', 'ilike', this.state.searchServiceTerm.trim()]
+                ],
+                ['id', 'display_name', 'list_price', 'uom_id'],
+                { limit: 20 }
+            );
+            
+            this.state.availableServices = services;
+        } catch (error) {
+            console.error("Error buscando servicios:", error);
+            this.notification.add("Error al buscar servicios", { type: "danger" });
+        }
+    }
+    
+    addService(service) {
+        const exists = this.state.selectedServices.find(s => s.product_id === service.id);
+        if (exists) {
+            this.notification.add("Este servicio ya fue agregado", { type: "warning" });
+            return;
+        }
+        
+        this.state.selectedServices.push({
+            product_id: service.id,
+            display_name: service.display_name,
+            quantity: 1,
+            price_unit: service.list_price,
+            uom_name: service.uom_id[1]
+        });
+        
+        this.state.searchServiceTerm = '';
+        this.state.availableServices = [];
+    }
+    
+    removeService(index) {
+        this.state.selectedServices.splice(index, 1);
+    }
+    
+    updateServiceQuantity(index, value) {
+        const qty = parseFloat(value) || 1;
+        this.state.selectedServices[index].quantity = qty > 0 ? qty : 1;
+    }
+    
+    updateServicePrice(index, value) {
+        const price = parseFloat(value) || 0;
+        this.state.selectedServices[index].price_unit = price >= 0 ? price : 0;
+    }
+    
+    getTotalServices() {
+        return this.state.selectedServices.reduce((sum, s) => sum + (s.quantity * s.price_unit), 0);
+    }
     
     // ========== NAVEGACIÓN ==========
     
@@ -398,7 +477,8 @@ export class HoldWizard extends Component {
             }
         }
         
-        if (this.state.currentStep < 5) {
+        // Incrementado el límite a 6 pasos (5 es Servicios, 6 es Confirmar)
+        if (this.state.currentStep < 6) {
             this.state.currentStep++;
         }
     }
@@ -420,6 +500,13 @@ export class HoldWizard extends Component {
         this.state.isCreating = true;
         
         try {
+            // Preparar lista de servicios para enviar al backend
+            const services = this.state.selectedServices.map(s => ({
+                product_id: s.product_id,
+                quantity: s.quantity,
+                price_unit: s.price_unit
+            }));
+
             const result = await this.orm.call(
                 "stock.quant",
                 "create_holds_from_cart",
@@ -431,7 +518,8 @@ export class HoldWizard extends Component {
                     selected_lots: this.props.selectedLots,
                     notes: this.state.notas,
                     currency_code: this.state.selectedCurrency,
-                    product_prices: this.state.productPrices
+                    product_prices: this.state.productPrices,
+                    services: services // ✅ Enviamos los servicios
                 }
             );
             
@@ -447,15 +535,13 @@ export class HoldWizard extends Component {
             }
             
             // ✅ CASO NORMAL: APARTADOS CREADOS
-            if (result.success > 0) {
+            if (result.success > 0 || (services.length > 0 && result.order_id)) {
                 this.notification.add(
                     `${result.success} lotes apartados correctamente`, 
                     { type: "success" }
                 );
                 
-                // ✅ PASO 1: Limpiar carrito y actualizar UI (Esperar a que termine)
-                // Esto previene el error "Component is destroyed" porque el componente
-                // sigue vivo mientras esto se ejecuta.
+                // ✅ PASO 1: Limpiar carrito y actualizar UI
                 await this.props.onSuccess(); 
 
                 // ✅ PASO 2: Cerrar el diálogo modal
@@ -485,7 +571,6 @@ export class HoldWizard extends Component {
             this.notification.add("Error al crear apartados", { type: "danger" });
         } finally {
             // Solo actualizar el estado si el componente no ha sido desmontado
-            // (aunque si navegamos, se desmontará, pero `finally` corre de todas formas)
             if (this.state) {
                 this.state.isCreating = false;
             }
