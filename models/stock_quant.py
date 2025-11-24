@@ -101,22 +101,22 @@ class StockQuant(models.Model):
         notes=None,
         currency_code='USD',
         product_prices=None,
-        services=None,  # ✅ NUEVO PARÁMETRO
+        services=None,
     ):
         """
         Crear múltiples apartados desde el carrito SIEMPRE con orden.
-        Ahora soporta la inclusión de SERVICIOS en la orden de reserva.
-        
-        - Si requiere autorización: crea la solicitud y NO crea apartados.
-        - Si no requiere autorización: crea stock.lot.hold.order + líneas
-          y confirma, lo que genera los holds individuales.
+        Soporta servicios y lotes físicos.
         """
-        if not selected_lots or not partner_id:
+        # Permitimos que selected_lots sea vacío si hay servicios
+        has_lots = selected_lots and len(selected_lots) > 0
+        has_services = services and len(services) > 0
+
+        if not partner_id or (not has_lots and not has_services):
             return {
                 'success': 0,
                 'errors': 1,
                 'failed': [{
-                    'error': 'Faltan parámetros requeridos'
+                    'error': 'Faltan parámetros requeridos (lotes o servicios)'
                 }]
             }
 
@@ -125,8 +125,8 @@ class StockQuant(models.Model):
         if not currency:
             currency = self.env.company.currency_id
 
-        # ✅ VERIFICAR SI REQUIERE AUTORIZACIÓN (solo si no viene de una autorización aprobada)
-        if not self.env.context.get('skip_authorization_check'):
+        # ✅ VERIFICAR AUTORIZACIÓN SOLO PARA LOTES FÍSICOS
+        if has_lots and not self.env.context.get('skip_authorization_check'):
             auth_check = self.env['product.template'].check_price_authorization_needed(
                 product_prices,
                 currency_code
@@ -182,22 +182,23 @@ class StockQuant(models.Model):
         # ✅ DETERMINAR QUÉ VENDEDOR USAR
         seller_id = self.env.context.get('force_seller_id', self.env.user.id)
 
-        # ✅ CONSTRUIR NOTAS CON PRECIOS (evitar duplicados por producto)
+        # ✅ CONSTRUIR NOTAS CON PRECIOS
         full_notes = notes or ''
         if product_prices and isinstance(product_prices, dict):
             normalized_prices = {str(k): float(v) for k, v in product_prices.items()}
             price_by_product = {}
 
-            for quant_id in selected_lots:
-                quant = self.browse(quant_id)
-                if not quant.exists():
-                    continue
-                pid = quant.product_id.id
-                if str(pid) in normalized_prices and pid not in price_by_product:
-                    price_by_product[pid] = {
-                        'name': quant.product_id.display_name,
-                        'price': normalized_prices[str(pid)],
-                    }
+            if has_lots:
+                for quant_id in selected_lots:
+                    quant = self.browse(quant_id)
+                    if not quant.exists():
+                        continue
+                    pid = quant.product_id.id
+                    if str(pid) in normalized_prices and pid not in price_by_product:
+                        price_by_product[pid] = {
+                            'name': quant.product_id.display_name,
+                            'price': normalized_prices[str(pid)],
+                        }
 
             if price_by_product:
                 full_notes += '\n\n=== PRECIOS SOLICITADOS ({}) ===\n'.format(currency_code)
@@ -228,82 +229,94 @@ class StockQuant(models.Model):
             'fecha_orden': fecha_orden,
             'fecha_expiracion': fecha_expiracion,
             'currency_id': currency.id,
-            'delivery_address': delivery_address,  # ✅ AGREGAR DIRECCIÓN
+            'delivery_address': delivery_address,
         }
         order = self.env['stock.lot.hold.order'].create(hold_order_vals)
 
-        # ✅ NORMALIZAR product_prices PARA BÚSQUEDA RÁPIDA
+        # ✅ NORMALIZAR product_prices
         normalized_prices = {}
         if product_prices and isinstance(product_prices, dict):
             normalized_prices = {str(k): float(v) for k, v in product_prices.items()}
 
-        # ✅ CREAR LÍNEAS DE PRODUCTOS (LOTES) EN LA ORDEN CON PRECIOS
         success_count = 0
         error_count = 0
         failed_lots = []
 
-        for quant_id in selected_lots:
-            try:
-                quant = self.browse(quant_id)
+        # ✅ CREAR LÍNEAS DE LOTES FÍSICOS
+        if has_lots:
+            for quant_id in selected_lots:
+                try:
+                    quant = self.browse(quant_id)
 
-                if not quant.exists() or not quant.lot_id:
+                    if not quant.exists() or not quant.lot_id:
+                        error_count += 1
+                        failed_lots.append({
+                            'lot_name': f'Quant {quant_id}',
+                            'error': 'Lote no encontrado',
+                        })
+                        continue
+
+                    # Verificar si ya tiene hold
+                    if hasattr(quant, 'x_tiene_hold') and quant.x_tiene_hold:
+                        error_count += 1
+                        failed_lots.append({
+                            'lot_name': quant.lot_id.name,
+                            'error': 'Ya tiene apartado activo',
+                        })
+                        continue
+
+                    product_id = quant.product_id.id
+                    precio_unitario = normalized_prices.get(str(product_id), 0.0)
+
+                    # ⚠️ CORRECCIÓN CLAVE: Pasamos explícitamente product_id ⚠️
+                    self.env['stock.lot.hold.order.line'].create({
+                        'order_id': order.id,
+                        'quant_id': quant.id,
+                        'lot_id': quant.lot_id.id,
+                        'product_id': product_id,  # ✅ AQUÍ ESTÁ LA SOLUCIÓN AL ERROR NOT NULL
+                        'precio_unitario': precio_unitario,
+                    })
+
+                    success_count += 1
+
+                except Exception as e:
                     error_count += 1
                     failed_lots.append({
-                        'lot_name': f'Quant {quant_id}',
-                        'error': 'Lote no encontrado',
+                        'lot_name': (
+                            quant.lot_id.name
+                            if quant.exists() and quant.lot_id
+                            else f'Quant {quant_id}'
+                        ),
+                        'error': str(e),
                     })
-                    continue
 
-                # Verificar si ya tiene hold
-                if hasattr(quant, 'x_tiene_hold') and quant.x_tiene_hold:
-                    error_count += 1
-                    failed_lots.append({
-                        'lot_name': quant.lot_id.name,
-                        'error': 'Ya tiene apartado activo',
-                    })
-                    continue
-
-                # ✅ OBTENER EL PRECIO PARA ESTE PRODUCTO
-                product_id = quant.product_id.id
-                precio_unitario = normalized_prices.get(str(product_id), 0.0)
-
-                # ✅ CREAR LÍNEA EN LA ORDEN CON PRECIO
-                self.env['stock.lot.hold.order.line'].create({
-                    'order_id': order.id,
-                    'quant_id': quant.id,
-                    'lot_id': quant.lot_id.id,
-                    'precio_unitario': precio_unitario,
-                })
-
-                success_count += 1
-
-            except Exception as e:
-                error_count += 1
-                failed_lots.append({
-                    'lot_name': (
-                        quant.lot_id.name
-                        if quant.exists() and quant.lot_id
-                        else f'Quant {quant_id}'
-                    ),
-                    'error': str(e),
-                })
-
-        # ✅ NUEVA LÓGICA: AGREGAR SERVICIOS A LA ORDEN
-        if services and order:
+        # ✅ CREAR LÍNEAS DE SERVICIOS
+        if has_services:
             for service in services:
-                # service estructura: {'product_id': int, 'quantity': float, 'price_unit': float}
-                self.env['stock.lot.hold.order.line'].create({
-                    'order_id': order.id,
-                    'product_id': service['product_id'],
-                    'lot_id': False,  # No aplica lote para servicios
-                    'quant_id': False,  # No aplica stock físico para servicios
-                    'cantidad_m2': service['quantity'],  # Usamos este campo para la cantidad
-                    'precio_unitario': service['price_unit'],
-                })
+                try:
+                    # service estructura: {'product_id': int, 'quantity': float, 'price_unit': float}
+                    self.env['stock.lot.hold.order.line'].create({
+                        'order_id': order.id,
+                        'product_id': service['product_id'], # ✅ El producto es obligatorio
+                        'lot_id': False,
+                        'quant_id': False,
+                        'cantidad_m2': service['quantity'],
+                        'precio_unitario': service['price_unit'],
+                    })
+                except Exception as e:
+                    # Logueamos el error pero no detenemos todo el proceso por un servicio
+                    error_count += 1
+                    failed_lots.append({
+                        'lot_name': f"Servicio ID {service.get('product_id')}",
+                        'error': str(e)
+                    })
 
-        # ✅ SI AGREGAMOS LÍNEAS (PRODUCTOS O SERVICIOS), CONFIRMAR LA ORDEN
-        # Se permite confirmar si hay éxitos en lotes O si hay servicios añadidos
-        if success_count > 0 or (services and len(services) > 0):
+        # ✅ CONFIRMAR ORDEN SI HAY LÍNEAS CREADAS (LOTES O SERVICIOS)
+        # Nota: success_count solo cuenta lotes físicos exitosos.
+        # Si solo hay servicios, success_count será 0, pero debemos permitir confirmar.
+        tiene_servicios = has_services and len(services) > 0
+        
+        if success_count > 0 or tiene_servicios:
             try:
                 order.action_confirm()
             except Exception as e:
@@ -315,7 +328,7 @@ class StockQuant(models.Model):
                     }],
                 }
         else:
-            # Si no hubo éxitos ni servicios, eliminar la orden vacía
+            # Si no hubo éxitos en lotes y tampoco hay servicios, eliminar la orden vacía
             if order:
                 order.unlink()
                 order = False
