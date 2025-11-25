@@ -2,7 +2,8 @@
 # models/sale_order.py
 from odoo import models, fields, api
 from odoo.exceptions import UserError
-from .utils.picking_cleaner import PickingLotCleaner
+# CORRECCIÓN AQUÍ ABAJO: Importar desde el módulo stock_lot_dimensions
+from odoo.addons.stock_lot_dimensions.models.utils.picking_cleaner import PickingLotCleaner
 import logging
 
 _logger = logging.getLogger(__name__)
@@ -35,7 +36,6 @@ class SaleOrder(models.Model):
         currency_code = pricelist.name
         
         # Si viene de hold order, omitir verificación de autorización
-        # (Se asume que el hold ya fue autorizado o gestionado previamente)
         from_hold_order = self.env.context.get('from_hold_order', False)
         
         if not from_hold_order:
@@ -97,7 +97,7 @@ class SaleOrder(models.Model):
         # === CREACIÓN DE LA ORDEN ===
         company_id = self.env.context.get('company_id') or self.env.company.id
         
-        # Validación de Holds (Apartados) para asegurar que el cliente es el correcto
+        # Validación de Holds (Apartados)
         for product in products:
             if 'selected_lots' in product:
                 for quant_id in product['selected_lots']:
@@ -107,14 +107,14 @@ class SaleOrder(models.Model):
                         if hold_partner.id != partner_id:
                             raise UserError(f"El lote {quant.lot_id.name} está apartado para {hold_partner.name}")
         
-        # === CREACIÓN DE LA ORDEN CON PROYECTO Y ARQUITECTO (CORREGIDO) ===
+        # === CREACIÓN DE LA ORDEN CON PROYECTO Y ARQUITECTO ===
         sale_order = self.with_company(company_id).create({
             'partner_id': partner_id,
             'note': notes or '',
             'pricelist_id': pricelist_id,
             'company_id': company_id,
-            'x_project_id': project_id,      # ✅ Campo agregado
-            'x_architect_id': architect_id,  # ✅ Campo agregado
+            'x_project_id': project_id,
+            'x_architect_id': architect_id,
         })
         
         # Crear líneas de productos físicos
@@ -135,7 +135,6 @@ class SaleOrder(models.Model):
                 'company_id': company_id,
             }
             
-            # Asignar relación many2many de lotes si existen
             if 'selected_lots' in product and product['selected_lots']:
                 line_vals['x_selected_lots'] = [(6, 0, product['selected_lots'])]
 
@@ -160,17 +159,16 @@ class SaleOrder(models.Model):
                     'company_id': company_id,
                 })
         
-        # Confirmar la orden (genera el picking)
+        # Confirmar la orden
         sale_order.with_company(company_id).action_confirm()
         
-        # Asignar lotes específicos al picking generado
+        # Asignar lotes específicos
         for line in sale_order.order_line:
             if line.x_selected_lots:
                 picking = line.move_ids.mapped('picking_id')
                 if picking:
                     self._assign_specific_lots(picking, line.product_id, line.x_selected_lots)
         
-        # Limpiar carrito solo si no viene de una orden de reserva (flujo normal de venta)
         if not from_hold_order:
             self.env['shopping.cart'].clear_cart()
         
@@ -182,17 +180,14 @@ class SaleOrder(models.Model):
     
     def _assign_specific_lots(self, picking, product, quants):
         """
-        Asigna lotes específicos al picking, reemplazando la reserva automática de Odoo.
-        También copia las dimensiones del lote a la línea de movimiento para trazabilidad.
+        Asigna lotes específicos al picking y copia las dimensiones
+        del lote a la línea de movimiento para que aparezcan en la entrega.
         """
         for move in picking.move_ids.filtered(lambda m: m.product_id == product):
-            # Eliminar líneas reservadas automáticamente (FIFO/LIFO estándar)
             move.move_line_ids.unlink()
-            
             move_line_model = self.env['stock.move.line'].with_context(skip_hold_validation=True)
             
             for quant in quants:
-                # Preparar valores de creación
                 vals = {
                     'move_id': move.id,
                     'picking_id': picking.id,
@@ -204,9 +199,7 @@ class SaleOrder(models.Model):
                     'product_uom_id': move.product_uom.id,
                 }
 
-                # ✅ COPIAR DIMENSIONES DEL LOTE A LA LÍNEA DE MOVIMIENTO
-                # Esto asegura que en el albarán de salida se vean las medidas correctas
-                # ya que al crear por código no se disparan los onchanges de la interfaz.
+                # Copiar dimensiones
                 if quant.lot_id:
                     vals.update({
                         'x_grosor_temp': quant.lot_id.x_grosor,
@@ -220,18 +213,12 @@ class SaleOrder(models.Model):
                         'x_referencia_proveedor_temp': quant.lot_id.x_referencia_proveedor,
                     })
                     
-                    # Campo Many2many requiere sintaxis especial (6, 0, ids)
                     if quant.lot_id.x_grupo:
                         vals['x_grupo_temp'] = [(6, 0, quant.lot_id.x_grupo.ids)]
 
                 move_line_model.create(vals)
     
     def action_confirm(self):
-        """
-        Sobreescritura para inyectar el contexto allowed_partner_id.
-        Esto permite que el sistema de reservas (stock.quant) sepa para qué cliente
-        se está confirmando la venta y permita usar lotes con HOLD para ese cliente.
-        """
         _logger.info("Confirmando órdenes: %s", self.mapped('name'))
         
         all_partner_ids = self.mapped('partner_id.id')
@@ -242,18 +229,11 @@ class SaleOrder(models.Model):
             else:
                 context['allowed_partner_ids'] = all_partner_ids
         
-        # Ejecutar confirmación estándar con el contexto modificado
         res = super(SaleOrder, self.with_context(**context)).action_confirm()
-        
-        # Limpiar asignaciones automáticas para forzar asignación manual posterior
         self._clear_auto_assigned_lots()
         return res
     
     def _clear_auto_assigned_lots(self):
-        """
-        Limpia los lotes asignados automáticamente por Odoo (FIFO/LIFO)
-        para permitir la asignación de los lotes específicos del carrito.
-        """
         cleaner = PickingLotCleaner(self.env)
         for order in self:
             if order.picking_ids:
