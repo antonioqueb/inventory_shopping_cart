@@ -1,2 +1,11 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_shopping_cart_user,shopping.cart.user,model_shopping_cart,base.group_user,1,1,1,1
+access_price_authorization_seller,price.authorization.seller,model_price_authorization,inventory_shopping_cart.group_seller,1,1,1,0
+access_price_authorization_authorizer,price.authorization.authorizer,model_price_authorization,inventory_shopping_cart.group_price_authorizer,1,1,1,1
+access_price_authorization_line_seller,price.authorization.line.seller,model_price_authorization_line,inventory_shopping_cart.group_seller,1,1,1,0
+access_price_authorization_line_authorizer,price.authorization.line.authorizer,model_price_authorization_line,inventory_shopping_cart.group_price_authorizer,1,1,1,1
+access_stock_picking_inventory_user,stock.picking.inventory.user,stock.model_stock_picking,stock.group_stock_user,1,1,1,0
+access_stock_move_inventory_user,stock.move.inventory.user,stock.model_stock_move,stock.group_stock_user,1,1,1,0
+access_stock_move_line_inventory_user,stock.move.line.inventory.user,stock.model_stock_move_line,stock.group_stock_user,1,1,1,0
+access_shopping_cart_inventory_user,shopping.cart.inventory.user,model_shopping_cart,stock.group_stock_user,1,1,1,1
+access_stock_location_inventory_user,stock.location.inventory.user,stock.model_stock_location,stock.group_stock_user,1,0,0,0

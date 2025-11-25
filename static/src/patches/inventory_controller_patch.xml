@@ -20,9 +20,9 @@
                     <input 
                         type="checkbox" 
                         class="cart-checkbox-all" 
-                        t-att-checked="props.areAllCurrentProductSelected()"
-                        t-on-click="(ev) => { ev.stopPropagation(); props.areAllCurrentProductSelected() ? props.deselectAllCurrentProduct() : props.selectAllCurrentProduct(); }"
-                        title="Seleccionar/Deseleccionar todo"
+                        t-att-checked="props.areAllCurrentProductSelected ? (props.areAllCurrentProductSelected() ? 'checked' : undefined) : undefined"
+                        t-on-click.stop="() => props.areAllCurrentProductSelected() ? props.deselectAllCurrentProduct() : props.selectAllCurrentProduct()"
+                        title="Seleccionar/Deseleccionar todos los lotes de este producto"
                     />
                     <small style="font-size: 10px; color: #666;">Todo</small>
                 </div>
@@ -35,8 +35,8 @@
                 <input 
                     type="checkbox"
                     class="form-check-input cart-checkbox"
-                    t-att-checked="props.isInCart(detail.id)"
-                    t-on-click="(ev) => { ev.stopPropagation(); props.toggleCartSelection(detail); }"
+                    t-att-checked="props.isInCart ? (props.isInCart(detail.id) ? 'checked' : undefined) : undefined"
+                    t-on-click.stop="() => props.toggleCartSelection ? props.toggleCartSelection(detail) : null"
                 />
             </td>
         </xpath>

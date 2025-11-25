@@ -6,7 +6,8 @@
         <field name="inherit_id" ref="product.product_template_only_form_view"/>
         <field name="arch" type="xml">
             <xpath expr="//page[@name='sales']" position="after">
-                <page string="Precios Personalizados" name="custom_prices">
+                <page string="Precios Personalizados" name="custom_prices" 
+                      groups="inventory_shopping_cart.group_price_authorizer">
                     <group>
                         <group string="Precios USD">
                             <field name="x_price_usd_1"/>

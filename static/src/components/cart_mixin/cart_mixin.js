@@ -19,7 +19,9 @@ patch(InventoryVisualController.prototype, {
             items: [],
             totalQuantity: 0,
             totalLots: 0,
-            productGroups: {}
+            productGroups: {},
+            hasSalesPermissions: false,
+            hasInventoryPermissions: false
         });
         
         this.isInCart = this.isInCart.bind(this);
@@ -29,6 +31,28 @@ patch(InventoryVisualController.prototype, {
         this.areAllCurrentProductSelected = this.areAllCurrentProductSelected.bind(this);
         
         this.loadCartFromDB();
+        this.loadSalesPermissions();
+        this.loadInventoryPermissions();
+    },
+
+    async loadSalesPermissions() {
+        try {
+            const result = await this.orm.call('stock.quant', 'check_sales_permissions', []);
+            this.cart.hasSalesPermissions = result;
+        } catch (error) {
+            console.error('[CART] Error verificando permisos:', error);
+            this.cart.hasSalesPermissions = false;
+        }
+    },
+    
+    async loadInventoryPermissions() {
+        try {
+            const result = await this.orm.call('stock.quant', 'check_inventory_permissions', []);
+            this.cart.hasInventoryPermissions = result;
+        } catch (error) {
+            console.error('[CART] Error verificando permisos de inventario:', error);
+            this.cart.hasInventoryPermissions = false;
+        }
     },
     
     async loadCartFromDB() {
@@ -110,6 +134,9 @@ patch(InventoryVisualController.prototype, {
         }
         
         this.updateCartSummary();
+        
+        // ✅ FORZAR ACTUALIZACIÓN REACTIVA explícita
+        this.cart.items = [...this.cart.items];
     },
     
     async selectAllCurrentProduct() {
@@ -122,6 +149,24 @@ patch(InventoryVisualController.prototype, {
                 await this.toggleCartSelection(detail);
             }
         }
+        
+        // ✅ FORZAR RE-RENDER: Colapsar y expandir el producto
+        const productId = this.state.activeProductId;
+        const product = this.state.products.find(p => p.product_id === productId);
+        
+        if (product) {
+            // Colapsar
+            this.state.expandedProducts.delete(productId);
+            this.state.expandedProducts = new Set(this.state.expandedProducts);
+            
+            // Pequeño delay para que el DOM se actualice
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
+            // Re-expandir
+            this.state.expandedProducts.add(productId);
+            await this.loadProductDetails(productId, product.quant_ids);
+            this.state.expandedProducts = new Set(this.state.expandedProducts);
+        }
     },
     
     async deselectAllCurrentProduct() {
@@ -133,6 +178,24 @@ patch(InventoryVisualController.prototype, {
             if (this.isInCart(detail.id)) {
                 await this.toggleCartSelection(detail);
             }
+        }
+        
+        // ✅ FORZAR RE-RENDER: Colapsar y expandir el producto
+        const productId = this.state.activeProductId;
+        const product = this.state.products.find(p => p.product_id === productId);
+        
+        if (product) {
+            // Colapsar
+            this.state.expandedProducts.delete(productId);
+            this.state.expandedProducts = new Set(this.state.expandedProducts);
+            
+            // Pequeño delay para que el DOM se actualice
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
+            // Re-expandir
+            this.state.expandedProducts.add(productId);
+            await this.loadProductDetails(productId, product.quant_ids);
+            this.state.expandedProducts = new Set(this.state.expandedProducts);
         }
     },
     
@@ -188,6 +251,29 @@ patch(InventoryVisualController.prototype, {
         this.cart.items = [];
         this.updateCartSummary();
         await this.orm.call('shopping.cart', 'clear_cart', []);
+        
+        // ✅ OBTENER TODOS LOS PRODUCTOS QUE ESTÁN EXPANDIDOS
+        const expandedProductIds = Array.from(this.state.expandedProducts);
+        
+        if (expandedProductIds.length > 0) {
+            // ✅ COLAPSAR TODOS LOS PRODUCTOS EXPANDIDOS
+            this.state.expandedProducts.clear();
+            this.state.expandedProducts = new Set(this.state.expandedProducts);
+            
+            // Pequeño delay para que el DOM se actualice
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
+            // ✅ RE-EXPANDIR TODOS LOS PRODUCTOS QUE ESTABAN EXPANDIDOS
+            for (const productId of expandedProductIds) {
+                const product = this.state.products.find(p => p.product_id === productId);
+                if (product) {
+                    this.state.expandedProducts.add(productId);
+                    await this.loadProductDetails(productId, product.quant_ids);
+                }
+            }
+            
+            this.state.expandedProducts = new Set(this.state.expandedProducts);
+        }
     },
     
     async removeLotsWithHold() {
@@ -198,7 +284,32 @@ patch(InventoryVisualController.prototype, {
         
         await this.orm.call('shopping.cart', 'remove_holds_from_cart', []);
         
+        // ✅ Forzar actualización reactiva
+        this.cart.items = [...this.cart.items];
+        
         this.notification.add("Lotes apartados eliminados del carrito", { type: "success" });
+        
+        // ✅ OBTENER TODOS LOS PRODUCTOS QUE ESTÁN EXPANDIDOS
+        const expandedProductIds = Array.from(this.state.expandedProducts);
+        
+        if (expandedProductIds.length > 0) {
+            // ✅ COLAPSAR TODOS LOS PRODUCTOS EXPANDIDOS
+            this.state.expandedProducts.clear();
+            this.state.expandedProducts = new Set(this.state.expandedProducts);
+            
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
+            // ✅ RE-EXPANDIR TODOS LOS PRODUCTOS QUE ESTABAN EXPANDIDOS
+            for (const productId of expandedProductIds) {
+                const product = this.state.products.find(p => p.product_id === productId);
+                if (product) {
+                    this.state.expandedProducts.add(productId);
+                    await this.loadProductDetails(productId, product.quant_ids);
+                }
+            }
+            
+            this.state.expandedProducts = new Set(this.state.expandedProducts);
+        }
     },
     
     formatNumber(num) {

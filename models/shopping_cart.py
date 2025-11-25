@@ -1,6 +1,7 @@
-# ./models/shopping_cart.py en inventory_shopping_cart
+# ./models/shopping_cart.py
 # -*- coding: utf-8 -*-
 from odoo import models, fields, api
+from odoo.models import Constraint
 
 class ShoppingCart(models.Model):
     _name = 'shopping.cart'
@@ -8,15 +9,17 @@ class ShoppingCart(models.Model):
     
     user_id = fields.Many2one('res.users', string='Usuario', required=True, default=lambda self: self.env.user, index=True)
     quant_id = fields.Many2one('stock.quant', string='Quant', required=True, ondelete='cascade')
-    lot_id = fields.Many2one('stock.production.lot', string='Lote', required=True)
+    lot_id = fields.Integer(string='Lote ID', required=True)
     product_id = fields.Many2one('product.product', string='Producto', required=True)
     quantity = fields.Float(string='Cantidad', required=True)
     location_name = fields.Char(string='Ubicación')
     added_at = fields.Datetime(string='Agregado', default=fields.Datetime.now)
     
-    _sql_constraints = [
-        ('unique_user_quant', 'unique(user_id, quant_id)', 'Este lote ya está en tu carrito')
-    ]
+    # === CORRECCIÓN: El nombre de la variable DEBE empezar con guion bajo (_) ===
+    _unique_user_quant = Constraint(
+        'unique(user_id, quant_id)',
+        'Este lote ya está en tu carrito'
+    )
     
     @api.model
     def get_cart_items(self):
@@ -24,23 +27,35 @@ class ShoppingCart(models.Model):
         items = self.search([('user_id', '=', self.env.user.id)])
         result = []
         for item in items:
+            # Usar 'stock.lot'
+            lot = self.env['stock.lot'].browse(item.lot_id)
+            if not lot.exists():
+                continue
+                
             hold_info = ''
             seller_name = ''
-            if item.quant_id.x_tiene_hold and item.quant_id.x_hold_activo_id:
-                hold = item.quant_id.x_hold_activo_id
-                hold_info = item.quant_id.x_hold_para
-                if hold.user_id:
-                    seller_name = hold.user_id.name
+            
+            # Verificación segura de campos que dependen de otros módulos
+            tiene_hold = False
+            if hasattr(item.quant_id, 'x_tiene_hold'):
+                tiene_hold = item.quant_id.x_tiene_hold
+                
+                if tiene_hold and hasattr(item.quant_id, 'x_hold_activo_id') and item.quant_id.x_hold_activo_id:
+                    hold = item.quant_id.x_hold_activo_id
+                    if hasattr(item.quant_id, 'x_hold_para'):
+                        hold_info = item.quant_id.x_hold_para
+                    if hold.user_id:
+                        seller_name = hold.user_id.name
             
             result.append({
                 'id': item.quant_id.id,
-                'lot_id': item.lot_id.id,
-                'lot_name': item.lot_id.name,
+                'lot_id': lot.id,
+                'lot_name': lot.name,
                 'product_id': item.product_id.id,
                 'product_name': item.product_id.display_name,
                 'quantity': item.quantity,
                 'location_name': item.location_name,
-                'tiene_hold': item.quant_id.x_tiene_hold,
+                'tiene_hold': tiene_hold,
                 'hold_info': hold_info,
                 'seller_name': seller_name
             })
@@ -87,7 +102,7 @@ class ShoppingCart(models.Model):
         items = self.search([('user_id', '=', self.env.user.id)])
         removed = 0
         for item in items:
-            if item.quant_id.x_tiene_hold:
+            if hasattr(item.quant_id, 'x_tiene_hold') and item.quant_id.x_tiene_hold:
                 item.unlink()
                 removed += 1
         return {'success': True, 'removed': removed}

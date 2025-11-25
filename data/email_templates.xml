@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Plantilla: Solicitud de Autorización -->
+    <record id="email_template_price_authorization_request" model="mail.template">
+        <field name="name">Solicitud de Autorización de Precio</field>
+        <field name="model_id" ref="model_price_authorization"/>
+        <field name="subject">🔔 Nueva Solicitud de Autorización - ${object.name}</field>
+        <field name="email_from">${object.seller_id.email or user.email}</field>
+        <field name="email_to">${object.email}</field>
+        <field name="body_html" type="html">
+            <div style="font-family: monospace; white-space: pre-line; padding: 20px;">
+🔔 NUEVA SOLICITUD DE AUTORIZACIÓN
+
+Estimado(a) Autorizador,
+
+Se ha recibido una nueva solicitud de autorización de precio que requiere su atención:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Referencia:      ${object.name}
+  Solicitado por:  ${object.seller_id.name}
+  Cliente:         ${object.partner_id.name}
+  Tipo:            ${'Venta' if object.operation_type == 'sale' else 'Apartado'}
+  Divisa:          ${object.currency_code}
+  Productos:       ${len(object.line_ids)} productos
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+% if object.notes:
+📝 NOTAS DEL VENDEDOR:
+${object.notes}
+
+% endif
+👉 Ver solicitud completa: ${object.get_base_url()}/web#id=${object.id}&amp;model=price.authorization&amp;view_type=form
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Este es un mensaje automático. 
+Por favor, revise y autorice o rechace la solicitud a la brevedad posible.
+            </div>
+        </field>
+    </record>
+    
+    <!-- Plantilla: Autorización Aprobada -->
+    <record id="email_template_price_authorization_approved" model="mail.template">
+        <field name="name">Autorización de Precio Aprobada</field>
+        <field name="model_id" ref="model_price_authorization"/>
+        <field name="subject">✅ Autorización Aprobada - ${object.name}</field>
+        <field name="email_from">${object.authorizer_id.email or user.email}</field>
+        <field name="email_to">${object.seller_id.email}</field>
+        <field name="body_html" type="html">
+            <div style="font-family: monospace; white-space: pre-line; padding: 20px;">
+✅ AUTORIZACIÓN APROBADA
+
+Estimado(a) ${object.seller_id.name},
+
+Su solicitud de autorización ha sido APROBADA.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Referencia:      ${object.name}
+  Autorizado por:  ${object.authorizer_id.name}
+  Fecha:           ${format_datetime(object.authorization_date, dt_format='dd/MM/yyyy HH:mm')}
+  Cliente:         ${object.partner_id.name}
+% if object.sale_order_id:
+  Orden generada:  ${object.sale_order_id.name}
+% endif
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+% if object.authorization_notes:
+💬 COMENTARIOS DEL AUTORIZADOR:
+${object.authorization_notes}
+
+% endif
+% if object.operation_type == 'sale' and object.sale_order_id:
+✓ ACCIÓN SIGUIENTE:
+La orden de venta ha sido creada automáticamente.
+Por favor, continúe con el proceso correspondiente.
+
+% elif object.operation_type == 'hold':
+✓ ACCIÓN SIGUIENTE:
+Los apartados han sido creados automáticamente.
+
+% endif
+👉 Ver detalles: ${object.get_base_url()}/web#id=${object.id}&amp;model=price.authorization&amp;view_type=form
+            </div>
+        </field>
+    </record>
+    
+    <!-- Plantilla: Autorización Rechazada -->
+    <record id="email_template_price_authorization_rejected" model="mail.template">
+        <field name="name">Autorización de Precio Rechazada</field>
+        <field name="model_id" ref="model_price_authorization"/>
+        <field name="subject">❌ Autorización Rechazada - ${object.name}</field>
+        <field name="email_from">${object.authorizer_id.email or user.email}</field>
+        <field name="email_to">${object.seller_id.email}</field>
+        <field name="body_html" type="html">
+            <div style="font-family: monospace; white-space: pre-line; padding: 20px;">
+❌ AUTORIZACIÓN RECHAZADA
+
+Estimado(a) ${object.seller_id.name},
+
+Su solicitud de autorización ha sido RECHAZADA.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Referencia:      ${object.name}
+  Rechazado por:   ${object.authorizer_id.name}
+  Fecha:           ${format_datetime(object.authorization_date, dt_format='dd/MM/yyyy HH:mm')}
+  Cliente:         ${object.partner_id.name}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+% if object.authorization_notes:
+💬 MOTIVO DEL RECHAZO:
+${object.authorization_notes}
+
+% endif
+⚠ ACCIÓN REQUERIDA:
+Por favor, ajuste los precios o condiciones y genere una nueva solicitud.
+
+👉 Ver detalles: ${object.get_base_url()}/web#id=${object.id}&amp;model=price.authorization&amp;view_type=form
+            </div>
+        </field>
+    </record>
+</odoo>

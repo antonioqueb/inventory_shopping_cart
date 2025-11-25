@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    
+    <t t-name="inventory_shopping_cart.TransferWizard" owl="1">
+        <Dialog size="'lg'">
+            <div class="transfer-wizard-content">
+                <!-- Header -->
+                <div class="alert alert-light border-start border-4 border-warning mb-4">
+                    <div class="d-flex align-items-center">
+                        <i class="fa fa-exchange fa-2x text-warning me-3"></i>
+                        <div>
+                            <h5 class="mb-1 fw-bold">Traslado Interno de Lotes</h5>
+                            <small class="text-muted">
+                                <i class="fa fa-cubes me-1"></i>
+                                <strong t-esc="props.selectedLots.length"></strong> lotes seleccionados
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Indicador de pasos -->
+                <div class="steps-indicator mb-4">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="step-item" t-att-class="{ active: state.currentStep >= 1, completed: state.currentStep > 1 }">
+                            <div class="step-number">1</div>
+                            <div class="step-label">Ubicación</div>
+                        </div>
+                        <div class="step-line" t-att-class="{ active: state.currentStep > 1 }"></div>
+                        <div class="step-item" t-att-class="{ active: state.currentStep >= 2 }">
+                            <div class="step-number">2</div>
+                            <div class="step-label">Confirmar</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- PASO 1: UBICACIÓN DESTINO -->
+                <div class="step-content" t-if="state.currentStep === 1">
+                    <h5 class="mb-3">
+                        <i class="fa fa-map-marker text-warning me-2"></i>
+                        Seleccionar Ubicación Destino
+                    </h5>
+                    
+                    <div class="input-group mb-2">
+                        <span class="input-group-text">
+                            <i class="fa fa-search"></i>
+                        </span>
+                        <input 
+                            type="text"
+                            class="form-control"
+                            placeholder="Buscar ubicación interna..."
+                            t-model="state.searchLocationTerm"
+                            t-on-input="onSearchLocation"
+                        />
+                    </div>
+                    
+                    <div class="alert alert-light border d-flex align-items-center mb-3" t-if="state.selectedLocationName">
+                        <i class="fa fa-check-circle fa-2x text-success me-3"></i>
+                        <div>
+                            <strong>Ubicación seleccionada:</strong><br/>
+                            <t t-esc="state.selectedLocationName"/>
+                        </div>
+                    </div>
+                    
+                    <div class="list-group" style="max-height: 350px; overflow-y: auto;" t-if="state.locations.length > 0 and !state.selectedLocationName">
+                        <t t-foreach="state.locations" t-as="location" t-key="location.id">
+                            <button 
+                                type="button"
+                                class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                                t-on-click="() => this.selectLocation(location)"
+                            >
+                                <div>
+                                    <strong t-esc="location.complete_name"></strong>
+                                    <br/>
+                                    <small class="text-muted" t-if="location.parent_name">
+                                        <i class="fa fa-level-up me-1"></i>
+                                        <t t-esc="location.parent_name"/>
+                                    </small>
+                                </div>
+                                <i class="fa fa-chevron-right text-muted"></i>
+                            </button>
+                        </t>
+                    </div>
+                    
+                    <div class="alert alert-info mt-3" t-if="state.locations.length === 0 and state.searchLocationTerm">
+                        <i class="fa fa-info-circle me-2"></i>
+                        No se encontraron ubicaciones. Intente con otro término de búsqueda.
+                    </div>
+                </div>
+                
+                <!-- PASO 2: CONFIRMAR -->
+                <div class="step-content" t-if="state.currentStep === 2">
+                    <h5 class="mb-3">
+                        <i class="fa fa-check-circle text-success me-2"></i>
+                        Confirmar Traslado
+                    </h5>
+                    
+                    <!-- Resumen -->
+                    <div class="card border mb-3">
+                        <div class="card-body">
+                            <h6 class="card-title mb-3">Resumen del Traslado</h6>
+                            
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-6">
+                                    <strong>Ubicación Destino:</strong><br/>
+                                    <i class="fa fa-map-marker text-warning me-1"></i>
+                                    <t t-esc="state.selectedLocationName"/>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Responsable:</strong><br/>
+                                    <span class="badge bg-info text-dark">
+                                        <i class="fa fa-user me-1"></i>
+                                        <t t-esc="state.userName"/>
+                                    </span>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Total de lotes:</strong><br/>
+                                    <t t-esc="props.selectedLots.length"/>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Productos diferentes:</strong><br/>
+                                    <t t-esc="Object.keys(props.productGroups).length"/>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Detalle de productos -->
+                    <div class="card border mb-3">
+                        <div class="card-body">
+                            <h6 class="card-title mb-3">Productos a Trasladar</h6>
+                            <div class="table-responsive" style="max-height: 250px; overflow-y: auto;">
+                                <table class="table table-sm">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Producto</th>
+                                            <th class="text-end">Cantidad Total</th>
+                                            <th class="text-end"># Lotes</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <t t-foreach="Object.entries(props.productGroups)" t-as="entry" t-key="entry[0]">
+                                            <t t-set="productId" t-value="entry[0]"/>
+                                            <t t-set="group" t-value="entry[1]"/>
+                                            <tr>
+                                                <td><t t-esc="group.name"/></td>
+                                                <td class="text-end"><t t-esc="formatNumber(group.total_quantity)"/> m²</td>
+                                                <td class="text-end">
+                                                    <span class="badge bg-secondary">
+                                                        <t t-esc="group.lots.length"/>
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        </t>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Notas -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">
+                            <i class="fa fa-commenting text-warning me-2"></i>
+                            Razón del Traslado (opcional)
+                        </label>
+                        <textarea 
+                            class="form-control"
+                            rows="3"
+                            placeholder="Describa el motivo del traslado..."
+                            t-model="state.notes"
+                        ></textarea>
+                    </div>
+                    
+                    <div class="alert alert-light border">
+                        <div class="d-flex align-items-start">
+                            <i class="fa fa-info-circle fa-2x text-info me-3"></i>
+                            <div>
+                                <strong class="d-block mb-1">Información Importante</strong>
+                                <ul class="mb-0">
+                                    <li>Los lotes se agruparán por ubicación origen</li>
+                                    <li>Se creará un traslado por cada ubicación origen diferente</li>
+                                    <li>Los traslados se confirmarán automáticamente</li>
+                                    <li>Podrá validar los traslados desde Operaciones → Traslados</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <t t-set-slot="footer">
+                <button 
+                    class="btn btn-light border btn-lg"
+                    t-on-click="prevStep"
+                    t-if="state.currentStep > 1"
+                >
+                    <i class="fa fa-chevron-left me-2"></i>
+                    Anterior
+                </button>
+                
+                <button 
+                    class="btn btn-light border btn-lg"
+                    t-on-click="props.close"
+                    t-if="state.currentStep === 1"
+                >
+                    <i class="fa fa-times me-2"></i>
+                    Cancelar
+                </button>
+                
+                <button 
+                    class="btn btn-warning btn-lg"
+                    t-on-click="nextStep"
+                    t-if="state.currentStep &lt; 2"
+                >
+                    Siguiente
+                    <i class="fa fa-chevron-right ms-2"></i>
+                </button>
+                
+                <button 
+                    class="btn btn-success btn-lg"
+                    t-on-click="createTransfer"
+                    t-if="state.currentStep === 2"
+                    t-att-disabled="state.isCreating"
+                >
+                    <t t-if="!state.isCreating">
+                        <i class="fa fa-check me-2"></i>
+                        Crear Traslado
+                    </t>
+                    <t t-else="">
+                        <i class="fa fa-spinner fa-spin me-2"></i>
+                        Creando...
+                    </t>
+                </button>
+            </t>
+        </Dialog>
+    </t>
+    
+</templates>

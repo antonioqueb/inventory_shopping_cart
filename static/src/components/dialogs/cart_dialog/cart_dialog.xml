@@ -48,12 +48,30 @@
                 <button class="btn btn-warning" t-if="hasHolds" t-on-click="removeHolds">
                     <i class="fa fa-times"></i> Eliminar Apartados
                 </button>
-                <button class="btn btn-info" t-on-click="createHolds">
-                    <i class="fa fa-lock"></i> Apartar Todo
-                </button>
-                <button class="btn btn-primary" t-on-click="createSaleOrder">
-                    <i class="fa fa-file-text"></i> Crear Orden de Venta
-                </button>
+                
+                <!-- ✅ BOTONES PARA USUARIOS CON PERMISOS DE VENTAS -->
+                <t t-if="cart.hasSalesPermissions">
+                    <button class="btn btn-info" t-on-click="createHolds">
+                        <i class="fa fa-lock"></i> Apartar Todo
+                    </button>
+                    <button class="btn btn-primary" t-on-click="createSaleOrder">
+                        <i class="fa fa-file-text"></i> Crear Orden de Venta
+                    </button>
+                </t>
+                
+                <!-- ✅ BOTÓN TRASLADAR PARA USUARIOS CON PERMISOS DE INVENTARIO -->
+                <t t-if="cart.hasInventoryPermissions">
+                    <button class="btn btn-warning" t-on-click="createTransfer">
+                        <i class="fa fa-exchange"></i> Trasladar
+                    </button>
+                </t>
+                
+                <!-- ✅ MENSAJE PARA USUARIOS SIN NINGÚN PERMISO -->
+                <div t-if="!cart.hasSalesPermissions and !cart.hasInventoryPermissions" 
+                     class="alert alert-info mb-0 ms-3" style="flex: 1;">
+                    <i class="fa fa-info-circle me-2"></i>
+                    <strong>Permisos requeridos:</strong> Necesita permisos de ventas o inventario para realizar operaciones.
+                </div>
             </t>
         </Dialog>
     </t>
