@@ -90,11 +90,14 @@ class SaleOrder(models.Model):
                     if hold_partner.id != partner_id:
                         raise UserError(f"El lote {quant.lot_id.name} está apartado para {hold_partner.name}")
         
+        # === CREACIÓN DE LA ORDEN CON PROYECTO Y ARQUITECTO ===
         sale_order = self.with_company(company_id).create({
             'partner_id': partner_id,
             'note': notes or '',
             'pricelist_id': pricelist_id,
             'company_id': company_id,
+            'x_project_id': project_id,      # <--- CORRECCIÓN AQUÍ
+            'x_architect_id': architect_id,  # <--- CORRECCIÓN AQUÍ
         })
         
         # Crear líneas de productos
