@@ -35,7 +35,7 @@ class SaleOrder(models.Model):
         currency_code = pricelist.name
         
         # Si viene de hold order, omitir verificación de autorización
-        # (Se asume que el hold ya fue autorizado o gestionado)
+        # (Se asume que el hold ya fue autorizado o gestionado previamente)
         from_hold_order = self.env.context.get('from_hold_order', False)
         
         if not from_hold_order:
@@ -97,7 +97,7 @@ class SaleOrder(models.Model):
         # === CREACIÓN DE LA ORDEN ===
         company_id = self.env.context.get('company_id') or self.env.company.id
         
-        # Validación de Holds (Apartados)
+        # Validación de Holds (Apartados) para asegurar que el cliente es el correcto
         for product in products:
             if 'selected_lots' in product:
                 for quant_id in product['selected_lots']:
@@ -107,14 +107,14 @@ class SaleOrder(models.Model):
                         if hold_partner.id != partner_id:
                             raise UserError(f"El lote {quant.lot_id.name} está apartado para {hold_partner.name}")
         
-        # === CREACIÓN DE LA ORDEN CON PROYECTO Y ARQUITECTO ===
+        # === CREACIÓN DE LA ORDEN CON PROYECTO Y ARQUITECTO (CORREGIDO) ===
         sale_order = self.with_company(company_id).create({
             'partner_id': partner_id,
             'note': notes or '',
             'pricelist_id': pricelist_id,
             'company_id': company_id,
-            'x_project_id': project_id,      # <--- CORRECCIÓN AQUÍ
-            'x_architect_id': architect_id,  # <--- CORRECCIÓN AQUÍ
+            'x_project_id': project_id,      # ✅ Campo agregado
+            'x_architect_id': architect_id,  # ✅ Campo agregado
         })
         
         # Crear líneas de productos físicos
@@ -227,6 +227,11 @@ class SaleOrder(models.Model):
                 move_line_model.create(vals)
     
     def action_confirm(self):
+        """
+        Sobreescritura para inyectar el contexto allowed_partner_id.
+        Esto permite que el sistema de reservas (stock.quant) sepa para qué cliente
+        se está confirmando la venta y permita usar lotes con HOLD para ese cliente.
+        """
         _logger.info("Confirmando órdenes: %s", self.mapped('name'))
         
         all_partner_ids = self.mapped('partner_id.id')
@@ -237,11 +242,18 @@ class SaleOrder(models.Model):
             else:
                 context['allowed_partner_ids'] = all_partner_ids
         
+        # Ejecutar confirmación estándar con el contexto modificado
         res = super(SaleOrder, self.with_context(**context)).action_confirm()
+        
+        # Limpiar asignaciones automáticas para forzar asignación manual posterior
         self._clear_auto_assigned_lots()
         return res
     
     def _clear_auto_assigned_lots(self):
+        """
+        Limpia los lotes asignados automáticamente por Odoo (FIFO/LIFO)
+        para permitir la asignación de los lotes específicos del carrito.
+        """
         cleaner = PickingLotCleaner(self.env)
         for order in self:
             if order.picking_ids:
