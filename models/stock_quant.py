@@ -1,6 +1,6 @@
-# ./models/stock_quant.py en inventory_shopping_cart
+# ./models/stock_quant.py
 # -*- coding: utf-8 -*-
-from odoo import models, api
+from odoo import models, fields, api
 from datetime import datetime, timedelta
 
 
@@ -64,7 +64,7 @@ class StockQuant(models.Model):
 
         return {'success': True}
 
-
+    # === NUEVA FUNCIONALIDAD: GENERADOR ZPL ===
     @api.model
     def generate_zpl_labels(self, selected_lots, label_format):
         """
@@ -85,10 +85,11 @@ class StockQuant(models.Model):
         
         for quant in quants:
             lot = quant.lot_id
-            product_name = quant.product_id.name[:40] # Truncar nombre
+            # Truncar nombre para evitar desbordamiento
+            product_name = quant.product_id.name[:40] if quant.product_id.name else ''
             lot_name = lot.name or ''
             
-            # Obtener dimensiones si existen (asumiendo campos personalizados del modelo stock.lot)
+            # Obtener dimensiones si existen
             dim_str = ""
             if hasattr(lot, 'x_alto') and hasattr(lot, 'x_ancho'):
                 dim_str = f"{lot.x_alto}x{lot.x_ancho} cm"
@@ -115,7 +116,8 @@ class StockQuant(models.Model):
                 
                 # Texto en una sola línea centrada verticalmente
                 text_line = f"{lot_name} - {product_name} {dim_str}"
-                zpl_code += "^FO20,20^A0N,40,40^FD" + text_line + "^FS"
+                # Fuente más pequeña para que quepa en 1cm de alto
+                zpl_code += "^FO20,20^A0N,30,30^FD" + text_line + "^FS"
                 
             elif label_format == '20x10':
                 # --- FORMATO 20cm x 10cm (Grande) ---
@@ -145,6 +147,7 @@ class StockQuant(models.Model):
         return {
             'success': True,
             'zpl_data': zpl_code,
+            # Se usa fields.Date.today() correctamente gracias a la importación superior
             'filename': f'etiquetas_{label_format}_{fields.Date.today()}.zpl'
         }
 
