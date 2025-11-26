@@ -45,8 +45,14 @@
             </div>
 
             <t t-set-slot="footer">
-                <button class="btn btn-warning" t-if="hasHolds" t-on-click="removeHolds">
+                <!-- Botón de advertencia (Izquierda) -->
+                <button class="btn btn-warning me-auto" t-if="hasHolds" t-on-click="removeHolds">
                     <i class="fa fa-times"></i> Eliminar Apartados
+                </button>
+                
+                <!-- ✅ BOTÓN NUEVO: IMPRIMIR ETIQUETAS (Disponible para todos) -->
+                <button class="btn btn-secondary me-2" t-on-click="printLabels">
+                    <i class="fa fa-print"></i> Etiquetas
                 </button>
                 
                 <!-- ✅ BOTONES PARA USUARIOS CON PERMISOS DE VENTAS -->

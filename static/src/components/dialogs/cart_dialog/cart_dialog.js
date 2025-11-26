@@ -49,6 +49,12 @@ export class CartDialog extends Component {
         this.props.onCreateTransfer();
     }
     
+    // ✅ NUEVO MÉTODO: IMPRIMIR ETIQUETAS
+    printLabels() {
+        this.props.close();
+        this.props.onPrintLabels();
+    }
+    
     formatNumber(num) {
         return new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
     }
@@ -63,4 +69,5 @@ CartDialog.props = {
     onCreateHolds: Function,
     onCreateSaleOrder: Function,
     onCreateTransfer: Function,
+    onPrintLabels: Function, // ✅ AGREGADO EN PROPS
 };

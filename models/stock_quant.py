@@ -64,6 +64,90 @@ class StockQuant(models.Model):
 
         return {'success': True}
 
+
+    @api.model
+    def generate_zpl_labels(self, selected_lots, label_format):
+        """
+        Genera código ZPL para imprimir etiquetas de lotes.
+        Formatos soportados:
+        - '10x5': 10cm x 5cm (Estándar)
+        - '17.5x1': 17.5cm x 1cm (Lomo/Canto)
+        - '20x10': 20cm x 10cm (Grande/Detallada)
+        """
+        if not selected_lots:
+            return {'success': False, 'message': 'No hay lotes seleccionados'}
+        
+        quants = self.browse(selected_lots)
+        zpl_code = ""
+        
+        # Configuración básica ZPL
+        # ^XA = Inicio, ^XZ = Fin, ^CI28 = UTF-8 encoding
+        
+        for quant in quants:
+            lot = quant.lot_id
+            product_name = quant.product_id.name[:40] # Truncar nombre
+            lot_name = lot.name or ''
+            
+            # Obtener dimensiones si existen (asumiendo campos personalizados del modelo stock.lot)
+            dim_str = ""
+            if hasattr(lot, 'x_alto') and hasattr(lot, 'x_ancho'):
+                dim_str = f"{lot.x_alto}x{lot.x_ancho} cm"
+            
+            zpl_code += "^XA^CI28"
+            
+            if label_format == '10x5':
+                # --- FORMATO 10cm x 5cm ---
+                # Conversión aprox: 10cm = 800 dots, 5cm = 400 dots (a 203 dpi)
+                
+                # Nombre producto (Arriba)
+                zpl_code += "^FO20,30^A0N,40,40^FD" + product_name + "^FS"
+                
+                # Lote (Medio)
+                zpl_code += "^FO20,80^A0N,35,35^FDLote: " + lot_name + "^FS"
+                zpl_code += "^FO20,120^A0N,30,30^FD" + dim_str + "^FS"
+                
+                # Código de barras (Abajo)
+                zpl_code += "^FO40,180^BY2,2,100^BCN,100,Y,N,N^FD" + lot_name + "^FS"
+                
+            elif label_format == '17.5x1':
+                # --- FORMATO 17.5cm x 1cm (Lomo) ---
+                # Altura crítica: 1cm = ~80 dots. Texto debe ser pequeño y lineal.
+                
+                # Texto en una sola línea centrada verticalmente
+                text_line = f"{lot_name} - {product_name} {dim_str}"
+                zpl_code += "^FO20,20^A0N,40,40^FD" + text_line + "^FS"
+                
+            elif label_format == '20x10':
+                # --- FORMATO 20cm x 10cm (Grande) ---
+                # Conversión aprox: 20cm = 1600 dots, 10cm = 800 dots
+                
+                # Logo o Encabezado (Texto grande)
+                zpl_code += "^FO50,50^A0N,70,70^FD" + product_name + "^FS"
+                
+                # Detalles Lote y Dimensiones
+                zpl_code += "^FO50,150^A0N,50,50^FDLote: " + lot_name + "^FS"
+                zpl_code += "^FO50,220^A0N,50,50^FDDimensiones: " + dim_str + "^FS"
+                
+                if hasattr(lot, 'x_grosor'):
+                    zpl_code += f"^FO50,290^A0N,50,50^FDGrosor: {lot.x_grosor} cm^FS"
+                
+                # Cantidad / Area
+                zpl_code += f"^FO800,150^A0N,50,50^FDArea: {quant.quantity} m2^FS"
+                
+                # Código de Barras Grande
+                zpl_code += "^FO100,400^BY4,3,200^BCN,200,Y,N,N^FD" + lot_name + "^FS"
+                
+                # Recuadro (Marco)
+                zpl_code += "^FO20,20^GB1550,760,4^FS"
+
+            zpl_code += "^XZ"
+            
+        return {
+            'success': True,
+            'zpl_data': zpl_code,
+            'filename': f'etiquetas_{label_format}_{fields.Date.today()}.zpl'
+        }
+
     def _get_partner_delivery_address(self, partner):
         """Construir dirección de entrega del cliente"""
         if not partner:

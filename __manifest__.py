@@ -36,6 +36,10 @@
             'inventory_shopping_cart/static/src/components/dialogs/hold_wizard/hold_wizard.xml',
             'inventory_shopping_cart/static/src/components/dialogs/sale_order_wizard/sale_order_wizard.xml',
             'inventory_shopping_cart/static/src/components/dialogs/transfer_wizard/transfer_wizard.xml',
+            'inventory_shopping_cart/static/src/components/dialogs/label_wizard/label_wizard.scss',
+            'inventory_shopping_cart/static/src/components/dialogs/label_wizard/label_wizard.js',
+            'inventory_shopping_cart/static/src/components/dialogs/label_wizard/label_wizard.xml',
+            
         ],
     },
     'installable': True,

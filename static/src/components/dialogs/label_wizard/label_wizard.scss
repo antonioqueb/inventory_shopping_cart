@@ -1,0 +1,27 @@
+.label-wizard-content {
+    .format-option {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border: 2px solid transparent;
+        
+        &:hover {
+            background-color: #f8f9fa;
+            transform: translateY(-2px);
+        }
+        
+        &.selected {
+            border-color: #017E84;
+            background-color: #f0fbff;
+            
+            .format-icon {
+                color: #017E84;
+            }
+        }
+        
+        .format-icon {
+            color: #6c757d;
+            width: 50px;
+            text-align: center;
+        }
+    }
+}

@@ -6,6 +6,7 @@ import { CartDialog } from "../dialogs/cart_dialog/cart_dialog";
 import { HoldWizard } from "../dialogs/hold_wizard/hold_wizard";
 import { SaleOrderWizard } from "../dialogs/sale_order_wizard/sale_order_wizard";
 import { TransferWizard } from "../dialogs/transfer_wizard/transfer_wizard";
+import { LabelWizard } from "../dialogs/label_wizard/label_wizard"; // ✅ Importación nueva
 
 const InventoryVisualController = registry.category("actions").get("inventory_visual_enhanced");
 
@@ -23,7 +24,8 @@ patch(InventoryVisualController.prototype, {
             onRemoveHolds: () => this.removeLotsWithHold(),
             onCreateHolds: () => this.openHoldWizard(),
             onCreateSaleOrder: () => this.openSaleOrderWizard(),
-            onCreateTransfer: () => this.openTransferWizard()
+            onCreateTransfer: () => this.openTransferWizard(),
+            onPrintLabels: () => this.openLabelWizard() // ✅ Conexión nueva
         });
     },
     
@@ -83,10 +85,6 @@ patch(InventoryVisualController.prototype, {
             return;
         }
         
-        // ❌ ELIMINADO: Validación de lotes apartados
-        // Los usuarios de inventario SÍ pueden trasladar lotes apartados
-        // (ej: mover a zona de apartados, reorganizar ubicaciones, etc.)
-        
         await this.syncCartToDB();
         
         this.dialog.add(TransferWizard, {
@@ -96,6 +94,20 @@ patch(InventoryVisualController.prototype, {
                 this.clearCart();
                 await this.searchProducts();
             }
+        });
+    },
+
+    // ✅ Nueva función para abrir el Wizard de Etiquetas
+    async openLabelWizard() {
+        if (this.cart.totalLots === 0) {
+            this.notification.add("No hay items en el carrito para imprimir", { type: "warning" });
+            return;
+        }
+        
+        await this.syncCartToDB();
+        
+        this.dialog.add(LabelWizard, {
+            selectedLots: this.cart.items.map(item => item.id)
         });
     }
 });
