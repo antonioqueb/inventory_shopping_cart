@@ -13,6 +13,8 @@ class ProductTemplate(models.Model):
     x_price_mxn_2 = fields.Float(string='Precio MXN 2 (Medio)', digits='Product Price', default=0.0)
     x_price_mxn_3 = fields.Float(string='Precio MXN 3 (Mínimo)', digits='Product Price', default=0.0)
     
+    x_name_sps = fields.Char(string='Nombre SPS', help='Nombre del producto en el sistema SPS', default='')
+
     @api.model
     def get_custom_prices(self, product_id, currency_code):
         product = self.browse(product_id)
