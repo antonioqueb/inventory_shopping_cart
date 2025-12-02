@@ -1,6 +1,10 @@
 # ./models/product_template.py
 # -*- coding: utf-8 -*-
+import requests
+import logging
 from odoo import models, fields, api
+
+_logger = logging.getLogger(__name__)
 
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
@@ -14,6 +18,72 @@ class ProductTemplate(models.Model):
     x_price_mxn_3 = fields.Float(string='Precio MXN 3 (Mínimo)', digits='Product Price', default=0.0)
     
     x_name_sps = fields.Char(string='Nombre SPS', help='Nombre del producto en el sistema SPS', default='')
+
+    @api.model
+    def cron_update_banorte_rates(self):
+        """
+        Acción planificada para actualizar precios MXN basados en API Banorte.
+        Se ejecuta una vez al día.
+        """
+        # 1. Obtener API KEY del sistema
+        api_key = self.env['ir.config_parameter'].sudo().get_param('API_KEY')
+        if not api_key:
+            _logger.error("BANORTE SYNC: No se encontró el parámetro 'API_KEY' en el sistema.")
+            return
+
+        url = "https://api-banorte.recubrimientos.app/"
+        headers = {
+            "x-api-key": api_key
+        }
+
+        try:
+            # 2. Consultar API
+            response = requests.get(url, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                rate_str = data.get("tipo-cambio-venta-banorte", "0")
+                
+                # Limpiar el string (ej: "$20.45" -> 20.45)
+                rate = float(rate_str.replace('$', '').strip())
+                
+                if rate > 0:
+                    _logger.info(f"BANORTE SYNC: Tipo de cambio obtenido: {rate}. Actualizando productos...")
+                    
+                    # 3. Guardar el tipo de cambio del día en parámetros (opcional, para referencia)
+                    self.env['ir.config_parameter'].sudo().set_param('banorte.last_rate', rate)
+                    
+                    # 4. Actualizar masivamente los productos
+                    # Buscamos productos que tengan algún precio en USD definido
+                    products = self.search([
+                        '|', '|',
+                        ('x_price_usd_1', '>', 0),
+                        ('x_price_usd_2', '>', 0),
+                        ('x_price_usd_3', '>', 0)
+                    ])
+                    
+                    count = 0
+                    for product in products:
+                        updates = {}
+                        if product.x_price_usd_1:
+                            updates['x_price_mxn_1'] = product.x_price_usd_1 * rate
+                        if product.x_price_usd_2:
+                            updates['x_price_mxn_2'] = product.x_price_usd_2 * rate
+                        if product.x_price_usd_3:
+                            updates['x_price_mxn_3'] = product.x_price_usd_3 * rate
+                        
+                        if updates:
+                            product.write(updates)
+                            count += 1
+                            
+                    _logger.info(f"BANORTE SYNC: Se actualizaron {count} productos con TC {rate}")
+                else:
+                    _logger.warning("BANORTE SYNC: El tipo de cambio obtenido es 0 o inválido.")
+            else:
+                _logger.error(f"BANORTE SYNC: Error {response.status_code} - {response.text}")
+                
+        except Exception as e:
+            _logger.error(f"BANORTE SYNC: Excepción de conexión: {e}")
 
     @api.model
     def get_custom_prices(self, product_id, currency_code):

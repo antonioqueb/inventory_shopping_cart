@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="ir_cron_update_banorte_prices" model="ir.cron">
+            <field name="name">Actualizar Precios MXN (Banorte API)</field>
+            <field name="model_id" ref="model_product_template"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_update_banorte_rates()</field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="numbercall">-1</field>
+            <!-- Ejecutar a las 5:00 AM UTC (Ajustar si tu servidor tiene otra zona) -->
+            <field name="nextcall" eval="(DateTime.now().replace(hour=11, minute=0, second=0)).strftime('%Y-%m-%d %H:%M:%S')" />
+            <field name="doall" eval="False"/>
+        </record>
+    </data>
+</odoo>
