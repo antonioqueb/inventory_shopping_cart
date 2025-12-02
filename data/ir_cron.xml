@@ -9,10 +9,12 @@
             <field name="user_id" ref="base.user_root"/>
             <field name="interval_number">1</field>
             <field name="interval_type">days</field>
-            <field name="numbercall">-1</field>
-            <!-- Ejecutar a las 5:00 AM UTC (Ajustar si tu servidor tiene otra zona) -->
+            <!-- 
+                CDMX es UTC-6. 
+                5:00 AM CDMX + 6 horas = 11:00 AM UTC (Hora servidor)
+                numbercall fue eliminado en Odoo 19.
+            -->
             <field name="nextcall" eval="(DateTime.now().replace(hour=11, minute=0, second=0)).strftime('%Y-%m-%d %H:%M:%S')" />
-            <field name="doall" eval="False"/>
         </record>
     </data>
 </odoo>

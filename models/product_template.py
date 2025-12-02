@@ -45,12 +45,15 @@ class ProductTemplate(models.Model):
                 rate_str = data.get("tipo-cambio-venta-banorte", "0")
                 
                 # Limpiar el string (ej: "$20.45" -> 20.45)
-                rate = float(rate_str.replace('$', '').strip())
+                try:
+                    rate = float(rate_str.replace('$', '').strip())
+                except ValueError:
+                    rate = 0.0
                 
                 if rate > 0:
                     _logger.info(f"BANORTE SYNC: Tipo de cambio obtenido: {rate}. Actualizando productos...")
                     
-                    # 3. Guardar el tipo de cambio del día en parámetros (opcional, para referencia)
+                    # 3. Guardar el tipo de cambio del día en parámetros para referencia
                     self.env['ir.config_parameter'].sudo().set_param('banorte.last_rate', rate)
                     
                     # 4. Actualizar masivamente los productos
@@ -65,6 +68,7 @@ class ProductTemplate(models.Model):
                     count = 0
                     for product in products:
                         updates = {}
+                        # Calculamos MXN basado en USD * Tasa
                         if product.x_price_usd_1:
                             updates['x_price_mxn_1'] = product.x_price_usd_1 * rate
                         if product.x_price_usd_2:
