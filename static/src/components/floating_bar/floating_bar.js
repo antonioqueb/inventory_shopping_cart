@@ -6,7 +6,7 @@ import { CartDialog } from "../dialogs/cart_dialog/cart_dialog";
 import { HoldWizard } from "../dialogs/hold_wizard/hold_wizard";
 import { SaleOrderWizard } from "../dialogs/sale_order_wizard/sale_order_wizard";
 import { TransferWizard } from "../dialogs/transfer_wizard/transfer_wizard";
-import { LabelWizard } from "../dialogs/label_wizard/label_wizard"; // ✅ Importación nueva
+import { LabelWizard } from "../dialogs/label_wizard/label_wizard";
 
 const InventoryVisualController = registry.category("actions").get("inventory_visual_enhanced");
 
@@ -25,7 +25,7 @@ patch(InventoryVisualController.prototype, {
             onCreateHolds: () => this.openHoldWizard(),
             onCreateSaleOrder: () => this.openSaleOrderWizard(),
             onCreateTransfer: () => this.openTransferWizard(),
-            onPrintLabels: () => this.openLabelWizard() // ✅ Conexión nueva
+            onPrintLabels: () => this.openLabelWizard()
         });
     },
     
@@ -44,8 +44,12 @@ patch(InventoryVisualController.prototype, {
             selectedLots: this.cart.items.map(item => item.id),
             productGroups: this.cart.productGroups,
             onSuccess: async () => {
-                this.clearCart();
-                await this.searchProducts();
+                // CORRECCIÓN: Usar reload para asegurar que los 'holds' se visualicen
+                // this.clearCart(); // Esto solo limpia la memoria JS
+                // await this.searchProducts(); // ESTO CAUSABA EL ERROR
+                
+                await this.clearCart(); // Limpia visualmente el carrito
+                window.location.reload(); // Recarga la página para ver los candados nuevos
             }
         });
     },
@@ -70,8 +74,11 @@ patch(InventoryVisualController.prototype, {
         
         this.dialog.add(SaleOrderWizard, {
             productGroups: this.cart.productGroups,
-            onSuccess: () => {
-                this.clearCart();
+            onSuccess: async () => {
+                await this.clearCart();
+                // En venta no es estrictamente necesario recargar si se redirige a la orden,
+                // pero si te quedas en el inventario, es mejor recargar.
+                window.location.reload();
             }
         });
     },
@@ -91,13 +98,13 @@ patch(InventoryVisualController.prototype, {
             selectedLots: this.cart.items.map(item => item.id),
             productGroups: this.cart.productGroups,
             onSuccess: async () => {
-                this.clearCart();
-                await this.searchProducts();
+                // CORRECCIÓN: Igual que en HoldWizard
+                await this.clearCart();
+                window.location.reload();
             }
         });
     },
 
-    // ✅ Nueva función para abrir el Wizard de Etiquetas
     async openLabelWizard() {
         if (this.cart.totalLots === 0) {
             this.notification.add("No hay items en el carrito para imprimir", { type: "warning" });
@@ -112,5 +119,12 @@ patch(InventoryVisualController.prototype, {
     }
 });
 
-import { ProductRow } from "@inventory_visual_enhanced/components/product_row/product_row";
-patch(ProductRow.prototype, {});
+// Importación segura para evitar errores si ProductRow no está exportado correctamente en el módulo base
+try {
+    const { ProductRow } = require("@inventory_visual_enhanced/components/product_row/product_row");
+    if (ProductRow) {
+        patch(ProductRow.prototype, {});
+    }
+} catch (e) {
+    console.warn("No se pudo parchear ProductRow, posiblemente no sea necesario o la ruta cambió.", e);
+}
