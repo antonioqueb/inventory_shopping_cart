@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- views/sale_order_views.xml -->
 <odoo>
     <record id="view_order_form_enhanced_prices" model="ir.ui.view">
         <field name="name">sale.order.form.enhanced.prices</field>
@@ -7,38 +6,44 @@
         <field name="inherit_id" ref="sale.view_order_form"/>
         <field name="arch" type="xml">
             
-            <!-- Agregar botón de solicitar autorización en el header -->
+            <!-- Botón de autorización: Visible para todos los usuarios internos si está en borrador -->
             <xpath expr="//header" position="inside">
                 <button name="action_request_authorization" 
                         string="Solicitar Autorización de Precio" 
                         type="object" 
                         class="btn-warning"
                         invisible="state not in ['draft', 'sent'] or x_price_authorization_id"
-                        groups="inventory_shopping_cart.group_seller"/>
+                        groups="base.group_user"/>
             </xpath>
 
-            <!-- Mostrar campo de autorización vinculada (solo lectura) -->
+            <!-- Mostrar campo de autorización vinculada -->
             <xpath expr="//group[@name='sale_header']" position="after">
                 <group>
-                     <field name="x_price_authorization_id" readonly="1" invisible="not x_price_authorization_id"/>
+                     <field name="x_price_authorization_id" 
+                            readonly="1" 
+                            invisible="not x_price_authorization_id"
+                            decoration-success="1"/>
                 </group>
             </xpath>
 
-            <!-- Modificar la línea de la orden para incluir el selector de precios -->
+            <!-- Inyectar selector de precio ANTES del precio unitario -->
             <xpath expr="//field[@name='order_line']/list//field[@name='price_unit']" position="before">
                 <field name="x_price_selector" 
                        optional="show" 
-                       style="width: 130px;"
+                       style="width: 140px;"
                        required="1"/>
             </xpath>
             
-            <!-- Hacer price_unit semi-bloqueado si no es personalizado -->
+            <!-- Modificar comportamiento de price_unit -->
             <xpath expr="//field[@name='order_line']/list//field[@name='price_unit']" position="attributes">
+                <!-- Solo editable si es 'custom' -->
                 <attribute name="readonly">x_price_selector != 'custom'</attribute>
+                <!-- Forzar guardado aunque sea readonly -->
                 <attribute name="force_save">1</attribute>
             </xpath>
-            
-            <!-- Agregar campos de proyecto y arquitecto en la pestaña de Otra Info o principal -->
+
+            <!-- Campos adicionales (Proyecto/Arquitecto) -->
+            <!-- Nota: Usamos priority para intentar insertar después si ya existen, o asegurar visibilidad -->
             <xpath expr="//field[@name='payment_term_id']" position="after">
                 <field name="x_project_id"/>
                 <field name="x_architect_id"/>
