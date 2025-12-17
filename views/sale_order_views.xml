@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- views/sale_order_views.xml -->
+<odoo>
+    <record id="view_order_form_enhanced_prices" model="ir.ui.view">
+        <field name="name">sale.order.form.enhanced.prices</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+            
+            <!-- Agregar botón de solicitar autorización en el header -->
+            <xpath expr="//header" position="inside">
+                <button name="action_request_authorization" 
+                        string="Solicitar Autorización de Precio" 
+                        type="object" 
+                        class="btn-warning"
+                        invisible="state not in ['draft', 'sent'] or x_price_authorization_id"
+                        groups="inventory_shopping_cart.group_seller"/>
+            </xpath>
+
+            <!-- Mostrar campo de autorización vinculada (solo lectura) -->
+            <xpath expr="//group[@name='sale_header']" position="after">
+                <group>
+                     <field name="x_price_authorization_id" readonly="1" invisible="not x_price_authorization_id"/>
+                </group>
+            </xpath>
+
+            <!-- Modificar la línea de la orden para incluir el selector de precios -->
+            <xpath expr="//field[@name='order_line']/list//field[@name='price_unit']" position="before">
+                <field name="x_price_selector" 
+                       optional="show" 
+                       style="width: 130px;"
+                       required="1"/>
+            </xpath>
+            
+            <!-- Hacer price_unit semi-bloqueado si no es personalizado -->
+            <xpath expr="//field[@name='order_line']/list//field[@name='price_unit']" position="attributes">
+                <attribute name="readonly">x_price_selector != 'custom'</attribute>
+                <attribute name="force_save">1</attribute>
+            </xpath>
+            
+            <!-- Agregar campos de proyecto y arquitecto en la pestaña de Otra Info o principal -->
+            <xpath expr="//field[@name='payment_term_id']" position="after">
+                <field name="x_project_id"/>
+                <field name="x_architect_id"/>
+            </xpath>
+
+        </field>
+    </record>
+</odoo>
