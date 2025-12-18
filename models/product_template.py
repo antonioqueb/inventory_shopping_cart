@@ -9,13 +9,14 @@ _logger = logging.getLogger(__name__)
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
     
-    x_price_usd_1 = fields.Float(string='Precio USD 1 (Alto)', digits='Product Price', default=0.0)
-    x_price_usd_2 = fields.Float(string='Precio USD 2 (Medio)', digits='Product Price', default=0.0)
-    x_price_usd_3 = fields.Float(string='Precio USD 3 (Mínimo)', digits='Product Price', default=0.0)
+    # AGREGADO: company_dependent=True permite que cada empresa tenga su propio valor
+    x_price_usd_1 = fields.Float(string='Precio USD 1 (Alto)', digits='Product Price', default=0.0, company_dependent=True)
+    x_price_usd_2 = fields.Float(string='Precio USD 2 (Medio)', digits='Product Price', default=0.0, company_dependent=True)
+    x_price_usd_3 = fields.Float(string='Precio USD 3 (Mínimo)', digits='Product Price', default=0.0, company_dependent=True)
     
-    x_price_mxn_1 = fields.Float(string='Precio MXN 1 (Alto)', digits='Product Price', default=0.0)
-    x_price_mxn_2 = fields.Float(string='Precio MXN 2 (Medio)', digits='Product Price', default=0.0)
-    x_price_mxn_3 = fields.Float(string='Precio MXN 3 (Mínimo)', digits='Product Price', default=0.0)
+    x_price_mxn_1 = fields.Float(string='Precio MXN 1 (Alto)', digits='Product Price', default=0.0, company_dependent=True)
+    x_price_mxn_2 = fields.Float(string='Precio MXN 2 (Medio)', digits='Product Price', default=0.0, company_dependent=True)
+    x_price_mxn_3 = fields.Float(string='Precio MXN 3 (Mínimo)', digits='Product Price', default=0.0, company_dependent=True)
     
     x_name_sps = fields.Char(string='Nombre SPS', help='Nombre del producto en el sistema SPS', default='')
 
@@ -24,8 +25,9 @@ class ProductTemplate(models.Model):
         """
         Acción planificada para actualizar precios MXN basados en API Banorte.
         Se ejecuta una vez al día.
+        MODIFICADO: Itera sobre todas las empresas para actualizar sus precios locales.
         """
-        # 1. Obtener API KEY del sistema
+        # 1. Obtener API KEY del sistema (Asumimos que la Key es global, sin company_dependent)
         api_key = self.env['ir.config_parameter'].sudo().get_param('API_KEY')
         if not api_key:
             _logger.error("BANORTE SYNC: No se encontró el parámetro 'API_KEY' en el sistema.")
@@ -37,7 +39,7 @@ class ProductTemplate(models.Model):
         }
 
         try:
-            # 2. Consultar API
+            # 2. Consultar API (Se consulta una vez para ahorrar recursos)
             response = requests.get(url, headers=headers, timeout=30)
             
             if response.status_code == 200:
@@ -51,36 +53,45 @@ class ProductTemplate(models.Model):
                     rate = 0.0
                 
                 if rate > 0:
-                    _logger.info(f"BANORTE SYNC: Tipo de cambio obtenido: {rate}. Actualizando productos...")
+                    _logger.info(f"BANORTE SYNC: Tipo de cambio obtenido: {rate}. Iniciando actualización por empresa...")
                     
-                    # 3. Guardar el tipo de cambio del día en parámetros para referencia
+                    # Guardar el tipo de cambio globalmente (o podrías hacerlo por empresa si prefieres)
                     self.env['ir.config_parameter'].sudo().set_param('banorte.last_rate', rate)
+
+                    # 3. Iterar sobre TODAS las empresas para actualizar sus campos company_dependent
+                    companies = self.env['res.company'].search([])
                     
-                    # 4. Actualizar masivamente los productos
-                    # Buscamos productos que tengan algún precio en USD definido
-                    products = self.search([
-                        '|', '|',
-                        ('x_price_usd_1', '>', 0),
-                        ('x_price_usd_2', '>', 0),
-                        ('x_price_usd_3', '>', 0)
-                    ])
-                    
-                    count = 0
-                    for product in products:
-                        updates = {}
-                        # Calculamos MXN basado en USD * Tasa
-                        if product.x_price_usd_1:
-                            updates['x_price_mxn_1'] = product.x_price_usd_1 * rate
-                        if product.x_price_usd_2:
-                            updates['x_price_mxn_2'] = product.x_price_usd_2 * rate
-                        if product.x_price_usd_3:
-                            updates['x_price_mxn_3'] = product.x_price_usd_3 * rate
+                    for company in companies:
+                        _logger.info(f"BANORTE SYNC: Procesando empresa {company.name}...")
                         
-                        if updates:
-                            product.write(updates)
-                            count += 1
+                        # Cambiamos el contexto a la empresa actual del bucle
+                        ProductWithContext = self.with_company(company)
+                        
+                        # Buscamos productos EN EL CONTEXTO de esta empresa
+                        products = ProductWithContext.search([
+                            '|', '|',
+                            ('x_price_usd_1', '>', 0),
+                            ('x_price_usd_2', '>', 0),
+                            ('x_price_usd_3', '>', 0)
+                        ])
+                        
+                        count = 0
+                        for product in products:
+                            updates = {}
+                            # Calculamos MXN basado en USD * Tasa
+                            # Al leer product.x_price_usd_1, Odoo ya trae el valor de la empresa actual gracias a with_company
+                            if product.x_price_usd_1:
+                                updates['x_price_mxn_1'] = product.x_price_usd_1 * rate
+                            if product.x_price_usd_2:
+                                updates['x_price_mxn_2'] = product.x_price_usd_2 * rate
+                            if product.x_price_usd_3:
+                                updates['x_price_mxn_3'] = product.x_price_usd_3 * rate
                             
-                    _logger.info(f"BANORTE SYNC: Se actualizaron {count} productos con TC {rate}")
+                            if updates:
+                                product.write(updates)
+                                count += 1
+                                
+                        _logger.info(f"BANORTE SYNC: Empresa {company.name} -> Se actualizaron {count} productos.")
                 else:
                     _logger.warning("BANORTE SYNC: El tipo de cambio obtenido es 0 o inválido.")
             else:
@@ -91,6 +102,8 @@ class ProductTemplate(models.Model):
 
     @api.model
     def get_custom_prices(self, product_id, currency_code):
+        # Al leer el producto, Odoo usa la empresa del usuario actual (self.env.company)
+        # automáticamente gracias a company_dependent=True.
         product = self.browse(product_id)
         prices = []
         
@@ -157,7 +170,6 @@ class ProductTemplate(models.Model):
     def check_price_authorization_needed(self, product_prices, currency_code):
         """
         Verifica si algún precio solicitado requiere autorización
-        Solo aplica para vendedores que solicitan precio menor al medio
         """
         needs_auth = []
         is_seller = self.env.user.has_group('inventory_shopping_cart.group_seller')
@@ -167,6 +179,7 @@ class ProductTemplate(models.Model):
             return {'needs_authorization': False, 'products': []}
         
         for product_id_str, requested_price in product_prices.items():
+            # Con company_dependent, browse() usa la empresa del usuario actual
             product = self.browse(int(product_id_str))
             
             # Obtener precio medio y mínimo según la divisa
