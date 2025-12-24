@@ -15,15 +15,30 @@
                 <page string="Precios Personalizados" name="custom_prices" 
                       groups="inventory_shopping_cart.group_price_authorizer">
                     <group>
-                        <group string="Precios USD">
-                            <field name="x_price_usd_1"/>
-                            <field name="x_price_usd_2"/>
-                            <field name="x_price_usd_3"/>
+                        <group string="Control de Costos y Utilidad">
+                            <field name="x_costo_mayor" readonly="1" force_save="1"/>
+                            <field name="x_utilidad" string="% Utilidad Deseada"/>
+                            <p class="text-muted" colspan="2">
+                                * El <b>Costo Mayor</b> se actualiza automáticamente si el costo nativo (incluyendo gastos en destino) es superior al actual.<br/>
+                                * La utilidad real se calcula como: Costo / (1 - %Utilidad).
+                            </p>
                         </group>
-                        <group string="Precios MXN">
-                            <field name="x_price_mxn_1"/>
-                            <field name="x_price_mxn_2"/>
-                            <field name="x_price_mxn_3"/>
+                        <group string="Tipo de Cambio Banorte">
+                            <div class="alert alert-info" role="alert" colspan="2">
+                                Los precios en USD se recalculan automáticamente basándose en el costo mayor MXN y el tipo de cambio del día obtenido de Banorte.
+                            </div>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Escalera MXN (Referencia)">
+                            <field name="x_price_mxn_1" readonly="1" force_save="1"/>
+                            <field name="x_price_mxn_2" readonly="1" force_save="1"/>
+                            <field name="x_price_mxn_3" readonly="1" force_save="1"/>
+                        </group>
+                        <group string="Escalera USD (Venta)">
+                            <field name="x_price_usd_1" readonly="1" force_save="1"/>
+                            <field name="x_price_usd_2" readonly="1" force_save="1"/>
+                            <field name="x_price_usd_3" readonly="1" force_save="1"/>
                         </group>
                     </group>
                 </page>
