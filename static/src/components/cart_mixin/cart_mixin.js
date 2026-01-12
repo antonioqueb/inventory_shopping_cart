@@ -19,6 +19,7 @@ patch(InventoryVisualController.prototype, {
             items: [],
             totalQuantity: 0,
             totalLots: 0,
+            typeLabel: 'Placas', // Default
             productGroups: {},
             hasSalesPermissions: false,
             hasInventoryPermissions: false
@@ -114,7 +115,9 @@ patch(InventoryVisualController.prototype, {
                 location_name: detail.location_name,
                 tiene_hold: detail.tiene_hold,
                 hold_info: detail.hold_info,
-                seller_name: detail.seller_name || ''
+                seller_name: detail.seller_name || '',
+                // Capturamos el tipo desde el detalle (viene de get_quant_details)
+                product_type: detail.tipo || 'placa' 
             };
             this.cart.items.push(newItem);
             
@@ -135,7 +138,7 @@ patch(InventoryVisualController.prototype, {
         
         this.updateCartSummary();
         
-        // ✅ FORZAR ACTUALIZACIÓN REACTIVA explícita
+        // FORZAR ACTUALIZACIÓN REACTIVA explícita
         this.cart.items = [...this.cart.items];
     },
     
@@ -150,7 +153,7 @@ patch(InventoryVisualController.prototype, {
             }
         }
         
-        // ✅ FORZAR RE-RENDER: Colapsar y expandir el producto
+        // FORZAR RE-RENDER: Colapsar y expandir el producto
         const productId = this.state.activeProductId;
         const product = this.state.products.find(p => p.product_id === productId);
         
@@ -180,7 +183,7 @@ patch(InventoryVisualController.prototype, {
             }
         }
         
-        // ✅ FORZAR RE-RENDER: Colapsar y expandir el producto
+        // FORZAR RE-RENDER: Colapsar y expandir el producto
         const productId = this.state.activeProductId;
         const product = this.state.products.find(p => p.product_id === productId);
         
@@ -232,6 +235,29 @@ patch(InventoryVisualController.prototype, {
         this.cart.totalLots = this.cart.items.length;
         this.cart.totalQuantity = this.cart.items.reduce((sum, item) => sum + item.quantity, 0);
         
+        // === CÁLCULO DE ETIQUETA DINÁMICA ===
+        const uniqueTypes = new Set(this.cart.items.map(item => (item.product_type || 'placa').toLowerCase()));
+        
+        if (uniqueTypes.size === 0) {
+            this.cart.typeLabel = 'Items';
+        } else if (uniqueTypes.size > 1) {
+            // Si hay mezcla de tipos, usamos "Unidades"
+            this.cart.typeLabel = 'Unidades';
+        } else {
+            // Solo hay un tipo, usamos ese
+            const type = [...uniqueTypes][0];
+            const isPlural = this.cart.totalLots !== 1;
+            
+            if (type === 'formato') {
+                this.cart.typeLabel = isPlural ? 'Formatos' : 'Formato';
+            } else if (type === 'pieza') {
+                this.cart.typeLabel = isPlural ? 'Piezas' : 'Pieza';
+            } else {
+                this.cart.typeLabel = isPlural ? 'Placas' : 'Placa';
+            }
+        }
+        // =====================================
+
         const groups = {};
         for (const item of this.cart.items) {
             if (!groups[item.product_id]) {
@@ -252,18 +278,18 @@ patch(InventoryVisualController.prototype, {
         this.updateCartSummary();
         await this.orm.call('shopping.cart', 'clear_cart', []);
         
-        // ✅ OBTENER TODOS LOS PRODUCTOS QUE ESTÁN EXPANDIDOS
+        // OBTENER TODOS LOS PRODUCTOS QUE ESTÁN EXPANDIDOS
         const expandedProductIds = Array.from(this.state.expandedProducts);
         
         if (expandedProductIds.length > 0) {
-            // ✅ COLAPSAR TODOS LOS PRODUCTOS EXPANDIDOS
+            // COLAPSAR TODOS LOS PRODUCTOS EXPANDIDOS
             this.state.expandedProducts.clear();
             this.state.expandedProducts = new Set(this.state.expandedProducts);
             
             // Pequeño delay para que el DOM se actualice
             await new Promise(resolve => setTimeout(resolve, 50));
             
-            // ✅ RE-EXPANDIR TODOS LOS PRODUCTOS QUE ESTABAN EXPANDIDOS
+            // RE-EXPANDIR TODOS LOS PRODUCTOS QUE ESTABAN EXPANDIDOS
             for (const productId of expandedProductIds) {
                 const product = this.state.products.find(p => p.product_id === productId);
                 if (product) {
@@ -284,22 +310,22 @@ patch(InventoryVisualController.prototype, {
         
         await this.orm.call('shopping.cart', 'remove_holds_from_cart', []);
         
-        // ✅ Forzar actualización reactiva
+        // Forzar actualización reactiva
         this.cart.items = [...this.cart.items];
         
         this.notification.add("Lotes apartados eliminados del carrito", { type: "success" });
         
-        // ✅ OBTENER TODOS LOS PRODUCTOS QUE ESTÁN EXPANDIDOS
+        // OBTENER TODOS LOS PRODUCTOS QUE ESTÁN EXPANDIDOS
         const expandedProductIds = Array.from(this.state.expandedProducts);
         
         if (expandedProductIds.length > 0) {
-            // ✅ COLAPSAR TODOS LOS PRODUCTOS EXPANDIDOS
+            // COLAPSAR TODOS LOS PRODUCTOS EXPANDIDOS
             this.state.expandedProducts.clear();
             this.state.expandedProducts = new Set(this.state.expandedProducts);
             
             await new Promise(resolve => setTimeout(resolve, 50));
             
-            // ✅ RE-EXPANDIR TODOS LOS PRODUCTOS QUE ESTABAN EXPANDIDOS
+            // RE-EXPANDIR TODOS LOS PRODUCTOS QUE ESTABAN EXPANDIDOS
             for (const productId of expandedProductIds) {
                 const product = this.state.products.find(p => p.product_id === productId);
                 if (product) {

@@ -15,7 +15,6 @@ class ShoppingCart(models.Model):
     location_name = fields.Char(string='Ubicación')
     added_at = fields.Datetime(string='Agregado', default=fields.Datetime.now)
     
-    # === CORRECCIÓN: El nombre de la variable DEBE empezar con guion bajo (_) ===
     _unique_user_quant = Constraint(
         'unique(user_id, quant_id)',
         'Este lote ya está en tu carrito'
@@ -47,6 +46,11 @@ class ShoppingCart(models.Model):
                     if hold.user_id:
                         seller_name = hold.user_id.name
             
+            # Obtener el tipo (Placa, Formato, Pieza)
+            product_type = 'placa' # Default
+            if hasattr(lot, 'x_tipo') and lot.x_tipo:
+                product_type = lot.x_tipo
+
             result.append({
                 'id': item.quant_id.id,
                 'lot_id': lot.id,
@@ -57,7 +61,8 @@ class ShoppingCart(models.Model):
                 'location_name': item.location_name,
                 'tiene_hold': tiene_hold,
                 'hold_info': hold_info,
-                'seller_name': seller_name
+                'seller_name': seller_name,
+                'product_type': product_type, # <--- NUEVO CAMPO
             })
         return result
     

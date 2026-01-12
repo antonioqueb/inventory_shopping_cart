@@ -7,7 +7,10 @@
                 <div class="cart-summary">
                     <i class="fa fa-shopping-cart me-2"></i>
                     <strong t-esc="Object.keys(cart.productGroups).length"></strong> <t t-if="Object.keys(cart.productGroups).length === 1">Modelo</t><t t-else="">Modelos</t> |
-                    <strong t-esc="cart.totalLots"></strong> <t t-if="cart.totalLots === 1">Unidad</t><t t-else="">Unidades</t> |
+                    
+                    <!-- ETIQUETA DINÁMICA: Placas / Formatos / Piezas -->
+                    <strong t-esc="cart.totalLots"></strong> <span t-esc="cart.typeLabel"/> |
+                    
                     <strong t-esc="formatNumber(cart.totalQuantity)"></strong> m²
                 </div>
                 <div class="cart-actions">
