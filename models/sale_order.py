@@ -3,7 +3,6 @@
 from odoo import models, fields, api
 from odoo.exceptions import UserError, ValidationError
 import logging
-import traceback
 
 _logger = logging.getLogger(__name__)
 
@@ -220,9 +219,14 @@ class SaleOrder(models.Model):
                     
                     if 'lots_breakdown' in p and p['lots_breakdown']:
                         # Estructura: product_id -> { quant_id: quantity }
-                        q_map = {l['id']: l['quantity'] for l in p['lots_breakdown']}
-                        product_breakdown_map[p['product_id']] = q_map
-            
+                        # ✅ Asegurar conversión a enteros para evitar fallos de llave (str vs int)
+                        try:
+                            q_map = {int(l['id']): float(l['quantity']) for l in p['lots_breakdown']}
+                            product_breakdown_map[int(p['product_id'])] = q_map
+                            _logger.info(f"DEBUG: Breakdown para producto {p['product_id']}: {q_map}")
+                        except Exception as e:
+                            _logger.error(f"Error parseando breakdown: {e}")
+
             if not self.env.context.get('skip_auth_check'):
                 auth_result = self.env['product.template'].check_price_authorization_needed(prices_map, currency_code)
                 if auth_result.get('needs_authorization'):
@@ -243,7 +247,6 @@ class SaleOrder(models.Model):
                 'user_id': self.env.user.id,
             }
             
-            _logger.info(f"DEBUG: Creando Sale Order: {vals}")
             sale_order = self.create(vals)
             
             if products:
@@ -258,7 +261,6 @@ class SaleOrder(models.Model):
                     
                     selected_lots_ids = product_data.get('selected_lots', [])
                     
-                    # ✅ Obtener descripción y UoM explícitamente
                     product_name = product_rec.get_product_multiline_description_sale() or product_rec.name
                     
                     line_vals = {
@@ -308,7 +310,7 @@ class SaleOrder(models.Model):
                 if line.x_selected_lots and line.product_id.type == 'product':
                     pickings = line.move_ids.mapped('picking_id')
                     if pickings:
-                        # ✅ Pasamos el breakdown específico para este producto
+                        # ✅ Pasamos el breakdown específico para este producto usando int key
                         breakdown = product_breakdown_map.get(line.product_id.id)
                         self._assign_specific_lots(pickings, line.product_id, line.x_selected_lots, breakdown=breakdown)
 
@@ -325,19 +327,14 @@ class SaleOrder(models.Model):
     def _assign_specific_lots(self, pickings, product, selected_quants, breakdown=None):
         """
         Asigna lotes específicos a los movimientos de stock.
-        
-        Args:
-            pickings: Recordset de stock.picking
-            product: Recordset de product.product
-            selected_quants: Recordset de stock.quant
-            breakdown: Diccionario opcional {quant_id (int): quantity (float)}
-                      con la cantidad exacta a tomar de cada lote.
         """
         # Obtener el usuario real dueño de la orden para buscar en el carrito
         sale_order = pickings.mapped('sale_id')
         cart_owner_id = sale_order.user_id.id if sale_order else self.env.user.id
         
-        _logger.info(f"DEBUG: Asignando lotes para {product.display_name}. Usuario Carrito ID: {cart_owner_id}")
+        _logger.info(f"DEBUG: Asignando lotes para {product.display_name} (ID: {product.id}).")
+        if breakdown:
+            _logger.info(f"DEBUG: Breakdown disponible: {breakdown}")
 
         for picking in pickings:
             if picking.state in ['done', 'cancel']:
@@ -347,6 +344,8 @@ class SaleOrder(models.Model):
             
             for move in moves:
                 _logger.info(f"DEBUG: Move ID {move.id} - Demanda Inicial: {move.product_uom_qty}")
+                
+                # Desvincular reservas automáticas que Odoo haya hecho
                 move.move_line_ids.unlink()
                 
                 remaining_demand = move.product_uom_qty
@@ -359,9 +358,11 @@ class SaleOrder(models.Model):
                         break
 
                     # ✅ 1. DETERMINAR CANTIDAD A RESERVAR
-                    # Prioridad A: Usar breakdown explícito (viene del frontend JS)
+                    # Prioridad A: Usar breakdown explícito (asegurando key int)
+                    qty_in_cart = 0
                     if breakdown and quant.id in breakdown:
                         qty_in_cart = breakdown[quant.id]
+                        _logger.info(f"DEBUG: Usando breakdown para quant {quant.id}: {qty_in_cart}")
                     else:
                         # Prioridad B: Buscar en shopping.cart (Fallback)
                         cart_item = self.env['shopping.cart'].search([
@@ -370,19 +371,26 @@ class SaleOrder(models.Model):
                         ], limit=1)
                         
                         # Si falla búsqueda, usar todo el lote (último recurso)
-                        qty_in_cart = cart_item.quantity if cart_item else quant.quantity
+                        if cart_item:
+                             qty_in_cart = cart_item.quantity
+                             _logger.info(f"DEBUG: Usando Shopping Cart para quant {quant.id}: {qty_in_cart}")
+                        else:
+                             # ⚠️ Si no hay breakdown ni carrito, aquí estaba el problema: tomaba todo.
+                             # Ahora, si el lote es mayor que la demanda, no asumimos tomarlo todo a menos
+                             # que sea la única opción.
+                             qty_in_cart = quant.quantity
+                             _logger.info(f"DEBUG: Fallback a Total Lote para quant {quant.id}: {qty_in_cart}")
                     
                     # ✅ 2. CLAMP DE SEGURIDAD (TOPE)
                     # La reserva NO puede ser mayor a la demanda restante del movimiento.
-                    # Ej: Si Move pide 40, y Lote tiene 90, reservamos min(40, 40) = 40.
                     qty_to_reserve = min(qty_in_cart, remaining_demand)
                     
                     _logger.info(
                         f"DEBUG: Lote {quant.lot_id.name} | "
-                        f"En Stock: {quant.quantity} | "
-                        f"Solicitado (Breakdown/Cart): {qty_in_cart} | "
-                        f"Demanda Restante Move: {remaining_demand} | "
-                        f"-> A RESERVAR: {qty_to_reserve}"
+                        f"Stock: {quant.quantity} | "
+                        f"Solicitado: {qty_in_cart} | "
+                        f"Demanda Restante: {remaining_demand} | "
+                        f"-> RESERVANDO: {qty_to_reserve}"
                     )
 
                     if qty_to_reserve <= 0:
