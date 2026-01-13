@@ -4,7 +4,9 @@
     <t t-name="inventory_visual_enhanced.InventoryView" t-inherit="inventory_visual_enhanced.InventoryView" t-inherit-mode="extension" owl="1">
         <xpath expr="//ProductRow" position="attributes">
             <attribute name="isInCart.bind">isInCart</attribute>
+            <attribute name="getDisplayQuantity.bind">getDisplayQuantity</attribute>
             <attribute name="toggleCartSelection.bind">toggleCartSelection</attribute>
+            <attribute name="onInputManualQuantity.bind">onInputManualQuantity</attribute>
             <attribute name="areAllCurrentProductSelected.bind">areAllCurrentProductSelected</attribute>
             <attribute name="selectAllCurrentProduct.bind">selectAllCurrentProduct</attribute>
             <attribute name="deselectAllCurrentProduct.bind">deselectAllCurrentProduct</attribute>
@@ -15,7 +17,7 @@
     <t t-name="inventory_visual_enhanced.ProductDetails" t-inherit="inventory_visual_enhanced.ProductDetails" t-inherit-mode="extension" owl="1">
         <!-- Reemplazar el header del checkbox con seleccionar todo -->
         <xpath expr="//thead/tr/th[@class='col-checkbox']" position="replace">
-            <th class="col-checkbox text-center" style="width: 50px;">
+            <th class="col-checkbox text-center" style="width: 70px;">
                 <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
                     <input 
                         type="checkbox" 
@@ -32,12 +34,33 @@
         <!-- Modificar el checkbox individual en el body -->
         <xpath expr="//td[@class='col-checkbox text-center']" position="replace">
             <td class="col-checkbox text-center">
-                <input 
-                    type="checkbox"
-                    class="form-check-input cart-checkbox"
-                    t-att-checked="props.isInCart ? (props.isInCart(detail.id) ? 'checked' : undefined) : undefined"
-                    t-on-click.stop="() => props.toggleCartSelection ? props.toggleCartSelection(detail) : null"
-                />
+                <div class="d-flex align-items-center justify-content-center gap-2" t-on-click.stop="">
+                    
+                    <!-- Checkbox SIEMPRE visible -->
+                    <input 
+                        type="checkbox"
+                        class="form-check-input cart-checkbox"
+                        t-att-checked="props.isInCart ? (props.isInCart(detail.id) ? 'checked' : undefined) : undefined"
+                        t-on-click.stop="() => props.toggleCartSelection ? props.toggleCartSelection(detail) : null"
+                    />
+
+                    <!-- Input adicional SOLO si es Formato -->
+                    <t t-if="detail.tipo and (detail.tipo === 'formato' or detail.tipo === 'Formato')">
+                        <div class="d-flex align-items-center gap-1">
+                            <input 
+                                type="number"
+                                class="form-control form-control-sm p-1 text-center"
+                                style="width: 60px; height: 24px; font-size: 11px;"
+                                t-att-value="props.getDisplayQuantity ? props.getDisplayQuantity(detail.id) : ''"
+                                t-on-change="(ev) => props.onInputManualQuantity ? props.onInputManualQuantity(detail, ev.target.value) : null"
+                                placeholder="Total"
+                                min="0"
+                                t-att-max="detail.quantity"
+                            />
+                            <span style="font-size: 9px; font-weight: bold; color: #666;">m²</span>
+                        </div>
+                    </t>
+                </div>
             </td>
         </xpath>
     </t>

@@ -1,4 +1,3 @@
-# ./models/shopping_cart.py
 # -*- coding: utf-8 -*-
 from odoo import models, fields, api
 from odoo.models import Constraint
@@ -62,20 +61,25 @@ class ShoppingCart(models.Model):
                 'tiene_hold': tiene_hold,
                 'hold_info': hold_info,
                 'seller_name': seller_name,
-                'product_type': product_type, # <--- NUEVO CAMPO
+                'product_type': product_type,
             })
         return result
     
     @api.model
     def add_to_cart(self, quant_id=None, lot_id=None, product_id=None, quantity=None, location_name=None):
-        """Agregar item al carrito"""
+        """Agregar item al carrito o actualizar cantidad si ya existe"""
         if not all([quant_id, lot_id, product_id, quantity is not None]):
             return {'success': False, 'message': 'Faltan parámetros'}
         
+        # Buscar si ya existe
         existing = self.search([('user_id', '=', self.env.user.id), ('quant_id', '=', quant_id)])
-        if existing:
-            return {'success': False, 'message': 'Ya está en el carrito'}
         
+        if existing:
+            # Si ya existe, actualizamos la cantidad
+            existing.write({'quantity': quantity})
+            return {'success': True, 'message': 'Cantidad actualizada'}
+        
+        # Si no existe, creamos
         self.create({
             'quant_id': quant_id,
             'lot_id': lot_id,

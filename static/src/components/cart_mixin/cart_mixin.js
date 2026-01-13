@@ -15,6 +15,10 @@ patch(InventoryVisualController.prototype, {
             this.state.activeProductName = '';
         }
         
+        // Estado para almacenar valores escritos en los inputs que AÚN NO están en el carrito
+        // o para persistir el valor mientras se edita
+        this.state.manualInputValues = {}; 
+        
         this.cart = useState({
             items: [],
             totalQuantity: 0,
@@ -26,7 +30,9 @@ patch(InventoryVisualController.prototype, {
         });
         
         this.isInCart = this.isInCart.bind(this);
+        this.getDisplayQuantity = this.getDisplayQuantity.bind(this);
         this.toggleCartSelection = this.toggleCartSelection.bind(this);
+        this.onInputManualQuantity = this.onInputManualQuantity.bind(this);
         this.selectAllCurrentProduct = this.selectAllCurrentProduct.bind(this);
         this.deselectAllCurrentProduct = this.deselectAllCurrentProduct.bind(this);
         this.areAllCurrentProductSelected = this.areAllCurrentProductSelected.bind(this);
@@ -97,105 +103,153 @@ patch(InventoryVisualController.prototype, {
     isInCart(detailId) {
         return this.cart.items.some(item => item.id === detailId);
     },
+
+    /**
+     * Devuelve el valor a mostrar en el input.
+     * Prioridad 1: Si está en carrito, muestra cantidad del carrito.
+     * Prioridad 2: Si hay valor manual temporal, muestra ese.
+     * Prioridad 3: Vacío.
+     */
+    getDisplayQuantity(detailId) {
+        const cartItem = this.cart.items.find(item => item.id === detailId);
+        if (cartItem) {
+            return cartItem.quantity;
+        }
+        return this.state.manualInputValues[detailId] || '';
+    },
     
+    /**
+     * Lógica al hacer click en el Checkbox.
+     * - Si está marcado: Lo quita.
+     * - Si está desmarcado: Lo agrega.
+     *   -> Si hay valor en input manual: Usa ese valor.
+     *   -> Si input está vacío: Usa TODO el lote.
+     */
     async toggleCartSelection(detail) {
         const index = this.cart.items.findIndex(item => item.id === detail.id);
         
         if (index >= 0) {
+            // ESTABA MARCADO -> DESMARCAR (Eliminar)
             this.cart.items.splice(index, 1);
             await this.orm.call('shopping.cart', 'remove_from_cart', [detail.id]);
         } else {
-            const newItem = {
+            // ESTABA DESMARCADO -> MARCAR (Agregar)
+            
+            // Verificar si hay un valor manual escrito
+            let manualQty = parseFloat(this.state.manualInputValues[detail.id]);
+            
+            // Lógica de negocio: Si input vacío o 0 -> Agarra todo el lote. Si tiene valor -> Agarra valor.
+            let finalQty = (manualQty && manualQty > 0) ? manualQty : detail.quantity;
+            
+            // Validar tope máximo (opcional)
+            if (finalQty > detail.quantity) {
+                finalQty = detail.quantity;
+                this.notification.add(`Cantidad ajustada al máximo disponible (${finalQty} m²)`, { type: "info" });
+            }
+
+            await this.addOrUpdateCartItem(detail, finalQty);
+        }
+        
+        this.updateCartSummary();
+        this.cart.items = [...this.cart.items]; // Reactividad
+    },
+
+    /**
+     * Lógica al escribir en el Input numérico.
+     */
+    async onInputManualQuantity(detail, value) {
+        const qty = parseFloat(value);
+        
+        // Guardamos el valor temporal siempre
+        if (isNaN(qty) || qty === 0) {
+            delete this.state.manualInputValues[detail.id];
+        } else {
+            this.state.manualInputValues[detail.id] = qty;
+        }
+
+        // Si el item YA está en el carrito, actualizamos en tiempo real
+        if (this.isInCart(detail.id)) {
+            // Si el usuario borra el input estando chequeado, volvemos a la cantidad total del lote
+            let finalQty = (qty && qty > 0) ? qty : detail.quantity;
+            
+            if (finalQty > detail.quantity) {
+                finalQty = detail.quantity;
+                // No mostrar notificación intrusiva mientras escribe, pero ajustar silenciosamente
+            }
+            
+            await this.addOrUpdateCartItem(detail, finalQty);
+            this.updateCartSummary();
+            this.cart.items = [...this.cart.items];
+        }
+    },
+
+    async addOrUpdateCartItem(detail, quantity) {
+        const index = this.cart.items.findIndex(item => item.id === detail.id);
+        
+        if (index >= 0) {
+            // Actualizar local
+            this.cart.items[index].quantity = quantity;
+        } else {
+            // Agregar nuevo local
+            this.cart.items.push({
                 id: detail.id,
                 lot_id: detail.lot_id,
                 lot_name: detail.lot_name,
                 product_id: this.getCurrentProductId(detail),
                 product_name: this.getCurrentProductName(detail),
-                quantity: detail.quantity,
+                quantity: quantity,
                 location_name: detail.location_name,
                 tiene_hold: detail.tiene_hold,
                 hold_info: detail.hold_info,
                 seller_name: detail.seller_name || '',
-                // Capturamos el tipo desde el detalle (viene de get_quant_details)
-                product_type: detail.tipo || 'placa' 
-            };
-            this.cart.items.push(newItem);
-            
-            try {
-                await this.orm.call('shopping.cart', 'add_to_cart', [], {
-                    quant_id: newItem.id,
-                    lot_id: newItem.lot_id,
-                    product_id: newItem.product_id,
-                    quantity: newItem.quantity,
-                    location_name: newItem.location_name
-                });
-            } catch (error) {
-                console.error('[CART] Error agregando al carrito:', error);
-                this.cart.items.pop();
-                this.notification.add("Error al agregar al carrito", { type: "danger" });
-            }
+                product_type: detail.tipo || 'placa'
+            });
         }
-        
-        this.updateCartSummary();
-        
-        // FORZAR ACTUALIZACIÓN REACTIVA explícita
-        this.cart.items = [...this.cart.items];
+
+        try {
+            await this.orm.call('shopping.cart', 'add_to_cart', [], {
+                quant_id: detail.id,
+                lot_id: detail.lot_id,
+                product_id: this.getCurrentProductId(detail),
+                quantity: quantity,
+                location_name: detail.location_name
+            });
+        } catch (error) {
+            console.error('[CART] Error agregando/actualizando en carrito:', error);
+            // Revertir si es nuevo y falló
+            if (index < 0) this.cart.items.pop(); 
+            this.notification.add("Error al actualizar el carrito", { type: "danger" });
+        }
     },
     
     async selectAllCurrentProduct() {
         if (!this.state.activeProductId) return;
-        
         const details = this.getProductDetails(this.state.activeProductId);
-        
         for (const detail of details) {
             if (!this.isInCart(detail.id)) {
                 await this.toggleCartSelection(detail);
             }
         }
-        
-        // FORZAR RE-RENDER: Colapsar y expandir el producto
-        const productId = this.state.activeProductId;
-        const product = this.state.products.find(p => p.product_id === productId);
-        
-        if (product) {
-            // Colapsar
-            this.state.expandedProducts.delete(productId);
-            this.state.expandedProducts = new Set(this.state.expandedProducts);
-            
-            // Pequeño delay para que el DOM se actualice
-            await new Promise(resolve => setTimeout(resolve, 50));
-            
-            // Re-expandir
-            this.state.expandedProducts.add(productId);
-            await this.loadProductDetails(productId, product.quant_ids);
-            this.state.expandedProducts = new Set(this.state.expandedProducts);
-        }
+        this._forceRenderProduct(this.state.activeProductId);
     },
     
     async deselectAllCurrentProduct() {
         if (!this.state.activeProductId) return;
-        
         const details = this.getProductDetails(this.state.activeProductId);
-        
         for (const detail of details) {
             if (this.isInCart(detail.id)) {
                 await this.toggleCartSelection(detail);
             }
         }
-        
-        // FORZAR RE-RENDER: Colapsar y expandir el producto
-        const productId = this.state.activeProductId;
+        this._forceRenderProduct(this.state.activeProductId);
+    },
+
+    async _forceRenderProduct(productId) {
         const product = this.state.products.find(p => p.product_id === productId);
-        
         if (product) {
-            // Colapsar
             this.state.expandedProducts.delete(productId);
             this.state.expandedProducts = new Set(this.state.expandedProducts);
-            
-            // Pequeño delay para que el DOM se actualice
             await new Promise(resolve => setTimeout(resolve, 50));
-            
-            // Re-expandir
             this.state.expandedProducts.add(productId);
             await this.loadProductDetails(productId, product.quant_ids);
             this.state.expandedProducts = new Set(this.state.expandedProducts);
@@ -204,10 +258,8 @@ patch(InventoryVisualController.prototype, {
     
     areAllCurrentProductSelected() {
         if (!this.state.activeProductId) return false;
-        
         const details = this.getProductDetails(this.state.activeProductId);
         if (details.length === 0) return false;
-        
         return details.every(detail => this.isInCart(detail.id));
     },
     
