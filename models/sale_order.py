@@ -246,9 +246,14 @@ class SaleOrder(models.Model):
                     
                     selected_lots_ids = product_data.get('selected_lots', [])
                     
+                    # ✅ FIX: Obtener descripción y UoM explícitamente
+                    product_name = product_rec.get_product_multiline_description_sale() or product_rec.name
+                    
                     line_vals = {
                         'order_id': sale_order.id,
+                        'name': product_name,  # ✅ OBLIGATORIO EN CREATE
                         'product_id': product_rec.id,
+                        'product_uom': product_rec.uom_id.id, # ✅ OBLIGATORIO EN CREATE
                         'product_uom_qty': product_data['quantity'],
                         'price_unit': product_data['price_unit'],
                         'tax_ids': tax_ids,
@@ -268,9 +273,14 @@ class SaleOrder(models.Model):
                     else:
                         tax_ids = [(5, 0, 0)]
                     
+                    # ✅ FIX: Obtener descripción y UoM explícitamente
+                    service_name = service_rec.get_product_multiline_description_sale() or service_rec.name
+
                     line_vals = {
                         'order_id': sale_order.id,
+                        'name': service_name, # ✅ OBLIGATORIO EN CREATE
                         'product_id': service_rec.id,
+                        'product_uom': service_rec.uom_id.id, # ✅ OBLIGATORIO EN CREATE
                         'product_uom_qty': service_data['quantity'],
                         'price_unit': service_data['price_unit'],
                         'tax_ids': tax_ids,
