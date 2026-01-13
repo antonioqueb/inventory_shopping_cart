@@ -488,7 +488,13 @@ export class SaleOrderWizard extends Component {
                     product_id: parseInt(productId),
                     quantity: group.total_quantity,
                     price_unit: parseFloat(this.state.productPrices[productId]),
-                    selected_lots: group.lots.map(lot => lot.id)
+                    selected_lots: group.lots.map(lot => lot.id),
+                    // ✅ AÑADIDO: Desglose explícito de cantidades por lote
+                    // Esto es crítico para que el backend sepa cuánto tomar de cada lote
+                    lots_breakdown: group.lots.map(lot => ({ 
+                        id: lot.id, 
+                        quantity: lot.quantity 
+                    }))
                 });
             }
             

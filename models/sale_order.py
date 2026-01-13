@@ -209,10 +209,19 @@ class SaleOrder(models.Model):
             pricelist = self.env['product.pricelist'].browse(pricelist_id)
             currency_code = pricelist.currency_id.name
             
+            # ✅ Preparar mapa de breakdown (Desglose de lotes por producto y cantidad)
+            # Esto evita depender de la tabla shopping.cart durante la asignación
+            product_breakdown_map = {}
             prices_map = {}
+            
             if products:
                 for p in products:
                     prices_map[str(p['product_id'])] = p['price_unit']
+                    
+                    if 'lots_breakdown' in p and p['lots_breakdown']:
+                        # Estructura: product_id -> { quant_id: quantity }
+                        q_map = {l['id']: l['quantity'] for l in p['lots_breakdown']}
+                        product_breakdown_map[p['product_id']] = q_map
             
             if not self.env.context.get('skip_auth_check'):
                 auth_result = self.env['product.template'].check_price_authorization_needed(prices_map, currency_code)
@@ -299,7 +308,9 @@ class SaleOrder(models.Model):
                 if line.x_selected_lots and line.product_id.type == 'product':
                     pickings = line.move_ids.mapped('picking_id')
                     if pickings:
-                        self._assign_specific_lots(pickings, line.product_id, line.x_selected_lots)
+                        # ✅ Pasamos el breakdown específico para este producto
+                        breakdown = product_breakdown_map.get(line.product_id.id)
+                        self._assign_specific_lots(pickings, line.product_id, line.x_selected_lots, breakdown=breakdown)
 
             return {
                 'success': True,
@@ -311,10 +322,16 @@ class SaleOrder(models.Model):
             _logger.error(f"❌ Error en create_from_shopping_cart: {str(e)}", exc_info=True)
             raise UserError(f"Error al procesar la orden: {str(e)}")
 
-    def _assign_specific_lots(self, pickings, product, selected_quants):
+    def _assign_specific_lots(self, pickings, product, selected_quants, breakdown=None):
         """
-        Asigna lotes específicos.
-        CORRECCIÓN: Asegura usar la cantidad exacta del carrito incluso si el lote tiene más.
+        Asigna lotes específicos a los movimientos de stock.
+        
+        Args:
+            pickings: Recordset de stock.picking
+            product: Recordset de product.product
+            selected_quants: Recordset de stock.quant
+            breakdown: Diccionario opcional {quant_id (int): quantity (float)}
+                      con la cantidad exacta a tomar de cada lote.
         """
         # Obtener el usuario real dueño de la orden para buscar en el carrito
         sale_order = pickings.mapped('sale_id')
@@ -341,26 +358,29 @@ class SaleOrder(models.Model):
                     if remaining_demand <= 0:
                         break
 
-                    # 1. BUSCAR EN CARRITO CON EL USUARIO DE LA ORDEN (No self.env.user que puede ser sudo)
-                    cart_item = self.env['shopping.cart'].search([
-                        ('user_id', '=', cart_owner_id),
-                        ('quant_id', '=', quant.id)
-                    ], limit=1)
+                    # ✅ 1. DETERMINAR CANTIDAD A RESERVAR
+                    # Prioridad A: Usar breakdown explícito (viene del frontend JS)
+                    if breakdown and quant.id in breakdown:
+                        qty_in_cart = breakdown[quant.id]
+                    else:
+                        # Prioridad B: Buscar en shopping.cart (Fallback)
+                        cart_item = self.env['shopping.cart'].search([
+                            ('user_id', '=', cart_owner_id),
+                            ('quant_id', '=', quant.id)
+                        ], limit=1)
+                        
+                        # Si falla búsqueda, usar todo el lote (último recurso)
+                        qty_in_cart = cart_item.quantity if cart_item else quant.quantity
                     
-                    # 2. DEFINIR CANTIDAD A RESERVAR
-                    # Si está en el carrito, usamos esa cantidad (ej: 40).
-                    # Si no, usamos todo el lote (ej: 90).
-                    qty_in_cart = cart_item.quantity if cart_item else quant.quantity
-                    
-                    # 3. CLAMP DE SEGURIDAD (TOPE)
+                    # ✅ 2. CLAMP DE SEGURIDAD (TOPE)
                     # La reserva NO puede ser mayor a la demanda restante del movimiento.
-                    # Ej: Si Move pide 40, y Lote tiene 90, reservamos min(90, 40) = 40.
+                    # Ej: Si Move pide 40, y Lote tiene 90, reservamos min(40, 40) = 40.
                     qty_to_reserve = min(qty_in_cart, remaining_demand)
                     
                     _logger.info(
                         f"DEBUG: Lote {quant.lot_id.name} | "
                         f"En Stock: {quant.quantity} | "
-                        f"En Carrito: {qty_in_cart} | "
+                        f"Solicitado (Breakdown/Cart): {qty_in_cart} | "
                         f"Demanda Restante Move: {remaining_demand} | "
                         f"-> A RESERVAR: {qty_to_reserve}"
                     )
