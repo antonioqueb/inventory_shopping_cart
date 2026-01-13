@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
+# models/sale_order.py
 from odoo import models, fields, api
 from odoo.exceptions import UserError, ValidationError
 import logging
-import traceback # Para imprimir el stacktrace completo en los logs
+import traceback
 
 _logger = logging.getLogger(__name__)
 
@@ -200,18 +201,14 @@ class SaleOrder(models.Model):
             raise UserError("El cliente es obligatorio.")
         
         try:
-            # 1. Validar lista de precios
             if not pricelist_id:
-                _logger.info("DEBUG: Buscando lista de precios por defecto...")
                 pricelist_id = self.env['res.partner'].browse(partner_id).property_product_pricelist.id
                 if not pricelist_id:
                     raise UserError("No se ha definido una lista de precios.")
-            
+
             pricelist = self.env['product.pricelist'].browse(pricelist_id)
             currency_code = pricelist.currency_id.name
-            _logger.info(f"DEBUG: Lista de precios ID: {pricelist_id}, Moneda: {currency_code}")
             
-            # 2. Verificar autorización de precios
             prices_map = {}
             if products:
                 for p in products:
@@ -220,7 +217,6 @@ class SaleOrder(models.Model):
             if not self.env.context.get('skip_auth_check'):
                 auth_result = self.env['product.template'].check_price_authorization_needed(prices_map, currency_code)
                 if auth_result.get('needs_authorization'):
-                    _logger.info("DEBUG: Requiere autorización de precios.")
                     return {
                         'needs_authorization': True,
                         'message': 'Se detectaron precios por debajo del nivel medio. Se requiere autorización.',
@@ -228,7 +224,6 @@ class SaleOrder(models.Model):
 
             company_id = self.env.company.id
             
-            # 3. Crear cabecera de la orden
             vals = {
                 'partner_id': partner_id,
                 'pricelist_id': pricelist_id,
@@ -239,19 +234,13 @@ class SaleOrder(models.Model):
                 'user_id': self.env.user.id,
             }
             
-            _logger.info(f"DEBUG: Creando cabecera Sale Order con vals: {vals}")
+            _logger.info(f"DEBUG: Creando Sale Order: {vals}")
             sale_order = self.create(vals)
-            _logger.info(f"DEBUG: Sale Order creada ID: {sale_order.id}, Name: {sale_order.name}")
             
-            # 4. Crear líneas de PRODUCTOS FÍSICOS
             if products:
-                for index, product_data in enumerate(products):
-                    _logger.info(f"DEBUG: Procesando Producto #{index + 1} ID: {product_data.get('product_id')}")
-                    
+                for product_data in products:
                     product_rec = self.env['product.product'].browse(product_data['product_id'])
-                    if not product_rec.exists():
-                        raise UserError(f"Producto ID {product_data['product_id']} no existe.")
-
+                    
                     tax_ids = []
                     if apply_tax:
                         tax_ids = [(6, 0, product_rec.taxes_id.ids)]
@@ -260,17 +249,14 @@ class SaleOrder(models.Model):
                     
                     selected_lots_ids = product_data.get('selected_lots', [])
                     
-                    # === CORRECCIÓN CRÍTICA AQUÍ ===
-                    # Obtenemos el nombre/descripción explícitamente porque create() no llama onchange
-                    line_name = product_rec.get_product_multiline_description_sale() or product_rec.name
-                    # Obtenemos la UoM explícitamente
-                    uom_id = product_rec.uom_id.id
+                    # ✅ Obtener descripción y UoM explícitamente
+                    product_name = product_rec.get_product_multiline_description_sale() or product_rec.name
                     
                     line_vals = {
                         'order_id': sale_order.id,
+                        'name': product_name,
                         'product_id': product_rec.id,
-                        'name': line_name,  # <--- CAMPO OBLIGATORIO
-                        'product_uom': uom_id, # <--- CAMPO OBLIGATORIO
+                        'product_uom': product_rec.uom_id.id,
                         'product_uom_qty': product_data['quantity'],
                         'price_unit': product_data['price_unit'],
                         'tax_ids': tax_ids,
@@ -278,19 +264,10 @@ class SaleOrder(models.Model):
                         'company_id': company_id,
                         'x_price_selector': 'custom',
                     }
-                    
-                    _logger.info(f"DEBUG: Creando línea de producto con vals: {line_vals}")
-                    try:
-                        self.env['sale.order.line'].create(line_vals)
-                    except Exception as e_line:
-                        _logger.error(f"DEBUG: Error al crear línea de producto {product_rec.display_name}: {e_line}")
-                        raise e_line
+                    self.env['sale.order.line'].create(line_vals)
 
-            # 5. Crear líneas de SERVICIOS
             if services:
-                for index, service_data in enumerate(services):
-                    _logger.info(f"DEBUG: Procesando Servicio #{index + 1} ID: {service_data.get('product_id')}")
-                    
+                for service_data in services:
                     service_rec = self.env['product.product'].browse(service_data['product_id'])
                     
                     tax_ids = []
@@ -299,38 +276,31 @@ class SaleOrder(models.Model):
                     else:
                         tax_ids = [(5, 0, 0)]
                     
-                    # === CORRECCIÓN CRÍTICA AQUÍ TAMBIÉN ===
-                    line_name = service_rec.get_product_multiline_description_sale() or service_rec.name
-                    uom_id = service_rec.uom_id.id
+                    service_name = service_rec.get_product_multiline_description_sale() or service_rec.name
 
                     line_vals = {
                         'order_id': sale_order.id,
+                        'name': service_name,
                         'product_id': service_rec.id,
-                        'name': line_name, # <--- CAMPO OBLIGATORIO
-                        'product_uom': uom_id, # <--- CAMPO OBLIGATORIO
+                        'product_uom': service_rec.uom_id.id,
                         'product_uom_qty': service_data['quantity'],
                         'price_unit': service_data['price_unit'],
                         'tax_ids': tax_ids,
                         'company_id': company_id,
                         'x_price_selector': 'custom',
                     }
-                    
-                    _logger.info(f"DEBUG: Creando línea de servicio con vals: {line_vals}")
                     self.env['sale.order.line'].create(line_vals)
 
             _logger.info("DEBUG: Confirmando orden...")
             sale_order.action_confirm()
-            _logger.info("DEBUG: Orden confirmada.")
             
             _logger.info("DEBUG: Asignando lotes específicos...")
             for line in sale_order.order_line:
                 if line.x_selected_lots and line.product_id.type == 'product':
                     pickings = line.move_ids.mapped('picking_id')
                     if pickings:
-                        # Pasamos los IDs de los lotes seleccionados
                         self._assign_specific_lots(pickings, line.product_id, line.x_selected_lots)
 
-            _logger.info(f"✅ DEBUG: Proceso finalizado exitosamente. Orden {sale_order.name}")
             return {
                 'success': True,
                 'order_id': sale_order.id,
@@ -338,15 +308,20 @@ class SaleOrder(models.Model):
             }
             
         except Exception as e:
-            _logger.error("❌ ERROR CRÍTICO EN CREATE_FROM_SHOPPING_CART")
-            _logger.error(traceback.format_exc()) # Imprime todo el stacktrace
+            _logger.error(f"❌ Error en create_from_shopping_cart: {str(e)}", exc_info=True)
             raise UserError(f"Error al procesar la orden: {str(e)}")
 
     def _assign_specific_lots(self, pickings, product, selected_quants):
         """
-        Asigna lotes específicos a los movimientos de stock.
+        Asigna lotes específicos.
+        CORRECCIÓN: Asegura usar la cantidad exacta del carrito incluso si el lote tiene más.
         """
-        _logger.info(f"DEBUG: Asignando lotes para {product.display_name}")
+        # Obtener el usuario real dueño de la orden para buscar en el carrito
+        sale_order = pickings.mapped('sale_id')
+        cart_owner_id = sale_order.user_id.id if sale_order else self.env.user.id
+        
+        _logger.info(f"DEBUG: Asignando lotes para {product.display_name}. Usuario Carrito ID: {cart_owner_id}")
+
         for picking in pickings:
             if picking.state in ['done', 'cancel']:
                 continue
@@ -354,29 +329,46 @@ class SaleOrder(models.Model):
             moves = picking.move_ids.filtered(lambda m: m.product_id.id == product.id)
             
             for move in moves:
-                _logger.info(f"DEBUG: Limpiando reservas previas en move {move.id}")
+                _logger.info(f"DEBUG: Move ID {move.id} - Demanda Inicial: {move.product_uom_qty}")
                 move.move_line_ids.unlink()
+                
+                remaining_demand = move.product_uom_qty
                 
                 for quant in selected_quants:
                     if quant.product_id.id != product.id:
                         continue
                         
+                    if remaining_demand <= 0:
+                        break
+
+                    # 1. BUSCAR EN CARRITO CON EL USUARIO DE LA ORDEN (No self.env.user que puede ser sudo)
                     cart_item = self.env['shopping.cart'].search([
-                        ('user_id', '=', self.env.user.id),
+                        ('user_id', '=', cart_owner_id),
                         ('quant_id', '=', quant.id)
                     ], limit=1)
                     
-                    qty_to_reserve = cart_item.quantity if cart_item else quant.quantity
+                    # 2. DEFINIR CANTIDAD A RESERVAR
+                    # Si está en el carrito, usamos esa cantidad (ej: 40).
+                    # Si no, usamos todo el lote (ej: 90).
+                    qty_in_cart = cart_item.quantity if cart_item else quant.quantity
                     
-                    if qty_to_reserve > move.product_uom_qty:
-                        _logger.warning(f"DEBUG: Ajustando reserva de {qty_to_reserve} a {move.product_uom_qty} para el move {move.id}")
-                        qty_to_reserve = move.product_uom_qty
+                    # 3. CLAMP DE SEGURIDAD (TOPE)
+                    # La reserva NO puede ser mayor a la demanda restante del movimiento.
+                    # Ej: Si Move pide 40, y Lote tiene 90, reservamos min(90, 40) = 40.
+                    qty_to_reserve = min(qty_in_cart, remaining_demand)
+                    
+                    _logger.info(
+                        f"DEBUG: Lote {quant.lot_id.name} | "
+                        f"En Stock: {quant.quantity} | "
+                        f"En Carrito: {qty_in_cart} | "
+                        f"Demanda Restante Move: {remaining_demand} | "
+                        f"-> A RESERVAR: {qty_to_reserve}"
+                    )
 
                     if qty_to_reserve <= 0:
                         continue
 
                     try:
-                        _logger.info(f"DEBUG: Reservando lote {quant.lot_id.name}, Cantidad: {qty_to_reserve}")
                         self.env['stock.move.line'].create({
                             'move_id': move.id,
                             'picking_id': picking.id,
@@ -387,6 +379,8 @@ class SaleOrder(models.Model):
                             'location_dest_id': move.location_dest_id.id,
                             'product_uom_id': product.uom_id.id,
                         })
+                        remaining_demand -= qty_to_reserve
+                        
                     except Exception as e:
                         _logger.error(f"Error creando stock.move.line para lote {quant.lot_id.name}: {e}")
                         raise UserError(f"No se pudo asignar el lote {quant.lot_id.name}. Verifique disponibilidad.")
