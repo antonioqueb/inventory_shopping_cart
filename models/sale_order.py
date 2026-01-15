@@ -37,18 +37,23 @@ class SaleOrderLine(models.Model):
         self._update_price_from_selector()
 
     def _update_price_from_selector(self):
+        """
+        Actualiza el precio unitario basado en el selector y la moneda de la orden.
+        """
         for line in self:
             if not line.product_id:
                 continue
             if line.x_price_selector == 'custom':
                 continue
 
+            # Determinar moneda: Prioridad Orden > Contexto > Default USD
             currency_name = 'USD' 
             if line.order_id.pricelist_id.currency_id:
                 currency_name = line.order_id.pricelist_id.currency_id.name
             elif line.env.context.get('default_pricelist_id'):
                 pricelist = line.env['product.pricelist'].browse(line.env.context['default_pricelist_id'])
-                currency_name = pricelist.currency_id.name
+                if pricelist.exists():
+                    currency_name = pricelist.currency_id.name
             
             template = line.product_id.product_tmpl_id
             new_price = 0.0
@@ -73,6 +78,38 @@ class SaleOrder(models.Model):
     x_project_id = fields.Many2one('project.project', string='Proyecto')
     x_architect_id = fields.Many2one('res.partner', string='Arquitecto')
     x_price_authorization_id = fields.Many2one('price.authorization', string="Autorización Vinculada", copy=False, readonly=True)
+
+    # ✅ NUEVO: Detectar cambio de Lista de Precios y actualizar líneas
+    @api.onchange('pricelist_id')
+    def _onchange_pricelist_id_custom_prices(self):
+        if not self.pricelist_id:
+            return
+        
+        # Obtener la moneda de la nueva lista seleccionada
+        currency_name = self.pricelist_id.currency_id.name or 'USD'
+        
+        for line in self.order_line:
+            # Si es precio personalizado o no hay producto, no tocar
+            if not line.product_id or line.x_price_selector == 'custom':
+                continue
+            
+            template = line.product_id.product_tmpl_id
+            new_price = 0.0
+
+            # Aplicar lógica de selección de precios con la NUEVA moneda
+            if currency_name == 'MXN':
+                if line.x_price_selector == 'high':
+                    new_price = template.x_price_mxn_1
+                elif line.x_price_selector == 'medium':
+                    new_price = template.x_price_mxn_2
+            else: # USD
+                if line.x_price_selector == 'high':
+                    new_price = template.x_price_usd_1
+                elif line.x_price_selector == 'medium':
+                    new_price = template.x_price_usd_2
+            
+            if new_price > 0:
+                line.price_unit = new_price
 
     def action_request_authorization(self):
         self.ensure_one()
