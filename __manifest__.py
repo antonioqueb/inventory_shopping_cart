@@ -6,7 +6,7 @@
     'summary': 'Sistema de carrito de compra y apartado múltiple desde inventario visual',
     'author': 'Alphaqueb Consulting SAS',
     'website': 'https://alphaqueb.com',
-    'depends': ['stock', 'sale_stock', 'inventory_visual_enhanced', 'stock_lot_dimensions', 'sale', 'mail'],
+    'depends': ['stock', 'sale_stock', 'inventory_visual_enhanced', 'stock_lot_dimensions', 'sale', 'mail', 'purchase','logistica_tarifario'],
     'data': [
         'security/security.xml',
         'security/ir.model.access.csv',

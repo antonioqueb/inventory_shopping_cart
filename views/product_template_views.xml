@@ -10,23 +10,57 @@
             </xpath>
                         
             <xpath expr="//page[@name='sales']" position="after">
-                <page string="Precios Personalizados" name="custom_prices" 
+                <page string="Precios y Costos All-In" name="custom_prices" 
                       groups="inventory_shopping_cart.group_price_authorizer,inventory_shopping_cart.group_seller">
-                    <group>
-                        <group string="Control de Costos (MXN)" groups="inventory_shopping_cart.group_price_authorizer">
-                            <field name="x_costo_mayor" readonly="1" force_save="1" decoration-bf="1"/>
-                            <field name="x_utilidad" string="% Utilidad Deseada"/>
-                            <p class="text-muted" colspan="2">
-                                <i class="fa fa-info-circle"/> El <b>Costo Mayor</b> se actualiza solo si el nuevo costo (compra + fletes) supera al anterior.
-                            </p>
+                    
+                    <!-- PANEL DE CONFIGURACIÓN LOGÍSTICA -->
+                    <group string="Configuración Logística y Arancelaria">
+                        <group>
+                            <field name="x_origin_country_id"/>
+                            <field name="x_pol_id" options="{'no_create': True}"/>
+                            <field name="x_pod_id" options="{'no_create': True}"/>
                         </group>
-                        <group string="Estado de Precios">
+                        <group>
+                            <field name="x_container_capacity"/>
+                            <field name="x_arancel_pct"/>
+                            <button name="action_update_costs" string="Recalcular Costos Ahora" type="object" class="btn-link" icon="fa-refresh"/>
+                        </group>
+                    </group>
+
+                    <!-- DESGLOSE DE COSTOS -->
+                    <group>
+                        <group string="Desglose del Costo (MXN)" groups="inventory_shopping_cart.group_price_authorizer">
+                            <field name="x_has_purchases" invisible="1"/>
+                            
+                            <label for="x_max_avg_cost_mxn" string="1. Costo Base"/>
+                            <div class="o_row">
+                                <field name="x_max_avg_cost_mxn"/>
+                                <span class="text-muted" invisible="x_has_purchases">(Costo Estándar)</span>
+                                <span class="text-success fw-bold" invisible="not x_has_purchases">(MaxAvg Histórico)</span>
+                            </div>
+                            
+                            <field name="x_logistics_cost_mxn" string="2. + Logística (x m²)"/>
+                            <field name="x_duty_cost_mxn" string="3. + Arancel"/>
+                            
+                            <div class="oe_subtotal_footer_separator oe_inline o_td_label">
+                                <label for="x_costo_mayor"/>
+                            </div>
+                            <field name="x_costo_mayor" nolabel="1" class="oe_subtotal_footer_separator" widget="monetary"/>
+                        </group>
+                        
+                        <group string="Estrategia de Ventas">
+                            <field name="x_utilidad" string="% Utilidad Deseada"/>
                             <div class="alert alert-info" role="alert" colspan="2">
-                                <i class="fa fa-refresh fa-spin" invisible="not id"/> 
-                                Los precios se calculan automáticamente en base al Costo Mayor y el Tipo de Cambio Banorte.
+                                <small>
+                                    <strong>Costo Base:</strong> Si no hay compras, usa costo estándar. Si hay, usa el promedio ponderado histórico más alto.<br/>
+                                    <strong>Logística:</strong> Tarifa activa (POL->POD) / Capacidad.<br/>
+                                    <strong>Arancel:</strong> % sobre el Costo Base.
+                                </small>
                             </div>
                         </group>
                     </group>
+
+                    <!-- ESCALERA DE PRECIOS -->
                     <group>
                         <group string="Escalera MXN">
                             <field name="x_price_mxn_1" readonly="1" force_save="1" string="1. Precio Alto"/>
