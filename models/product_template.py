@@ -64,7 +64,23 @@ class ProductTemplate(models.Model):
         help="Costo de aranceles calculado sobre el Costo Bruto Base."
     )
 
-    # === CAMPOS EXISTENTES DE PRECIOS ===
+    # === CAMPOS DE ESTRATEGIA DE PRECIOS (NUEVOS) ===
+    
+    x_utilidad = fields.Float(string='% Utilidad Base', default=40.0, help="Margen sobre el costo para el Precio Alto.")
+    
+    x_discount_medium = fields.Float(
+        string='% Descuento Medio', 
+        default=5.0, 
+        help="Porcentaje que baja el precio Medio respecto al Alto."
+    )
+    
+    x_discount_minimum = fields.Float(
+        string='% Descuento Mínimo', 
+        default=5.0, 
+        help="Porcentaje que baja el precio Mínimo respecto al Medio."
+    )
+
+    # === CAMPOS DE PRECIOS CALCULADOS ===
     
     x_price_usd_1 = fields.Float(string='Precio USD 1 (Alto)', digits='Product Price', default=0.0, company_dependent=True)
     x_price_usd_2 = fields.Float(string='Precio USD 2 (Medio)', digits='Product Price', default=0.0, company_dependent=True)
@@ -84,7 +100,6 @@ class ProductTemplate(models.Model):
         help="Costo Total Calculado: Base + Logística + Aranceles (Solo si hay compras confirmadas)."
     )
     
-    x_utilidad = fields.Float(string='% Utilidad', default=40.0, help="Ejemplo: 40 para margen del 40% (Costo / 0.60)")
     x_name_sps = fields.Char(string='Nombre SPS', help='Nombre del producto en el sistema SPS', default='')
 
     def action_update_costs(self):
@@ -104,7 +119,7 @@ class ProductTemplate(models.Model):
         for record in self:
             _logger.info(f"COSTOS: Calculando para producto {record.display_name} (ID: {record.id})")
             
-            # 1. Búsqueda de compras (ELIMINADO qty_received > 0 para detectar confirmadas sin recibir)
+            # 1. Búsqueda de compras (Detectar confirmadas sin recibir)
             purchase_lines = self.env['purchase.order.line'].search([
                 ('product_id.product_tmpl_id', '=', record.id),
                 ('state', 'in', ['purchase', 'done']) 
@@ -112,7 +127,6 @@ class ProductTemplate(models.Model):
 
             has_purchases = bool(purchase_lines)
             record.x_has_purchases = has_purchases
-            _logger.info(f"COSTOS: Tiene compras? {'SI' if has_purchases else 'NO'} ({len(purchase_lines)} líneas encontradas)")
             
             all_in_cost = 0.0
             
@@ -137,7 +151,6 @@ class ProductTemplate(models.Model):
                         continue
                         
                     line_currency = line.currency_id
-                    # Usar fecha de orden si no hay fecha de aprobación
                     rate_date = line.order_id.date_approve or line.order_id.date_order or fields.Date.today()
                     
                     price_unit_mxn = line.price_unit
@@ -159,7 +172,6 @@ class ProductTemplate(models.Model):
                 
                 base_gross_cost = max_avg
                 record.x_max_avg_cost_mxn = max_avg
-                _logger.info(f"COSTOS: MaxAvg Calculado: {max_avg}")
 
                 # 2. Calcular Logística (Tarifario USD -> MXN)
                 logistics_cost_mxn = 0.0
@@ -173,23 +185,13 @@ class ProductTemplate(models.Model):
                     ], order='create_date desc', limit=1)
                     
                     if tariff:
-                        _logger.info(f"COSTOS: Tarifa encontrada: {tariff.id} - All In USD: {tariff.all_in}")
-                        
-                        # Costo Unitario en USD
                         logistics_unit_usd = tariff.all_in / record.x_container_capacity
-                        
-                        # Conversión a MXN (Oficial)
                         logistics_cost_mxn = usd_currency._convert(
                             logistics_unit_usd,
                             company_currency,
                             company,
                             fields.Date.today()
                         )
-                        _logger.info(f"COSTOS: Logística convertida a MXN: {logistics_cost_mxn}")
-                    else:
-                        _logger.warning("COSTOS: No se encontró tarifa activa para la ruta definida.")
-                else:
-                    _logger.warning("COSTOS: Faltan datos de ruta (País, POL, POD o Capacidad) en el producto.")
                 
                 record.x_logistics_cost_mxn = logistics_cost_mxn
 
@@ -199,18 +201,17 @@ class ProductTemplate(models.Model):
                     duty_cost_mxn = base_gross_cost * (record.x_arancel_pct / 100.0)
                 
                 record.x_duty_cost_mxn = duty_cost_mxn
-                _logger.info(f"COSTOS: Arancel calculado: {duty_cost_mxn} ({record.x_arancel_pct}%)")
 
                 # 4. Suma Final
                 all_in_cost = base_gross_cost + logistics_cost_mxn + duty_cost_mxn
-                _logger.info(f"COSTOS: Costo ALL-IN Final: {all_in_cost}")
             
-            # Guardar (usando sudo por si acaso)
             if all_in_cost != record.x_costo_mayor:
                 record.sudo().write({'x_costo_mayor': all_in_cost})
 
     def _calculate_escalera_precios(self):
-        # ... (código de escalera igual al anterior, sin cambios lógicos)
+        """
+        Calcula la escalera de precios usando los porcentajes configurables.
+        """
         rate_param = self.env['ir.config_parameter'].sudo().get_param('banorte.last_rate', '0')
         try:
             banorte_rate = float(rate_param)
@@ -224,13 +225,23 @@ class ProductTemplate(models.Model):
 
         for record in self:
             if record.x_costo_mayor > 0:
+                # 1. Calcular Precio Alto (Base + Utilidad)
                 divisor = (1 - (record.x_utilidad / 100.0))
                 if divisor <= 0: divisor = 0.01
-                
                 mxn_1 = record.x_costo_mayor / divisor
-                mxn_2 = mxn_1 * 0.95
-                mxn_3 = mxn_2 * 0.95
                 
+                # 2. Calcular factores de descuento (Default 5% si es 0, o lo que ponga el usuario)
+                pct_medium = record.x_discount_medium if record.x_discount_medium >= 0 else 5.0
+                pct_minimum = record.x_discount_minimum if record.x_discount_minimum >= 0 else 5.0
+                
+                factor_medium = 1 - (pct_medium / 100.0)
+                factor_minimum = 1 - (pct_minimum / 100.0)
+                
+                # 3. Calcular cascada
+                mxn_2 = mxn_1 * factor_medium
+                mxn_3 = mxn_2 * factor_minimum
+                
+                # 4. Convertir a USD
                 usd_1 = mxn_1 / banorte_rate if banorte_rate > 0 else 0
                 usd_2 = mxn_2 / banorte_rate if banorte_rate > 0 else 0
                 usd_3 = mxn_3 / banorte_rate if banorte_rate > 0 else 0
@@ -251,11 +262,16 @@ class ProductTemplate(models.Model):
             'x_origin_country_id', 'x_pol_id', 'x_pod_id', 
             'x_container_capacity', 'x_arancel_pct'
         ]
+        
+        # Disparadores de recálculo de precios (incluyendo los nuevos campos)
+        price_triggers = ['x_utilidad', 'x_discount_medium', 'x_discount_minimum']
+        
         if any(f in vals for f in triggers):
             self._compute_costo_all_in()
             self._calculate_escalera_precios()
-        elif 'x_utilidad' in vals:
+        elif any(f in vals for f in price_triggers):
             self._calculate_escalera_precios()
+            
         return res
 
     @api.model

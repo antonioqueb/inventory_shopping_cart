@@ -48,13 +48,28 @@
                             <field name="x_costo_mayor" nolabel="1" class="oe_subtotal_footer_separator" widget="monetary"/>
                         </group>
                         
-                        <group string="Estrategia de Ventas">
-                            <field name="x_utilidad" string="% Utilidad Deseada"/>
-                            <div class="alert alert-info" role="alert" colspan="2">
+                        <group string="Estrategia de Ventas (Configuración)">
+                            <label for="x_utilidad" string="Utilidad Base"/>
+                            <div class="o_row">
+                                <field name="x_utilidad"/>
+                                <span class="text-muted">% (Costo / (1 - Utilidad))</span>
+                            </div>
+
+                            <label for="x_discount_medium" string="Desc. Nivel Medio"/>
+                            <div class="o_row">
+                                <field name="x_discount_medium"/>
+                                <span class="text-muted">% (Bajada desde Precio Alto)</span>
+                            </div>
+
+                            <label for="x_discount_minimum" string="Desc. Nivel Mínimo"/>
+                            <div class="o_row">
+                                <field name="x_discount_minimum"/>
+                                <span class="text-muted">% (Bajada desde Precio Medio)</span>
+                            </div>
+                            
+                            <div class="alert alert-info mt-2" role="alert" colspan="2">
                                 <small>
-                                    <strong>Costo Base:</strong> Si no hay compras, usa costo estándar. Si hay, usa el promedio ponderado histórico más alto.<br/>
-                                    <strong>Logística:</strong> Tarifa activa (POL->POD) / Capacidad.<br/>
-                                    <strong>Arancel:</strong> % sobre el Costo Base.
+                                    <strong>Nota:</strong> Los precios se recalculan automáticamente al guardar cambios en estos porcentajes.
                                 </small>
                             </div>
                         </group>
