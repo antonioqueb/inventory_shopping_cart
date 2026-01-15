@@ -89,48 +89,45 @@ class ProductTemplate(models.Model):
 
     def action_update_costs(self):
         """Acción manual para recalcular costos"""
+        _logger.info(f"COSTOS: Iniciando actualización manual para {self.name}")
         self._compute_costo_all_in()
         self._calculate_escalera_precios()
 
     def _compute_costo_all_in(self):
         """
         Calcula el costo 'All-In'.
-        REGLA DE ORO: 
-        1. Si NO hay compras confirmadas -> Costo Base = Standard Price (Sin sumar logística ni aranceles).
-        2. Si HAY compras confirmadas -> Costo Base = MaxAvg + Logística (USD->MXN) + Aranceles.
         """
-        # Obtener monedas para conversión de logística (Tarifario USD -> MXN Oficial)
         usd_currency = self.env.ref('base.USD')
         company = self.env.company
         company_currency = company.currency_id
         
         for record in self:
-            # 1. Determinar si hay historial de compras confirmadas
+            _logger.info(f"COSTOS: Calculando para producto {record.display_name} (ID: {record.id})")
+            
+            # 1. Búsqueda de compras (ELIMINADO qty_received > 0 para detectar confirmadas sin recibir)
             purchase_lines = self.env['purchase.order.line'].search([
                 ('product_id.product_tmpl_id', '=', record.id),
-                ('state', 'in', ['purchase', 'done']),
-                ('qty_received', '>', 0) # Consideramos lo recibido o confirmado válido
-            ], order='date_approve asc, id asc')
+                ('state', 'in', ['purchase', 'done']) 
+            ], order='date_order asc, id asc')
 
             has_purchases = bool(purchase_lines)
             record.x_has_purchases = has_purchases
+            _logger.info(f"COSTOS: Tiene compras? {'SI' if has_purchases else 'NO'} ({len(purchase_lines)} líneas encontradas)")
             
             all_in_cost = 0.0
             
             # === ESCENARIO A: SIN COMPRAS CONFIRMADAS ===
             if not has_purchases:
-                # Se respeta ÚNICAMENTE el Costo Estándar (standard_price)
-                # No se suma logística ni aranceles aunque estén configurados
                 all_in_cost = record.standard_price
+                _logger.info(f"COSTOS: Sin compras. Usando Costo Estándar: {all_in_cost}")
                 
-                # Limpiamos campos informativos para no confundir
                 record.x_max_avg_cost_mxn = 0.0
                 record.x_logistics_cost_mxn = 0.0
                 record.x_duty_cost_mxn = 0.0
             
             # === ESCENARIO B: CON COMPRAS CONFIRMADAS ===
             else:
-                # 1. Calcular Costo Base (MaxAvg)
+                # 1. Calcular MaxAvg
                 total_qty = 0.0
                 total_val_mxn = 0.0
                 max_avg = 0.0
@@ -139,8 +136,8 @@ class ProductTemplate(models.Model):
                     if line.product_qty <= 0:
                         continue
                         
-                    # Conversión a MXN usando fecha de la orden
                     line_currency = line.currency_id
+                    # Usar fecha de orden si no hay fecha de aprobación
                     rate_date = line.order_id.date_approve or line.order_id.date_order or fields.Date.today()
                     
                     price_unit_mxn = line.price_unit
@@ -152,24 +149,22 @@ class ProductTemplate(models.Model):
                             rate_date
                         )
                     
-                    # Acumular para promedio ponderado
                     total_qty += line.product_qty
                     total_val_mxn += (line.product_qty * price_unit_mxn)
                     
                     current_avg = total_val_mxn / total_qty
                     
-                    # Regla: Respetar el promedio más alto histórico
                     if current_avg > max_avg:
                         max_avg = current_avg
-
+                
                 base_gross_cost = max_avg
                 record.x_max_avg_cost_mxn = max_avg
+                _logger.info(f"COSTOS: MaxAvg Calculado: {max_avg}")
 
-                # 2. Calcular Logística (Tarifario en USD -> Convertir a MXN)
+                # 2. Calcular Logística (Tarifario USD -> MXN)
                 logistics_cost_mxn = 0.0
                 
                 if record.x_origin_country_id and record.x_pol_id and record.x_pod_id and record.x_container_capacity > 0:
-                    # Buscar tarifa vigente más reciente
                     tariff = self.env['freight.tariff'].search([
                         ('country_id', '=', record.x_origin_country_id.id),
                         ('pol_id', '=', record.x_pol_id.id),
@@ -178,70 +173,64 @@ class ProductTemplate(models.Model):
                     ], order='create_date desc', limit=1)
                     
                     if tariff:
-                        # Costo Total Contenedor en USD / Capacidad m2 = Costo Unitario USD
+                        _logger.info(f"COSTOS: Tarifa encontrada: {tariff.id} - All In USD: {tariff.all_in}")
+                        
+                        # Costo Unitario en USD
                         logistics_unit_usd = tariff.all_in / record.x_container_capacity
                         
-                        # CONVERSIÓN DE USD (Tarifario) A MXN (Oficial del día)
-                        # Usamos la fecha de hoy para calcular el costo de reposición actual
+                        # Conversión a MXN (Oficial)
                         logistics_cost_mxn = usd_currency._convert(
                             logistics_unit_usd,
                             company_currency,
                             company,
                             fields.Date.today()
                         )
+                        _logger.info(f"COSTOS: Logística convertida a MXN: {logistics_cost_mxn}")
+                    else:
+                        _logger.warning("COSTOS: No se encontró tarifa activa para la ruta definida.")
+                else:
+                    _logger.warning("COSTOS: Faltan datos de ruta (País, POL, POD o Capacidad) en el producto.")
                 
                 record.x_logistics_cost_mxn = logistics_cost_mxn
 
-                # 3. Calcular Arancel (% sobre el Costo Bruto Base)
+                # 3. Calcular Arancel
                 duty_cost_mxn = 0.0
                 if record.x_arancel_pct > 0:
                     duty_cost_mxn = base_gross_cost * (record.x_arancel_pct / 100.0)
                 
                 record.x_duty_cost_mxn = duty_cost_mxn
+                _logger.info(f"COSTOS: Arancel calculado: {duty_cost_mxn} ({record.x_arancel_pct}%)")
 
                 # 4. Suma Final
                 all_in_cost = base_gross_cost + logistics_cost_mxn + duty_cost_mxn
+                _logger.info(f"COSTOS: Costo ALL-IN Final: {all_in_cost}")
             
-            # Actualizamos x_costo_mayor (usando sudo para saltar reglas de permisos si es auto)
+            # Guardar (usando sudo por si acaso)
             if all_in_cost != record.x_costo_mayor:
                 record.sudo().write({'x_costo_mayor': all_in_cost})
 
     def _calculate_escalera_precios(self):
-        """
-        Calcula los 3 niveles de precios en MXN y USD basados en el Costo Mayor (ALL-IN).
-        Si no hay compras, Costo Mayor = Standard Price.
-        
-        Para la conversión de PRECIOS DE VENTA (MXN -> USD), usamos la tasa Banorte 
-        si existe, o la oficial si no.
-        """
-        # Obtener tasa Banorte para la visualización de precios en USD
+        # ... (código de escalera igual al anterior, sin cambios lógicos)
         rate_param = self.env['ir.config_parameter'].sudo().get_param('banorte.last_rate', '0')
         try:
             banorte_rate = float(rate_param)
         except:
             banorte_rate = 0.0
             
-        # Fallback a tasa oficial si Banorte falla o es 0
         if banorte_rate <= 0:
             usd_currency = self.env.ref('base.USD')
             company_currency = self.env.company.currency_id
-            # 1 USD = X MXN
             banorte_rate = usd_currency._convert(1.0, company_currency, self.env.company, fields.Date.today())
 
         for record in self:
-            # Si el costo es 0, no podemos calcular precios
             if record.x_costo_mayor > 0:
-                # Utilidad Real: Costo / (1 - %)
                 divisor = (1 - (record.x_utilidad / 100.0))
-                if divisor <= 0:
-                    divisor = 0.01
+                if divisor <= 0: divisor = 0.01
                 
-                # Cálculo Escalera MXN
                 mxn_1 = record.x_costo_mayor / divisor
-                mxn_2 = mxn_1 * 0.95  # Nivel 2: -5%
-                mxn_3 = mxn_2 * 0.95  # Nivel 3: -5% adicional
+                mxn_2 = mxn_1 * 0.95
+                mxn_3 = mxn_2 * 0.95
                 
-                # Cálculo Escalera USD (Usando tasa Banorte/Comercial)
                 usd_1 = mxn_1 / banorte_rate if banorte_rate > 0 else 0
                 usd_2 = mxn_2 / banorte_rate if banorte_rate > 0 else 0
                 usd_3 = mxn_3 / banorte_rate if banorte_rate > 0 else 0
@@ -256,36 +245,23 @@ class ProductTemplate(models.Model):
                 })
 
     def write(self, vals):
-        """
-        Intercepta cambios para recalcular costos si cambian variables críticas.
-        """
         res = super(ProductTemplate, self).write(vals)
-
-        # Campos que disparan recálculo de costos All-In
         triggers = [
             'standard_price', 
             'x_origin_country_id', 'x_pol_id', 'x_pod_id', 
             'x_container_capacity', 'x_arancel_pct'
         ]
-        
         if any(f in vals for f in triggers):
             self._compute_costo_all_in()
             self._calculate_escalera_precios()
-
-        # Si solo cambió la utilidad, recalcular solo precios
         elif 'x_utilidad' in vals:
             self._calculate_escalera_precios()
-            
         return res
 
     @api.model
     def cron_update_banorte_rates(self):
-        """
-        Actualiza tipo de cambio y recalcula todos los productos.
-        """
         api_key = self.env['ir.config_parameter'].sudo().get_param('API_KEY')
         if not api_key:
-            _logger.error("BANORTE SYNC: Falta API_KEY")
             return
 
         url = "https://api-banorte.recubrimientos.app/"
@@ -300,14 +276,7 @@ class ProductTemplate(models.Model):
                 
                 if rate > 0:
                     self.env['ir.config_parameter'].sudo().set_param('banorte.last_rate', rate)
-                    
-                    # Recalcular escalera para todos los productos
-                    # Nota: Esto podría ser pesado si hay muchos productos.
-                    # Considerar filtrar solo los que tienen compras o costos > 0
                     products = self.search([('active', '=', True)])
-                    # Si cambiaron los costos (por tipo de cambio en logística) primero recalculamos All-In
-                    # NOTA: Como la logística depende del tipo de cambio oficial (no banorte), 
-                    # aquí solo recalculamos la escalera de precios de venta.
                     products._calculate_escalera_precios()
         except Exception as e:
             _logger.error(f"BANORTE SYNC Error: {e}")
@@ -354,14 +323,9 @@ class ProductProduct(models.Model):
     _inherit = 'product.product'
 
     def write(self, vals):
-        """
-        Al escribir en product.product (ej. cambios de costo std), 
-        asegurar que el template se entere.
-        """
         res = super(ProductProduct, self).write(vals)
         if 'standard_price' in vals:
             for product in self:
-                # Disparar recálculo en el template
                 product.product_tmpl_id._compute_costo_all_in()
                 product.product_tmpl_id._calculate_escalera_precios()
         return res
