@@ -364,6 +364,7 @@ class SaleOrder(models.Model):
     def _assign_specific_lots(self, pickings, product, selected_quants, breakdown=None):
         """
         Asigna lotes específicos a los movimientos de stock.
+        Distingue entre 'Placa' (Lote entero obligatorio) y 'Formato' (Cantidad específica permitida).
         """
         # Obtener el usuario real dueño de la orden para buscar en el carrito
         sale_order = pickings.mapped('sale_id')
@@ -394,38 +395,47 @@ class SaleOrder(models.Model):
                     if remaining_demand <= 0:
                         break
 
-                    # ✅ 1. DETERMINAR CANTIDAD A RESERVAR
-                    # Prioridad A: Usar breakdown explícito (asegurando key int)
-                    qty_in_cart = 0
-                    if breakdown and quant.id in breakdown:
-                        qty_in_cart = breakdown[quant.id]
-                        _logger.info(f"DEBUG: Usando breakdown para quant {quant.id}: {qty_in_cart}")
-                    else:
-                        # Prioridad B: Buscar en shopping.cart (Fallback)
-                        cart_item = self.env['shopping.cart'].search([
-                            ('user_id', '=', cart_owner_id),
-                            ('quant_id', '=', quant.id)
-                        ], limit=1)
-                        
-                        # Si falla búsqueda, usar todo el lote (último recurso)
-                        if cart_item:
-                             qty_in_cart = cart_item.quantity
-                             _logger.info(f"DEBUG: Usando Shopping Cart para quant {quant.id}: {qty_in_cart}")
-                        else:
-                             # ⚠️ Si no hay breakdown ni carrito, aquí estaba el problema: tomaba todo.
-                             # Ahora, si el lote es mayor que la demanda, no asumimos tomarlo todo a menos
-                             # que sea la única opción.
-                             qty_in_cart = quant.quantity
-                             _logger.info(f"DEBUG: Fallback a Total Lote para quant {quant.id}: {qty_in_cart}")
+                    # ✅ NUEVA LÓGICA CONDICIONAL: Placa vs Formato
+                    # Obtenemos el tipo del lote. Si no tiene, asumimos 'placa'.
+                    tipo_lote = (quant.lot_id.x_tipo or 'placa').lower()
                     
-                    # ✅ 2. CLAMP DE SEGURIDAD (TOPE)
+                    qty_to_use = 0.0
+
+                    if tipo_lote == 'formato':
+                        # === CASO FORMATO ===
+                        # Permitir cantidades específicas (parciales).
+                        # 1. Prioridad: Breakdown (del Wizard)
+                        if breakdown and quant.id in breakdown:
+                            qty_to_use = breakdown[quant.id]
+                            _logger.info(f"DEBUG: [Formato] Usando breakdown para quant {quant.id}: {qty_to_use}")
+                        # 2. Prioridad: Carrito DB
+                        else:
+                            cart_item = self.env['shopping.cart'].search([
+                                ('user_id', '=', cart_owner_id),
+                                ('quant_id', '=', quant.id)
+                            ], limit=1)
+                            if cart_item:
+                                qty_to_use = cart_item.quantity
+                                _logger.info(f"DEBUG: [Formato] Usando Shopping Cart para quant {quant.id}: {qty_to_use}")
+                            else:
+                                qty_to_use = quant.quantity
+                                _logger.info(f"DEBUG: [Formato] Fallback a Total Lote para quant {quant.id}: {qty_to_use}")
+                    
+                    else:
+                        # === CASO PLACA (o Default) ===
+                        # Forzar SIEMPRE el lote entero disponible en el stock.
+                        # Ignoramos la cantidad del carrito para evitar cortes decimales accidentales.
+                        qty_to_use = quant.quantity
+                        _logger.info(f"DEBUG: [Placa] Forzando Lote Completo para quant {quant.id}: {qty_to_use}")
+
+                    # ✅ CLAMP DE SEGURIDAD (TOPE)
                     # La reserva NO puede ser mayor a la demanda restante del movimiento.
-                    qty_to_reserve = min(qty_in_cart, remaining_demand)
+                    qty_to_reserve = min(qty_to_use, remaining_demand)
                     
                     _logger.info(
-                        f"DEBUG: Lote {quant.lot_id.name} | "
+                        f"DEBUG: Lote {quant.lot_id.name} ({tipo_lote}) | "
                         f"Stock: {quant.quantity} | "
-                        f"Solicitado: {qty_in_cart} | "
+                        f"Solicitado: {qty_to_use} | "
                         f"Demanda Restante: {remaining_demand} | "
                         f"-> RESERVANDO: {qty_to_reserve}"
                     )
