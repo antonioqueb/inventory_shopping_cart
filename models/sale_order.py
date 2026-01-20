@@ -339,13 +339,24 @@ class SaleOrder(models.Model):
                     }
                     self.env['sale.order.line'].create(line_vals)
 
+            # ✅ IMPORTANTE: Invalidar caché para que sale_order vea las líneas recién creadas
+            sale_order.invalidate_recordset()
+            
             _logger.info("DEBUG: Confirmando orden...")
             sale_order.action_confirm()
             
-            _logger.info("DEBUG: Asignando lotes específicos...")
+            # ✅ IMPORTANTE: Invalidar de nuevo para asegurar que vemos los move_ids generados
+            sale_order.invalidate_recordset()
+            
+            _logger.info(f"DEBUG: Asignando lotes específicos... Orden: {sale_order.name}, Líneas: {len(sale_order.order_line)}")
+            
             for line in sale_order.order_line:
+                _logger.info(f"DEBUG: Procesando línea {line.product_id.name} (Type: {line.product_id.type}) - Lotes Select: {len(line.x_selected_lots)}")
+                
                 if line.x_selected_lots and line.product_id.type == 'product':
                     pickings = line.move_ids.mapped('picking_id')
+                    _logger.info(f"DEBUG: Pickings encontrados para {line.product_id.name}: {len(pickings)}")
+                    
                     if pickings:
                         # ✅ Pasamos el breakdown específico para este producto usando int key
                         breakdown = product_breakdown_map.get(line.product_id.id)
