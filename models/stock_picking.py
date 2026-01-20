@@ -88,7 +88,7 @@ class StockPicking(models.Model):
                 move_vals = {
                     'product_id': product_id,
                     'product_uom_qty': total_quantity,
-                    'product_uom': product.uom_id.id,
+                    'product_uom_id': product.uom_id.id,
                     'picking_id': picking.id,
                     'location_id': location_origin_id,
                     'location_dest_id': location_dest_id,
