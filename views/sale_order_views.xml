@@ -6,8 +6,18 @@
         <field name="inherit_id" ref="sale.view_order_form"/>
         <field name="arch" type="xml">
             
-            <!-- Botón de autorización: Visible para todos los usuarios internos si está en borrador -->
+            <!-- Botones en Header -->
             <xpath expr="//header" position="inside">
+                <!-- 1. Botón para AGREGAR DESDE CARRITO (Nuevo) -->
+                <button name="action_add_from_cart" 
+                        string="📥 Agregar desde Carrito" 
+                        type="object" 
+                        class="btn-secondary"
+                        invisible="state not in ['draft', 'sent']"
+                        groups="base.group_user"
+                        help="Agrega los productos que tengas actualmente en tu carrito visual a esta orden."/>
+
+                <!-- 2. Botón para solicitar autorización -->
                 <button name="action_request_authorization" 
                         string="Solicitar Autorización de Precio" 
                         type="object" 
@@ -43,7 +53,6 @@
             </xpath>
 
             <!-- Campos adicionales (Proyecto/Arquitecto) -->
-            <!-- Nota: Usamos priority para intentar insertar después si ya existen, o asegurar visibilidad -->
             <xpath expr="//field[@name='payment_term_id']" position="after">
                 <field name="x_project_id"/>
                 <field name="x_architect_id"/>

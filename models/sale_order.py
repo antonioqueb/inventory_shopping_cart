@@ -3,6 +3,7 @@
 from odoo import models, fields, api
 from odoo.exceptions import UserError, ValidationError
 import logging
+import json
 
 # Logger con nombre específico para facilitar el filtrado en docker logs
 _logger = logging.getLogger(__name__)
@@ -16,7 +17,11 @@ except ImportError:
 class SaleOrderLine(models.Model):
     _inherit = 'sale.order.line'
     
-    x_selected_lots = fields.Many2many('stock.quant', string='Lotes Seleccionados')
+    x_selected_lots = fields.Many2many('stock.quant', string='Lotes Seleccionados', copy=True)
+    
+    # NUEVO: Campo para persistir la cantidad exacta a tomar de cada lote (ID: Cantidad)
+    # Fundamental para que al regresar a Borrador no se pierda la info de los formatos
+    x_lot_breakdown_json = fields.Json(string='Desglose de Lotes', copy=True)
     
     # Selector de precio
     x_price_selector = fields.Selection([
@@ -179,11 +184,149 @@ class SaleOrder(models.Model):
             'target': 'current',
         }
 
+    # ==========================================================================
+    # NUEVA FUNCIONALIDAD: AGREGAR DESDE CARRITO A ORDEN EXISTENTE
+    # ==========================================================================
+    def action_add_from_cart(self):
+        """
+        Toma los items del carrito global del usuario y los agrega a esta orden.
+        """
+        self.ensure_one()
+        if self.state not in ['draft', 'sent']:
+            raise UserError("Solo puede agregar items en estado Borrador.")
+
+        cart_items = self.env['shopping.cart'].search([('user_id', '=', self.env.user.id)])
+        if not cart_items:
+            raise UserError("Su carrito de compras está vacío.")
+
+        # 1. Agrupar items por producto
+        grouped_items = {}
+        for item in cart_items:
+            # Validar si el lote ya está en alguna línea de la orden para evitar duplicados
+            already_in_line = False
+            for line in self.order_line:
+                if line.x_selected_lots and item.quant_id.id in line.x_selected_lots.ids:
+                    already_in_line = True
+                    break
+            
+            if already_in_line:
+                continue
+
+            prod_id = item.product_id.id
+            if prod_id not in grouped_items:
+                grouped_items[prod_id] = {
+                    'product_obj': item.product_id,
+                    'total_qty': 0.0,
+                    'lots': [],
+                    'breakdown': {} # Persistencia para formatos
+                }
+            
+            grouped_items[prod_id]['total_qty'] += item.quantity
+            grouped_items[prod_id]['lots'].append(item.quant_id.id)
+            # Guardamos el desglose: Key=StringID, Value=FloatQty
+            grouped_items[prod_id]['breakdown'][str(item.quant_id.id)] = item.quantity
+
+        if not grouped_items:
+            raise UserError("Los items del carrito ya se encuentran asignados en esta orden.")
+
+        pricelist = self.pricelist_id or self.partner_id.property_product_pricelist
+        if not pricelist:
+             raise UserError("Defina una lista de precios en la orden antes de agregar items.")
+             
+        currency_code = pricelist.currency_id.name or 'USD'
+        company_id = self.company_id.id or self.env.company.id
+        
+        lines_to_create = []
+        for prod_id, data in grouped_items.items():
+            product = data['product_obj']
+            
+            # Obtener precio según lista
+            price_unit = 0.0
+            if currency_code == 'MXN':
+                price_unit = product.product_tmpl_id.x_price_mxn_1
+            else:
+                price_unit = product.product_tmpl_id.x_price_usd_1
+            
+            # Impuestos
+            tax_ids = [(6, 0, product.taxes_id.ids)]
+            
+            lines_to_create.append({
+                'order_id': self.id,
+                'name': product.get_product_multiline_description_sale() or product.name,
+                'product_id': prod_id,
+                'product_uom_id': product.uom_id.id,
+                'product_uom_qty': data['total_qty'],
+                'price_unit': price_unit,
+                'x_price_selector': 'high', # Default al agregar manual
+                'tax_ids': tax_ids,
+                'x_selected_lots': [(6, 0, data['lots'])],
+                'x_lot_breakdown_json': data['breakdown'], # Persistir datos
+                'company_id': company_id,
+            })
+        
+        if lines_to_create:
+            self.env['sale.order.line'].create(lines_to_create)
+            
+            # Limpiar carrito
+            self.env['shopping.cart'].clear_cart()
+            
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Items Agregados',
+                    'message': 'Los productos del carrito se han agregado a la orden correctamente.',
+                    'type': 'success',
+                    'sticky': False,
+                    'next': {'type': 'ir.actions.act_window_close'} 
+                }
+            }
+        else:
+             raise UserError("No se pudieron agregar los items.")
+
+    # ==========================================================================
+    # MODIFICACIÓN: ACTION CONFIRM ROBUSTO (Re-asignación tras Borrador)
+    # ==========================================================================
     def action_confirm(self):
         if not self.env.context.get('skip_auth_check'):
             self._check_prices_before_confirm()
+        
+        # 1. Crear Picking estándar
         res = super().action_confirm()
+        
+        # 2. Limpiar asignaciones automáticas (FIFO/LIFO de Odoo)
         self._clear_auto_assigned_lots()
+        
+        # 3. Reasignar lotes específicos basándonos en la persistencia de la línea
+        # Esto asegura que si venimos de Borrador, se recupere la info exacta
+        for order in self:
+            for line in order.order_line:
+                if line.display_type or not line.product_id:
+                    continue
+                    
+                # Solo procesar productos almacenables o consumibles
+                if line.product_id.type not in ['product', 'consu']:
+                    continue
+                    
+                if line.x_selected_lots:
+                    pickings = line.move_ids.mapped('picking_id')
+                    if not pickings:
+                        continue
+                    
+                    # Recuperar desglose persistente
+                    breakdown = line.x_lot_breakdown_json or {}
+                    
+                    # Convertir keys de string a int (JSON guarda keys como str)
+                    breakdown_int = {}
+                    if breakdown:
+                        try:
+                            breakdown_int = {int(k): float(v) for k, v in breakdown.items()}
+                        except Exception as e:
+                            _logger.warning(f"Error parseando breakdown JSON en linea {line.id}: {e}")
+
+                    # Ejecutar asignación forzada
+                    order._assign_specific_lots(pickings, line.product_id, line.x_selected_lots, breakdown=breakdown_int)
+        
         return res
 
     def _check_prices_before_confirm(self):
@@ -224,21 +367,10 @@ class SaleOrder(models.Model):
             pricelist = self.env['product.pricelist'].browse(pricelist_id)
             currency_code = pricelist.currency_id.name
             
-            # Mapa de Breakdown
-            product_breakdown_map = {}
             prices_map = {}
-            
             if products:
                 for p in products:
                     prices_map[str(p['product_id'])] = p['price_unit']
-                    if 'lots_breakdown' in p and p['lots_breakdown']:
-                        try:
-                            # Asegurar keys como int
-                            q_map = {int(l['id']): float(l['quantity']) for l in p['lots_breakdown']}
-                            product_breakdown_map[int(p['product_id'])] = q_map
-                            _logger.info(f"[CART-DEBUG] Breakdown recibido para producto {p['product_id']}: {q_map}")
-                        except Exception as e:
-                            _logger.error(f"[CART-DEBUG] Error parseando breakdown: {e}")
 
             if not self.env.context.get('skip_auth_check'):
                 auth_result = self.env['product.template'].check_price_authorization_needed(prices_map, currency_code)
@@ -276,6 +408,13 @@ class SaleOrder(models.Model):
                     selected_lots_ids = product_data.get('selected_lots', [])
                     product_name = product_rec.get_product_multiline_description_sale() or product_rec.name
                     
+                    # Preparar Breakdown JSON para persistencia
+                    breakdown_json = {}
+                    if 'lots_breakdown' in product_data and product_data['lots_breakdown']:
+                        for l in product_data['lots_breakdown']:
+                            # Guardar como { "quant_id": qty }
+                            breakdown_json[str(l['id'])] = float(l['quantity'])
+
                     line_vals = {
                         'order_id': sale_order.id,
                         'name': product_name,
@@ -285,6 +424,7 @@ class SaleOrder(models.Model):
                         'price_unit': product_data['price_unit'],
                         'tax_ids': tax_ids,
                         'x_selected_lots': [(6, 0, selected_lots_ids)],
+                        'x_lot_breakdown_json': breakdown_json, # Guardar aquí
                         'company_id': company_id,
                         'x_price_selector': 'custom',
                     }
@@ -309,36 +449,12 @@ class SaleOrder(models.Model):
                     }
                     self.env['sale.order.line'].create(line_vals)
 
-            # Invalidar caché para asegurar lecturas frescas
+            # Invalidar caché
             sale_order.invalidate_recordset()
             
             _logger.info("[CART-DEBUG] Ejecutando action_confirm...")
             sale_order.action_confirm()
             
-            # Volver a invalidar caché tras confirmar para ver los pickings
-            sale_order.invalidate_recordset()
-            
-            _logger.info(f"[CART-DEBUG] Orden confirmada. Procesando asignación de lotes para {len(sale_order.order_line)} líneas.")
-            
-            for line in sale_order.order_line:
-                product_type = line.product_id.type
-                _logger.info(f"[CART-DEBUG] Revisando línea: {line.product_id.name} | Tipo: {product_type} | Lotes seleccionados: {len(line.x_selected_lots)}")
-                
-                # ✅ CORRECCIÓN CRÍTICA: Permitir 'consu' además de 'product'
-                # Esto soluciona que las placas consumibles no se asignen
-                if line.x_selected_lots and product_type in ['product', 'consu']:
-                    
-                    pickings = line.move_ids.mapped('picking_id')
-                    _logger.info(f"[CART-DEBUG] Pickings encontrados para línea {line.id}: {len(pickings)}")
-                    
-                    if pickings:
-                        breakdown = product_breakdown_map.get(line.product_id.id)
-                        self._assign_specific_lots(pickings, line.product_id, line.x_selected_lots, breakdown=breakdown)
-                    else:
-                        _logger.warning(f"[CART-DEBUG] ⚠️ No se encontraron pickings para la línea {line.name}. Puede ser un servicio o configuración de rutas.")
-                else:
-                    _logger.info(f"[CART-DEBUG] Saltando línea {line.product_id.name}: Sin lotes seleccionados o tipo incorrecto.")
-
             return {
                 'success': True,
                 'order_id': sale_order.id,
@@ -352,34 +468,38 @@ class SaleOrder(models.Model):
     def _assign_specific_lots(self, pickings, product, selected_quants, breakdown=None):
         """
         Asigna lotes específicos a los movimientos de stock.
-        Distingue entre 'Placa' (Lote entero obligatorio) y 'Formato' (Cantidad específica permitida).
         """
-        # Obtener el usuario real dueño de la orden para buscar en el carrito
         sale_order = pickings.mapped('sale_id')
         cart_owner_id = sale_order.user_id.id if sale_order else self.env.user.id
         
+        # Si no se pasa breakdown explicito, intentar recuperarlo de la línea de venta
+        if not breakdown:
+            # Buscar un movimiento que pertenezca a este producto y tenga sale_line_id
+            sample_move = pickings.mapped('move_ids').filtered(lambda m: m.product_id.id == product.id)[:1]
+            if sample_move and sample_move.sale_line_id and sample_move.sale_line_id.x_lot_breakdown_json:
+                try:
+                    raw_json = sample_move.sale_line_id.x_lot_breakdown_json
+                    # Convertir claves a int
+                    breakdown = {int(k): float(v) for k, v in raw_json.items()}
+                    _logger.info(f"[CART-DEBUG] Breakdown recuperado de SOL: {breakdown}")
+                except Exception as e:
+                    _logger.error(f"[CART-DEBUG] Error leyendo breakdown SOL: {e}")
+
         _logger.info(f"[CART-DEBUG] >>> Iniciando _assign_specific_lots para {product.display_name} (ID: {product.id})")
-        if breakdown:
-            _logger.info(f"[CART-DEBUG] Breakdown disponible: {breakdown}")
 
         for picking in pickings:
             if picking.state in ['done', 'cancel']:
-                _logger.info(f"[CART-DEBUG] Saltando picking {picking.name} por estado {picking.state}")
                 continue
                 
             moves = picking.move_ids.filtered(lambda m: m.product_id.id == product.id)
-            _logger.info(f"[CART-DEBUG] Picking {picking.name}: Encontrados {len(moves)} movimientos para el producto.")
             
             for move in moves:
-                _logger.info(f"[CART-DEBUG] Procesando Move ID {move.id} | Demanda Inicial: {move.product_uom_qty}")
-                
-                # Desvincular reservas automáticas que Odoo haya hecho
+                # Limpiar reservas previas
                 try:
                     if move.move_line_ids:
-                        _logger.info(f"[CART-DEBUG] Eliminando {len(move.move_line_ids)} líneas reservadas automáticamente.")
                         move.move_line_ids.unlink()
                 except Exception as e:
-                    _logger.error(f"[CART-DEBUG] Error eliminando reservas automáticas: {e}")
+                    _logger.error(f"[CART-DEBUG] Error limpiando reservas: {e}")
                 
                 remaining_demand = move.product_uom_qty
                 
@@ -388,24 +508,19 @@ class SaleOrder(models.Model):
                         continue
                         
                     if remaining_demand <= 0:
-                        _logger.info("[CART-DEBUG] Demanda satisfecha para este movimiento.")
                         break
 
-                    # ✅ 1. DETERMINAR TIPO DE LOTE (Placa vs Formato)
-                    # Usamos x_tipo del lote (stock.lot), no el tipo de producto
                     raw_tipo = quant.lot_id.x_tipo
                     tipo_lote = (str(raw_tipo) if raw_tipo else 'placa').lower()
                     
-                    _logger.info(f"[CART-DEBUG] Evaluando Quant ID {quant.id} | Lote: {quant.lot_id.name} | x_tipo: '{raw_tipo}' -> '{tipo_lote}'")
-
                     qty_to_use = 0.0
 
                     if 'formato' in tipo_lote:
-                        # === CASO FORMATO ===
-                        # Permitir cantidades específicas (parciales).
+                        # Prioridad 1: Breakdown (Persistencia o Wizard)
                         if breakdown and quant.id in breakdown:
                             qty_to_use = breakdown[quant.id]
                             _logger.info(f"[CART-DEBUG] [Formato] Usando breakdown: {qty_to_use}")
+                        # Prioridad 2: Carrito (Fallback original)
                         else:
                             cart_item = self.env['shopping.cart'].search([
                                 ('user_id', '=', cart_owner_id),
@@ -417,28 +532,17 @@ class SaleOrder(models.Model):
                             else:
                                 qty_to_use = quant.quantity
                                 _logger.info(f"[CART-DEBUG] [Formato] Fallback a Total Lote: {qty_to_use}")
-                    
                     else:
-                        # === CASO PLACA (o Default) ===
-                        # Forzar SIEMPRE el lote entero disponible en el stock.
+                        # Placa: Siempre todo
                         qty_to_use = quant.quantity
-                        _logger.info(f"[CART-DEBUG] [Placa/Default] Forzando Lote Completo: {qty_to_use}")
 
-                    # ✅ 2. CLAMP DE SEGURIDAD (TOPE)
                     qty_to_reserve = min(qty_to_use, remaining_demand)
-                    
-                    _logger.info(
-                        f"[CART-DEBUG] Resumen Lote {quant.lot_id.name}: "
-                        f"StockReal={quant.quantity} | Solicitado={qty_to_use} | "
-                        f"DemandaRestante={remaining_demand} | -> RESERVANDO={qty_to_reserve}"
-                    )
 
                     if qty_to_reserve <= 0.001:
-                        _logger.warning("[CART-DEBUG] Cantidad a reservar insignificante, saltando.")
                         continue
 
                     try:
-                        new_ml = self.env['stock.move.line'].create({
+                        self.env['stock.move.line'].create({
                             'move_id': move.id,
                             'picking_id': picking.id,
                             'product_id': product.id,
@@ -448,13 +552,10 @@ class SaleOrder(models.Model):
                             'location_dest_id': move.location_dest_id.id,
                             'product_uom_id': product.uom_id.id,
                         })
-                        _logger.info(f"[CART-DEBUG] ✅ Linea de movimiento creada ID: {new_ml.id}")
                         remaining_demand -= qty_to_reserve
                         
                     except Exception as e:
-                        _logger.error(f"[CART-DEBUG] ❌ Error creando stock.move.line para lote {quant.lot_id.name}: {e}")
-                        # No lanzamos error fatal para intentar con otros lotes si es posible, o dejar que el usuario corrija
-                        # raise UserError(f"No se pudo asignar el lote {quant.lot_id.name}. Verifique disponibilidad.")
+                        _logger.error(f"[CART-DEBUG] ❌ Error reservando lote {quant.lot_id.name}: {e}")
 
     def _clear_auto_assigned_lots(self):
         if PickingLotCleaner:
