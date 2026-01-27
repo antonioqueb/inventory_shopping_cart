@@ -81,6 +81,17 @@ class SaleOrder(models.Model):
     x_architect_id = fields.Many2one('res.partner', string='Arquitecto')
     x_price_authorization_id = fields.Many2one('price.authorization', string="Autorización Vinculada", copy=False, readonly=True)
 
+    # ==========================================================================
+    # NUEVO: ASIGNACIÓN DE SECUENCIA DE COTIZACIÓN (BORRADOR)
+    # ==========================================================================
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            # Si el nombre es 'New' o no viene, asignamos la secuencia de Cotización
+            if vals.get('name', 'New') == 'New':
+                vals['name'] = self.env['ir.sequence'].next_by_code('sale.quotation') or 'New'
+        return super(SaleOrder, self).create(vals_list)
+
     @api.onchange('pricelist_id')
     def _onchange_pricelist_id_custom_prices(self):
         if not self.pricelist_id:
@@ -285,20 +296,28 @@ class SaleOrder(models.Model):
              raise UserError("No se pudieron agregar los items.")
 
     # ==========================================================================
-    # MODIFICACIÓN: ACTION CONFIRM ROBUSTO (Re-asignación tras Borrador)
+    # MODIFICACIÓN: ACTION CONFIRM ROBUSTO (Cambio de Secuencia + Lotes)
     # ==========================================================================
     def action_confirm(self):
+        # 1. CAMBIO DE NOMBRE: De Secuencia Cotización -> Secuencia Orden
+        for order in self:
+            if order.state in ['draft', 'sent']:
+                # Obtenemos la nueva secuencia (ej. OV/2026/0001)
+                new_name = self.env['ir.sequence'].next_by_code('sale.order.confirmed')
+                if new_name:
+                    order.name = new_name
+
+        # 2. Validaciones de precio (Lógica original)
         if not self.env.context.get('skip_auth_check'):
             self._check_prices_before_confirm()
         
-        # 1. Crear Picking estándar
+        # 3. Crear Picking estándar (Super)
         res = super().action_confirm()
         
-        # 2. Limpiar asignaciones automáticas (FIFO/LIFO de Odoo)
+        # 4. Limpiar asignaciones automáticas (FIFO/LIFO de Odoo)
         self._clear_auto_assigned_lots()
         
-        # 3. Reasignar lotes específicos basándonos en la persistencia de la línea
-        # Esto asegura que si venimos de Borrador, se recupere la info exacta
+        # 5. Reasignar lotes específicos basándonos en la persistencia de la línea
         for order in self:
             for line in order.order_line:
                 if line.display_type or not line.product_id:

@@ -7,4 +7,22 @@
         <field name="padding">5</field>
         <field name="company_id" eval="False"/>
     </record>
+
+    <!-- NUEVO: Secuencia para Cotizaciones (Borrador) -->
+    <record id="seq_sale_quotation" model="ir.sequence">
+        <field name="name">Secuencia de Cotización</field>
+        <field name="code">sale.quotation</field>
+        <field name="prefix">COT/%(year)s/</field>
+        <field name="padding">5</field>
+        <field name="company_id" eval="False"/>
+    </record>
+
+    <!-- NUEVO: Secuencia para Orden de Venta (Confirmado) -->
+    <record id="seq_sale_order_confirmed" model="ir.sequence">
+        <field name="name">Secuencia de Orden de Venta</field>
+        <field name="code">sale.order.confirmed</field>
+        <field name="prefix">V/%(year)s/</field>
+        <field name="padding">5</field>
+        <field name="company_id" eval="False"/>
+    </record>
 </odoo>
