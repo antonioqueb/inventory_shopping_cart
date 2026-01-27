@@ -5,10 +5,8 @@ from odoo.exceptions import UserError, ValidationError
 import logging
 import json
 
-# Logger con nombre específico para facilitar el filtrado en docker logs
 _logger = logging.getLogger(__name__)
 
-# Intentar importar PickingLotCleaner de manera segura
 try:
     from odoo.addons.stock_lot_dimensions.models.utils.picking_cleaner import PickingLotCleaner
 except ImportError:
@@ -18,12 +16,7 @@ class SaleOrderLine(models.Model):
     _inherit = 'sale.order.line'
     
     x_selected_lots = fields.Many2many('stock.quant', string='Lotes Seleccionados', copy=True)
-    
-    # NUEVO: Campo para persistir la cantidad exacta a tomar de cada lote (ID: Cantidad)
-    # Fundamental para que al regresar a Borrador no se pierda la info de los formatos
     x_lot_breakdown_json = fields.Json(string='Desglose de Lotes', copy=True)
-    
-    # Selector de precio
     x_price_selector = fields.Selection([
         ('high', 'Precio Alto'),
         ('medium', 'Precio Medio'),
@@ -80,14 +73,14 @@ class SaleOrder(models.Model):
     x_project_id = fields.Many2one('project.project', string='Proyecto')
     x_architect_id = fields.Many2one('res.partner', string='Arquitecto')
     x_price_authorization_id = fields.Many2one('price.authorization', string="Autorización Vinculada", copy=False, readonly=True)
+    
+    # Campo para identificar si una orden es una copia de respaldo de cotización
+    x_is_quote_backup = fields.Boolean(string="Es Respaldo de Cotización", default=False, copy=False)
 
-    # ==========================================================================
-    # NUEVO: ASIGNACIÓN DE SECUENCIA DE COTIZACIÓN (BORRADOR)
-    # ==========================================================================
+    # 1. CREATE: Asigna secuencia COT/ al crear
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
-            # Si el nombre es 'New' o no viene, asignamos la secuencia de Cotización
             if vals.get('name', 'New') == 'New':
                 vals['name'] = self.env['ir.sequence'].next_by_code('sale.quotation') or 'New'
         return super(SaleOrder, self).create(vals_list)
@@ -195,13 +188,7 @@ class SaleOrder(models.Model):
             'target': 'current',
         }
 
-    # ==========================================================================
-    # NUEVA FUNCIONALIDAD: AGREGAR DESDE CARRITO A ORDEN EXISTENTE
-    # ==========================================================================
     def action_add_from_cart(self):
-        """
-        Toma los items del carrito global del usuario y los agrega a esta orden.
-        """
         self.ensure_one()
         if self.state not in ['draft', 'sent']:
             raise UserError("Solo puede agregar items en estado Borrador.")
@@ -210,10 +197,8 @@ class SaleOrder(models.Model):
         if not cart_items:
             raise UserError("Su carrito de compras está vacío.")
 
-        # 1. Agrupar items por producto
         grouped_items = {}
         for item in cart_items:
-            # Validar si el lote ya está en alguna línea de la orden para evitar duplicados
             already_in_line = False
             for line in self.order_line:
                 if line.x_selected_lots and item.quant_id.id in line.x_selected_lots.ids:
@@ -229,12 +214,11 @@ class SaleOrder(models.Model):
                     'product_obj': item.product_id,
                     'total_qty': 0.0,
                     'lots': [],
-                    'breakdown': {} # Persistencia para formatos
+                    'breakdown': {}
                 }
             
             grouped_items[prod_id]['total_qty'] += item.quantity
             grouped_items[prod_id]['lots'].append(item.quant_id.id)
-            # Guardamos el desglose: Key=StringID, Value=FloatQty
             grouped_items[prod_id]['breakdown'][str(item.quant_id.id)] = item.quantity
 
         if not grouped_items:
@@ -250,15 +234,12 @@ class SaleOrder(models.Model):
         lines_to_create = []
         for prod_id, data in grouped_items.items():
             product = data['product_obj']
-            
-            # Obtener precio según lista
             price_unit = 0.0
             if currency_code == 'MXN':
                 price_unit = product.product_tmpl_id.x_price_mxn_1
             else:
                 price_unit = product.product_tmpl_id.x_price_usd_1
             
-            # Impuestos
             tax_ids = [(6, 0, product.taxes_id.ids)]
             
             lines_to_create.append({
@@ -268,17 +249,15 @@ class SaleOrder(models.Model):
                 'product_uom_id': product.uom_id.id,
                 'product_uom_qty': data['total_qty'],
                 'price_unit': price_unit,
-                'x_price_selector': 'high', # Default al agregar manual
+                'x_price_selector': 'high',
                 'tax_ids': tax_ids,
                 'x_selected_lots': [(6, 0, data['lots'])],
-                'x_lot_breakdown_json': data['breakdown'], # Persistir datos
+                'x_lot_breakdown_json': data['breakdown'],
                 'company_id': company_id,
             })
         
         if lines_to_create:
             self.env['sale.order.line'].create(lines_to_create)
-            
-            # Limpiar carrito
             self.env['shopping.cart'].clear_cart()
             
             return {
@@ -296,34 +275,54 @@ class SaleOrder(models.Model):
              raise UserError("No se pudieron agregar los items.")
 
     # ==========================================================================
-    # MODIFICACIÓN: ACTION CONFIRM ROBUSTO (Cambio de Secuencia + Lotes)
+    # MODIFICACIÓN CRÍTICA: CLONAR COTIZACIÓN ANTES DE CONFIRMAR
     # ==========================================================================
     def action_confirm(self):
-        # 1. CAMBIO DE NOMBRE: De Secuencia Cotización -> Secuencia Orden
+        # 1. LOGICA DE CLONADO Y RENOMBRADO
         for order in self:
-            if order.state in ['draft', 'sent']:
-                # Obtenemos la nueva secuencia (ej. OV/2026/0001)
-                new_name = self.env['ir.sequence'].next_by_code('sale.order.confirmed')
-                if new_name:
-                    order.name = new_name
+            if order.state in ['draft', 'sent'] and not order.x_is_quote_backup:
+                # A) Obtener secuencia nueva para la OV
+                new_ov_name = self.env['ir.sequence'].next_by_code('sale.order.confirmed')
+                if not new_ov_name:
+                    new_ov_name = "OV/NEW"
 
-        # 2. Validaciones de precio (Lógica original)
+                # B) Crear una COPIA para que quede como la "Cotización Histórica"
+                # Usamos el nombre actual (COT/xxx) para la copia
+                current_cot_name = order.name 
+                
+                # Preparamos los valores para la copia
+                copy_defaults = {
+                    'name': current_cot_name,       # La copia se queda con el nombre COT
+                    'state': 'draft',               # La copia se queda en borrador
+                    'origin': f"Convertido a {new_ov_name}", # Referencia cruzada
+                    'x_is_quote_backup': True,      # Marcar para saber que es respaldo
+                    'date_order': fields.Datetime.now()
+                }
+                
+                # Creamos la copia (esto duplicará líneas, impuestos, notas, etc.)
+                # Ojo: Al usar copy(), Odoo llama a create(). Como tenemos un override en create,
+                # normalmente generaría un nuevo 'COT/'. Pero como estamos pasando 'name' en defaults,
+                # nuestro override en create lo respetará.
+                backup_quote = order.copy(default=copy_defaults)
+                
+                # C) Transformar la orden ACTUAL en la Orden de Venta
+                order.name = new_ov_name
+                order.origin = current_cot_name # Referencia a la COT original
+
+        # 2. Validaciones de precios (si aplica)
         if not self.env.context.get('skip_auth_check'):
             self._check_prices_before_confirm()
         
-        # 3. Crear Picking estándar (Super)
+        # 3. Lógica estándar de confirmación (Picking, Movimientos, etc.)
         res = super().action_confirm()
         
-        # 4. Limpiar asignaciones automáticas (FIFO/LIFO de Odoo)
+        # 4. Limpieza y asignación de lotes (Lógica de inventario)
         self._clear_auto_assigned_lots()
         
-        # 5. Reasignar lotes específicos basándonos en la persistencia de la línea
         for order in self:
             for line in order.order_line:
                 if line.display_type or not line.product_id:
                     continue
-                    
-                # Solo procesar productos almacenables o consumibles
                 if line.product_id.type not in ['product', 'consu']:
                     continue
                     
@@ -332,10 +331,7 @@ class SaleOrder(models.Model):
                     if not pickings:
                         continue
                     
-                    # Recuperar desglose persistente
                     breakdown = line.x_lot_breakdown_json or {}
-                    
-                    # Convertir keys de string a int (JSON guarda keys como str)
                     breakdown_int = {}
                     if breakdown:
                         try:
@@ -343,7 +339,6 @@ class SaleOrder(models.Model):
                         except Exception as e:
                             _logger.warning(f"Error parseando breakdown JSON en linea {line.id}: {e}")
 
-                    # Ejecutar asignación forzada
                     order._assign_specific_lots(pickings, line.product_id, line.x_selected_lots, breakdown=breakdown_int)
         
         return res
@@ -427,11 +422,9 @@ class SaleOrder(models.Model):
                     selected_lots_ids = product_data.get('selected_lots', [])
                     product_name = product_rec.get_product_multiline_description_sale() or product_rec.name
                     
-                    # Preparar Breakdown JSON para persistencia
                     breakdown_json = {}
                     if 'lots_breakdown' in product_data and product_data['lots_breakdown']:
                         for l in product_data['lots_breakdown']:
-                            # Guardar como { "quant_id": qty }
                             breakdown_json[str(l['id'])] = float(l['quantity'])
 
                     line_vals = {
@@ -443,7 +436,7 @@ class SaleOrder(models.Model):
                         'price_unit': product_data['price_unit'],
                         'tax_ids': tax_ids,
                         'x_selected_lots': [(6, 0, selected_lots_ids)],
-                        'x_lot_breakdown_json': breakdown_json, # Guardar aquí
+                        'x_lot_breakdown_json': breakdown_json,
                         'company_id': company_id,
                         'x_price_selector': 'custom',
                     }
@@ -485,22 +478,15 @@ class SaleOrder(models.Model):
             raise UserError(f"Error al procesar la orden: {str(e)}")
 
     def _assign_specific_lots(self, pickings, product, selected_quants, breakdown=None):
-        """
-        Asigna lotes específicos a los movimientos de stock.
-        """
         sale_order = pickings.mapped('sale_id')
         cart_owner_id = sale_order.user_id.id if sale_order else self.env.user.id
         
-        # Si no se pasa breakdown explicito, intentar recuperarlo de la línea de venta
         if not breakdown:
-            # Buscar un movimiento que pertenezca a este producto y tenga sale_line_id
             sample_move = pickings.mapped('move_ids').filtered(lambda m: m.product_id.id == product.id)[:1]
             if sample_move and sample_move.sale_line_id and sample_move.sale_line_id.x_lot_breakdown_json:
                 try:
                     raw_json = sample_move.sale_line_id.x_lot_breakdown_json
-                    # Convertir claves a int
                     breakdown = {int(k): float(v) for k, v in raw_json.items()}
-                    _logger.info(f"[CART-DEBUG] Breakdown recuperado de SOL: {breakdown}")
                 except Exception as e:
                     _logger.error(f"[CART-DEBUG] Error leyendo breakdown SOL: {e}")
 
@@ -513,7 +499,6 @@ class SaleOrder(models.Model):
             moves = picking.move_ids.filtered(lambda m: m.product_id.id == product.id)
             
             for move in moves:
-                # Limpiar reservas previas
                 try:
                     if move.move_line_ids:
                         move.move_line_ids.unlink()
@@ -535,11 +520,8 @@ class SaleOrder(models.Model):
                     qty_to_use = 0.0
 
                     if 'formato' in tipo_lote:
-                        # Prioridad 1: Breakdown (Persistencia o Wizard)
                         if breakdown and quant.id in breakdown:
                             qty_to_use = breakdown[quant.id]
-                            _logger.info(f"[CART-DEBUG] [Formato] Usando breakdown: {qty_to_use}")
-                        # Prioridad 2: Carrito (Fallback original)
                         else:
                             cart_item = self.env['shopping.cart'].search([
                                 ('user_id', '=', cart_owner_id),
@@ -547,12 +529,9 @@ class SaleOrder(models.Model):
                             ], limit=1)
                             if cart_item:
                                 qty_to_use = cart_item.quantity
-                                _logger.info(f"[CART-DEBUG] [Formato] Usando Shopping Cart: {qty_to_use}")
                             else:
                                 qty_to_use = quant.quantity
-                                _logger.info(f"[CART-DEBUG] [Formato] Fallback a Total Lote: {qty_to_use}")
                     else:
-                        # Placa: Siempre todo
                         qty_to_use = quant.quantity
 
                     qty_to_reserve = min(qty_to_use, remaining_demand)
