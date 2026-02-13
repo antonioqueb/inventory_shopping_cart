@@ -315,6 +315,21 @@ class ProductTemplate(models.Model):
                 prices.append({'label': 'Precio Mínimo (3)', 'value': product.x_price_mxn_3, 'level': 'minimum'})
         return prices
 
+
+    @api.model
+    def get_price_tooltip_data(self, product_id):
+        """Retorna precios alto y medio en ambas monedas para el tooltip"""
+        product = self.env['product.product'].browse(product_id)
+        if not product.exists():
+            return {}
+        tmpl = product.product_tmpl_id
+        return {
+            'usd_high': tmpl.x_price_usd_1,
+            'usd_medium': tmpl.x_price_usd_2,
+            'mxn_high': tmpl.x_price_mxn_1,
+            'mxn_medium': tmpl.x_price_mxn_2,
+        }
+
     @api.model
     def check_price_authorization_needed(self, product_prices, currency_code):
         needs_auth = []
