@@ -61,7 +61,6 @@ class PriceAuthorization(models.Model):
         if not authorizers:
             return
         
-        # ✅ SOLO CREAR ACTIVIDAD (sin message_post ni email)
         activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
         if not activity_type:
             activity_type = self.env['mail.activity.type'].search([('name', '=', 'To Do')], limit=1)
@@ -103,7 +102,6 @@ class PriceAuthorization(models.Model):
         if self.authorization_notes:
             message_text += f"<p><strong>Comentarios:</strong><br/>{self.authorization_notes}</p>"
         
-        # ✅ SOLO CREAR ACTIVIDAD (sin message_post)
         activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
         if not activity_type:
             activity_type = self.env['mail.activity.type'].search([('name', '=', 'To Do')], limit=1)
@@ -147,7 +145,11 @@ class PriceAuthorization(models.Model):
         self._notify_seller(approved=False)
     
     def _process_approved_authorization(self):
-        """Procesa la autorización aprobada"""
+        """
+        Procesa la autorización aprobada.
+        FIX: Siempre usa authorized_price (precio definido por el autorizador).
+        FIX: Si viene de una orden manual existente, actualiza sus precios en vez de crear nueva.
+        """
         self.ensure_one()
         
         if not self.temp_data:
@@ -160,14 +162,65 @@ class PriceAuthorization(models.Model):
             raise UserError(f"No se encontró lista de precios para {self.currency_code}")
         
         if self.operation_type == 'sale':
-            self._create_sale_order_from_authorization(pricelist, temp_data)
+            # ══════════════════════════════════════════════════════════════════
+            # FIX #2: Si la autorización viene de una orden manual existente,
+            # actualizar precios y confirmar esa orden, NO crear una nueva.
+            # ══════════════════════════════════════════════════════════════════
+            source = temp_data.get('source', '')
+            existing_order_id = temp_data.get('sale_order_id') or (self.sale_order_id.id if self.sale_order_id else False)
+            
+            if source == 'manual_order' and existing_order_id:
+                self._update_and_confirm_existing_order(existing_order_id)
+            else:
+                self._create_sale_order_from_authorization(pricelist, temp_data)
         elif self.operation_type == 'hold':
             self._create_holds_from_authorization(temp_data)
+
+    def _update_and_confirm_existing_order(self, order_id):
+        """
+        FIX: Cuando la autorización viene de una orden manual existente,
+        actualiza los precios con los AUTORIZADOS y confirma.
+        NO crea una nueva orden ni duplica.
+        """
+        order = self.env['sale.order'].browse(order_id)
+        if not order.exists():
+            raise UserError(f"La orden de venta ID {order_id} ya no existe.")
+        
+        if order.state not in ['draft', 'sent']:
+            raise UserError(f"La orden {order.name} ya no está en estado borrador.")
+        
+        # ══════════════════════════════════════════════════════════════════
+        # FIX #3: Usar SIEMPRE authorized_price (el precio final del autorizador)
+        # ══════════════════════════════════════════════════════════════════
+        for line in self.line_ids:
+            # Buscar la línea correspondiente en la orden
+            order_lines = order.order_line.filtered(
+                lambda l: l.product_id.id == line.product_id.id and not l.display_type
+            )
+            for ol in order_lines:
+                ol.write({
+                    'price_unit': line.authorized_price,
+                    'x_price_selector': 'custom',
+                })
+        
+        # Vincular autorización
+        order.x_price_authorization_id = self.id
+        
+        # Confirmar con skip_auth_check para no volver a validar precios
+        order.with_context(skip_auth_check=True).action_confirm()
+        
+        # Actualizar referencia
+        self.write({'sale_order_id': order.id})
     
     def _create_sale_order_from_authorization(self, pricelist, temp_data):
-        """Crea orden de venta desde autorización aprobada"""
+        """
+        Crea orden de venta desde autorización aprobada (flujo carrito).
+        FIX: Usa authorized_price en vez de requested_price.
+        """
         
-        # ✅ USAR PRECIOS AUTORIZADOS (no los solicitados)
+        # ══════════════════════════════════════════════════════════════════
+        # FIX #3: USAR PRECIOS AUTORIZADOS (authorized_price, NO requested_price)
+        # ══════════════════════════════════════════════════════════════════
         product_prices = {}
         for line in self.line_ids:
             product_prices[str(line.product_id.id)] = line.authorized_price
@@ -221,6 +274,7 @@ class PriceAuthorization(models.Model):
             'note': notes,
             'pricelist_id': pricelist.id,
             'company_id': company_id,
+            'x_price_authorization_id': self.id,
         })
         
         for product in products:
@@ -238,6 +292,7 @@ class PriceAuthorization(models.Model):
                 'price_unit': product['price_unit'],
                 'tax_ids': tax_ids,
                 'x_selected_lots': [(6, 0, product['selected_lots'])],
+                'x_price_selector': 'custom',
                 'company_id': company_id,
             })
         
@@ -259,7 +314,8 @@ class PriceAuthorization(models.Model):
                     'company_id': company_id,
                 })
         
-        sale_order.with_company(company_id).sudo().action_confirm()
+        # Confirmar con skip_auth_check porque ya fue autorizado
+        sale_order.with_company(company_id).with_context(skip_auth_check=True).sudo().action_confirm()
         
         for line in sale_order.order_line:
             if line.x_selected_lots:
@@ -270,9 +326,14 @@ class PriceAuthorization(models.Model):
         self.write({'sale_order_id': sale_order.id})
     
     def _create_holds_from_authorization(self, temp_data):
-        """Crea apartados desde autorización aprobada"""
+        """
+        Crea apartados desde autorización aprobada.
+        FIX: Usa authorized_price en vez de requested_price.
+        """
         
-        # ✅ USAR PRECIOS AUTORIZADOS (no los solicitados)
+        # ══════════════════════════════════════════════════════════════════
+        # FIX #3: USAR PRECIOS AUTORIZADOS (authorized_price)
+        # ══════════════════════════════════════════════════════════════════
         product_prices = {}
         for line in self.line_ids:
             product_prices[str(line.product_id.id)] = line.authorized_price
@@ -280,14 +341,12 @@ class PriceAuthorization(models.Model):
         selected_lots = temp_data.get('selected_lots', [])
         architect_id = temp_data.get('architect_id')
         
-        # ✅ CONSTRUIR NOTAS CON INFORMACIÓN DE AUTORIZACIÓN
         full_notes = self.notes or ''
         full_notes += f'\n\n=== AUTORIZACIÓN DE PRECIO ===\n'
         full_notes += f'Autorización: {self.name}\n'
         full_notes += f'Autorizado por: {self.authorizer_id.name}\n'
         full_notes += f'Fecha: {self.authorization_date}\n'
         
-        # ✅ USAR EL VENDEDOR ORIGINAL Y PASAR LOS PRECIOS AUTORIZADOS
         result = self.env['stock.quant'].with_context(
             skip_authorization_check=True,
             force_seller_id=self.seller_id.id
@@ -296,9 +355,9 @@ class PriceAuthorization(models.Model):
             project_id=self.project_id.id if self.project_id else None,
             architect_id=architect_id,
             selected_lots=selected_lots,
-            notes=full_notes,  # ✅ NOTAS CON INFO DE AUTORIZACIÓN
+            notes=full_notes,
             currency_code=self.currency_code,
-            product_prices=product_prices  # ✅ PRECIOS AUTORIZADOS
+            product_prices=product_prices
         )
         
         if result.get('success', 0) == 0 and result.get('errors', 0) > 0:

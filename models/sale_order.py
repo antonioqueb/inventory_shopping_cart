@@ -109,6 +109,10 @@ class SaleOrder(models.Model):
                 line.price_unit = new_price
 
     def action_request_authorization(self):
+        """
+        Solicitar autorización de precio.
+        FIX: NO duplicar la orden aquí, solo crear la autorización.
+        """
         self.ensure_one()
         if self.state not in ['draft', 'sent']:
             return
@@ -152,6 +156,7 @@ class SaleOrder(models.Model):
             'sale_order_id': self.id,
             'temp_data': {
                 'source': 'manual_order',
+                'sale_order_id': self.id,  # FIX: Guardar referencia a la orden existente
                 'product_groups': product_groups,
                 'architect_id': self.x_architect_id.id
             }
@@ -275,10 +280,17 @@ class SaleOrder(models.Model):
              raise UserError("No se pudieron agregar los items.")
 
     # ==========================================================================
-    # MODIFICACIÓN CRÍTICA: CLONAR COTIZACIÓN ANTES DE CONFIRMAR
+    # FIX CRÍTICO: VALIDAR PRECIOS ANTES DE DUPLICAR
     # ==========================================================================
     def action_confirm(self):
-        # 1. LOGICA DE CLONADO Y RENOMBRADO
+        # ======================================================================
+        # FIX #1: VALIDAR PRECIOS PRIMERO, ANTES de cualquier duplicación
+        # Si falla la validación, no se duplica nada.
+        # ======================================================================
+        if not self.env.context.get('skip_auth_check'):
+            self._check_prices_before_confirm()
+        
+        # Solo si pasó la validación, proceder con clonado y confirmación
         for order in self:
             if order.state in ['draft', 'sent'] and not order.x_is_quote_backup:
                 # A) Obtener secuencia nueva para la OV
@@ -286,37 +298,27 @@ class SaleOrder(models.Model):
                 if not new_ov_name:
                     new_ov_name = "OV/NEW"
 
-                # B) Crear una COPIA para que quede como la "Cotización Histórica"
-                # Usamos el nombre actual (COT/xxx) para la copia
+                # B) Crear copia como "Cotización Histórica"
                 current_cot_name = order.name 
                 
-                # Preparamos los valores para la copia
                 copy_defaults = {
-                    'name': current_cot_name,       # La copia se queda con el nombre COT
-                    'state': 'draft',               # La copia se queda en borrador
-                    'origin': f"Convertido a {new_ov_name}", # Referencia cruzada
-                    'x_is_quote_backup': True,      # Marcar para saber que es respaldo
+                    'name': current_cot_name,
+                    'state': 'draft',
+                    'origin': f"Convertido a {new_ov_name}",
+                    'x_is_quote_backup': True,
                     'date_order': fields.Datetime.now()
                 }
                 
-                # Creamos la copia (esto duplicará líneas, impuestos, notas, etc.)
-                # Ojo: Al usar copy(), Odoo llama a create(). Como tenemos un override en create,
-                # normalmente generaría un nuevo 'COT/'. Pero como estamos pasando 'name' en defaults,
-                # nuestro override en create lo respetará.
                 backup_quote = order.copy(default=copy_defaults)
                 
                 # C) Transformar la orden ACTUAL en la Orden de Venta
                 order.name = new_ov_name
-                order.origin = current_cot_name # Referencia a la COT original
+                order.origin = current_cot_name
 
-        # 2. Validaciones de precios (si aplica)
-        if not self.env.context.get('skip_auth_check'):
-            self._check_prices_before_confirm()
-        
-        # 3. Lógica estándar de confirmación (Picking, Movimientos, etc.)
+        # Lógica estándar de confirmación
         res = super().action_confirm()
         
-        # 4. Limpieza y asignación de lotes (Lógica de inventario)
+        # Limpieza y asignación de lotes
         self._clear_auto_assigned_lots()
         
         for order in self:
