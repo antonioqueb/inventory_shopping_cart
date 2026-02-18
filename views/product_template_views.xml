@@ -78,15 +78,15 @@
                     <!-- ESCALERA DE PRECIOS -->
                     <group>
                         <group string="Escalera MXN">
-                            <field name="x_price_mxn_1" readonly="1" force_save="1" string="1. Precio Alto"/>
-                            <field name="x_price_mxn_2" readonly="1" force_save="1" string="2. Precio Medio"/>
-                            <field name="x_price_mxn_3" readonly="1" force_save="1" string="3. Precio Mínimo" 
+                            <field name="x_price_mxn_1" readonly="1" force_save="1" string="1. Precio 1"/>
+                            <field name="x_price_mxn_2" readonly="1" force_save="1" string="2. Precio 2"/>
+                            <field name="x_price_mxn_3" readonly="1" force_save="1" string="3. Precio 3" 
                                    groups="inventory_shopping_cart.group_price_authorizer"/>
                         </group>
                         <group string="Escalera USD">
-                            <field name="x_price_usd_1" readonly="1" force_save="1" string="1. Precio Alto"/>
-                            <field name="x_price_usd_2" readonly="1" force_save="1" string="2. Precio Medio"/>
-                            <field name="x_price_usd_3" readonly="1" force_save="1" string="3. Precio Mínimo" 
+                            <field name="x_price_usd_1" readonly="1" force_save="1" string="1. Precio 1"/>
+                            <field name="x_price_usd_2" readonly="1" force_save="1" string="2. Precio 2"/>
+                            <field name="x_price_usd_3" readonly="1" force_save="1" string="3. Precio 3" 
                                    groups="inventory_shopping_cart.group_price_authorizer"/>
                         </group>
                     </group>

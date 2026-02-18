@@ -82,13 +82,13 @@ class ProductTemplate(models.Model):
 
     # === CAMPOS DE PRECIOS CALCULADOS ===
     
-    x_price_usd_1 = fields.Float(string='Precio USD 1 (Alto)', digits='Product Price', default=0.0, company_dependent=True)
-    x_price_usd_2 = fields.Float(string='Precio USD 2 (Medio)', digits='Product Price', default=0.0, company_dependent=True)
-    x_price_usd_3 = fields.Float(string='Precio USD 3 (Mínimo)', digits='Product Price', default=0.0, company_dependent=True)
+    x_price_usd_1 = fields.Float(string='Precio USD 1', digits='Product Price', default=0.0, company_dependent=True)
+    x_price_usd_2 = fields.Float(string='Precio USD 2', digits='Product Price', default=0.0, company_dependent=True)
+    x_price_usd_3 = fields.Float(string='Precio USD 3', digits='Product Price', default=0.0, company_dependent=True)
     
-    x_price_mxn_1 = fields.Float(string='Precio MXN 1 (Alto)', digits='Product Price', default=0.0, company_dependent=True)
-    x_price_mxn_2 = fields.Float(string='Precio MXN 2 (Medio)', digits='Product Price', default=0.0, company_dependent=True)
-    x_price_mxn_3 = fields.Float(string='Precio MXN 3 (Mínimo)', digits='Product Price', default=0.0, company_dependent=True)
+    x_price_mxn_1 = fields.Float(string='Precio MXN 1', digits='Product Price', default=0.0, company_dependent=True)
+    x_price_mxn_2 = fields.Float(string='Precio MXN 2', digits='Product Price', default=0.0, company_dependent=True)
+    x_price_mxn_3 = fields.Float(string='Precio MXN 3', digits='Product Price', default=0.0, company_dependent=True)
     
     # x_costo_mayor AHORA ES EL RESULTADO DE ALL-IN
     x_costo_mayor = fields.Float(
@@ -304,15 +304,15 @@ class ProductTemplate(models.Model):
         is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
         
         if currency_code == 'USD':
-            prices.append({'label': 'Precio Alto (1)', 'value': product.x_price_usd_1, 'level': 'high'})
-            prices.append({'label': 'Precio Medio (2)', 'value': product.x_price_usd_2, 'level': 'medium'})
+            prices.append({'label': 'Precio  (1)', 'value': product.x_price_usd_1, 'level': 'high'})
+            prices.append({'label': 'Precio  (2)', 'value': product.x_price_usd_2, 'level': 'medium'})
             if is_authorizer:
-                prices.append({'label': 'Precio Mínimo (3)', 'value': product.x_price_usd_3, 'level': 'minimum'})
+                prices.append({'label': 'Precio  (3)', 'value': product.x_price_usd_3, 'level': 'minimum'})
         else:
-            prices.append({'label': 'Precio Alto (1)', 'value': product.x_price_mxn_1, 'level': 'high'})
-            prices.append({'label': 'Precio Medio (2)', 'value': product.x_price_mxn_2, 'level': 'medium'})
+            prices.append({'label': 'Precio  (1)', 'value': product.x_price_mxn_1, 'level': 'high'})
+            prices.append({'label': 'Precio  (2)', 'value': product.x_price_mxn_2, 'level': 'medium'})
             if is_authorizer:
-                prices.append({'label': 'Precio Mínimo (3)', 'value': product.x_price_mxn_3, 'level': 'minimum'})
+                prices.append({'label': 'Precio  (3)', 'value': product.x_price_mxn_3, 'level': 'minimum'})
         return prices
 
 
