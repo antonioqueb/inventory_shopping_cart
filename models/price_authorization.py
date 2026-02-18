@@ -1,5 +1,6 @@
 # ./models/price_authorization.py
 # -*- coding: utf-8 -*-
+import math
 from odoo import models, fields, api
 from odoo.exceptions import UserError
 
@@ -162,10 +163,6 @@ class PriceAuthorization(models.Model):
             raise UserError(f"No se encontró lista de precios para {self.currency_code}")
         
         if self.operation_type == 'sale':
-            # ══════════════════════════════════════════════════════════════════
-            # FIX #2: Si la autorización viene de una orden manual existente,
-            # actualizar precios y confirmar esa orden, NO crear una nueva.
-            # ══════════════════════════════════════════════════════════════════
             source = temp_data.get('source', '')
             existing_order_id = temp_data.get('sale_order_id') or (self.sale_order_id.id if self.sale_order_id else False)
             
@@ -179,8 +176,7 @@ class PriceAuthorization(models.Model):
     def _update_and_confirm_existing_order(self, order_id):
         """
         FIX: Cuando la autorización viene de una orden manual existente,
-        actualiza los precios con los AUTORIZADOS y confirma.
-        NO crea una nueva orden ni duplica.
+        actualiza los precios con los AUTORIZADOS (redondeados hacia arriba) y confirma.
         """
         order = self.env['sale.order'].browse(order_id)
         if not order.exists():
@@ -189,41 +185,28 @@ class PriceAuthorization(models.Model):
         if order.state not in ['draft', 'sent']:
             raise UserError(f"La orden {order.name} ya no está en estado borrador.")
         
-        # ══════════════════════════════════════════════════════════════════
-        # FIX #3: Usar SIEMPRE authorized_price (el precio final del autorizador)
-        # ══════════════════════════════════════════════════════════════════
         for line in self.line_ids:
-            # Buscar la línea correspondiente en la orden
             order_lines = order.order_line.filtered(
                 lambda l: l.product_id.id == line.product_id.id and not l.display_type
             )
             for ol in order_lines:
                 ol.write({
-                    'price_unit': line.authorized_price,
+                    'price_unit': math.ceil(line.authorized_price),
                     'x_price_selector': 'custom',
                 })
         
-        # Vincular autorización
         order.x_price_authorization_id = self.id
-        
-        # Confirmar con skip_auth_check para no volver a validar precios
         order.with_context(skip_auth_check=True).action_confirm()
-        
-        # Actualizar referencia
         self.write({'sale_order_id': order.id})
     
     def _create_sale_order_from_authorization(self, pricelist, temp_data):
         """
         Crea orden de venta desde autorización aprobada (flujo carrito).
-        FIX: Usa authorized_price en vez de requested_price.
+        FIX: Usa authorized_price redondeado hacia arriba.
         """
-        
-        # ══════════════════════════════════════════════════════════════════
-        # FIX #3: USAR PRECIOS AUTORIZADOS (authorized_price, NO requested_price)
-        # ══════════════════════════════════════════════════════════════════
         product_prices = {}
         for line in self.line_ids:
-            product_prices[str(line.product_id.id)] = line.authorized_price
+            product_prices[str(line.product_id.id)] = math.ceil(line.authorized_price)
         
         products = []
         product_groups = temp_data.get('product_groups', {})
@@ -309,12 +292,11 @@ class PriceAuthorization(models.Model):
                     'order_id': sale_order.id,
                     'product_id': service['product_id'],
                     'product_uom_qty': service['quantity'],
-                    'price_unit': service['price_unit'],
+                    'price_unit': math.ceil(service['price_unit']),
                     'tax_ids': tax_ids,
                     'company_id': company_id,
                 })
         
-        # Confirmar con skip_auth_check porque ya fue autorizado
         sale_order.with_company(company_id).with_context(skip_auth_check=True).sudo().action_confirm()
         
         for line in sale_order.order_line:
@@ -328,15 +310,11 @@ class PriceAuthorization(models.Model):
     def _create_holds_from_authorization(self, temp_data):
         """
         Crea apartados desde autorización aprobada.
-        FIX: Usa authorized_price en vez de requested_price.
+        FIX: Usa authorized_price redondeado hacia arriba.
         """
-        
-        # ══════════════════════════════════════════════════════════════════
-        # FIX #3: USAR PRECIOS AUTORIZADOS (authorized_price)
-        # ══════════════════════════════════════════════════════════════════
         product_prices = {}
         for line in self.line_ids:
-            product_prices[str(line.product_id.id)] = line.authorized_price
+            product_prices[str(line.product_id.id)] = math.ceil(line.authorized_price)
         
         selected_lots = temp_data.get('selected_lots', [])
         architect_id = temp_data.get('architect_id')
@@ -405,6 +383,25 @@ class PriceAuthorizationLine(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
+            if 'requested_price' in vals:
+                vals['requested_price'] = math.ceil(vals['requested_price'])
             if 'authorized_price' not in vals and 'requested_price' in vals:
                 vals['authorized_price'] = vals['requested_price']
+            elif 'authorized_price' in vals:
+                vals['authorized_price'] = math.ceil(vals['authorized_price'])
+            if 'medium_price' in vals:
+                vals['medium_price'] = math.ceil(vals['medium_price'])
+            if 'minimum_price' in vals:
+                vals['minimum_price'] = math.ceil(vals['minimum_price'])
         return super().create(vals_list)
+    
+    def write(self, vals):
+        if 'requested_price' in vals:
+            vals['requested_price'] = math.ceil(vals['requested_price'])
+        if 'authorized_price' in vals:
+            vals['authorized_price'] = math.ceil(vals['authorized_price'])
+        if 'medium_price' in vals:
+            vals['medium_price'] = math.ceil(vals['medium_price'])
+        if 'minimum_price' in vals:
+            vals['minimum_price'] = math.ceil(vals['minimum_price'])
+        return super().write(vals)
