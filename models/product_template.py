@@ -1,5 +1,6 @@
 # ./models/product_template.py
 # -*- coding: utf-8 -*-
+import math
 import requests
 import logging
 from odoo import models, fields, api
@@ -90,7 +91,6 @@ class ProductTemplate(models.Model):
     x_price_mxn_2 = fields.Float(string='Precio MXN 2', digits='Product Price', default=0.0, company_dependent=True)
     x_price_mxn_3 = fields.Float(string='Precio MXN 3', digits='Product Price', default=0.0, company_dependent=True)
     
-    # x_costo_mayor AHORA ES EL RESULTADO DE ALL-IN
     x_costo_mayor = fields.Float(
         string='Costo ALL-IN (MXN)', 
         digits='Product Price', 
@@ -211,6 +211,7 @@ class ProductTemplate(models.Model):
     def _calculate_escalera_precios(self):
         """
         Calcula la escalera de precios usando los porcentajes configurables.
+        Todos los precios se redondean hacia arriba (math.ceil) para obtener números enteros cerrados.
         """
         rate_param = self.env['ir.config_parameter'].sudo().get_param('banorte.last_rate', '0')
         try:
@@ -230,21 +231,22 @@ class ProductTemplate(models.Model):
                 if divisor <= 0: divisor = 0.01
                 mxn_1 = record.x_costo_mayor / divisor
                 
-                # 2. Calcular factores de descuento (Default 5% si es 0, o lo que ponga el usuario)
+                # 2. Calcular factores de descuento
                 pct_medium = record.x_discount_medium if record.x_discount_medium >= 0 else 5.0
                 pct_minimum = record.x_discount_minimum if record.x_discount_minimum >= 0 else 5.0
                 
                 factor_medium = 1 - (pct_medium / 100.0)
                 factor_minimum = 1 - (pct_minimum / 100.0)
                 
-                # 3. Calcular cascada
-                mxn_2 = mxn_1 * factor_medium
-                mxn_3 = mxn_2 * factor_minimum
+                # 3. Calcular cascada y redondear hacia arriba
+                mxn_1 = math.ceil(mxn_1)
+                mxn_2 = math.ceil(mxn_1 * factor_medium)
+                mxn_3 = math.ceil(mxn_2 * factor_minimum)
                 
-                # 4. Convertir a USD
-                usd_1 = mxn_1 / banorte_rate if banorte_rate > 0 else 0
-                usd_2 = mxn_2 / banorte_rate if banorte_rate > 0 else 0
-                usd_3 = mxn_3 / banorte_rate if banorte_rate > 0 else 0
+                # 4. Convertir a USD y redondear hacia arriba
+                usd_1 = math.ceil(mxn_1 / banorte_rate) if banorte_rate > 0 else 0
+                usd_2 = math.ceil(mxn_2 / banorte_rate) if banorte_rate > 0 else 0
+                usd_3 = math.ceil(mxn_3 / banorte_rate) if banorte_rate > 0 else 0
                 
                 record.sudo().write({
                     'x_price_mxn_1': mxn_1,
@@ -263,7 +265,6 @@ class ProductTemplate(models.Model):
             'x_container_capacity', 'x_arancel_pct'
         ]
         
-        # Disparadores de recálculo de precios (incluyendo los nuevos campos)
         price_triggers = ['x_utilidad', 'x_discount_medium', 'x_discount_minimum']
         
         if any(f in vals for f in triggers):
@@ -314,7 +315,6 @@ class ProductTemplate(models.Model):
             if is_authorizer:
                 prices.append({'label': 'Precio  (3)', 'value': product.x_price_mxn_3, 'level': 'minimum'})
         return prices
-
 
     @api.model
     def get_price_tooltip_data(self, product_id):
