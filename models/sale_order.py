@@ -18,8 +18,8 @@ class SaleOrderLine(models.Model):
     x_selected_lots = fields.Many2many('stock.quant', string='Lotes Seleccionados', copy=True)
     x_lot_breakdown_json = fields.Json(string='Desglose de Lotes', copy=True)
     x_price_selector = fields.Selection([
-        ('high', 'Precio Alto'),
-        ('medium', 'Precio Medio'),
+        ('high', 'Precio 1'),
+        ('medium', 'Precio 2'),
         ('custom', 'Precio Personalizado')
     ], string='Nivel de Precio', default='high', 
        help="Seleccione el nivel de precio.")
