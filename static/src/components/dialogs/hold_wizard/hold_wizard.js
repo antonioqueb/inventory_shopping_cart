@@ -48,10 +48,15 @@ export class HoldWizard extends Component {
             productPrices: {},
             productPriceOptions: {},
             
-            // === NUEVO: Servicios ===
+            // Servicios
             searchServiceTerm: '',
             availableServices: [],
-            selectedServices: [], // Array de {product_id, display_name, quantity, price_unit, uom_name}
+            selectedServices: [], 
+
+            // === NUEVO: Materiales por Pedido (Sin Existencia) ===
+            searchBackorderTerm: '',
+            availableBackorderProducts: [],
+            selectedBackorderItems: [], // {product_id, display_name, quantity, price_unit, uom_name}
 
             // Notas
             notas: '',
@@ -140,6 +145,10 @@ export class HoldWizard extends Component {
             this.state.selectedPricelistId = pricelist.id;
         }
         
+        // Limpiar backorders si cambia la moneda (para obligar a actualizar precios)
+        // Opcional: Podríamos recalcularlos
+        this.state.selectedBackorderItems = [];
+        
         await this.loadAllProductPrices();
     }
     
@@ -153,30 +162,15 @@ export class HoldWizard extends Component {
     onSearchPartner(ev) {
         const value = ev.target.value;
         this.state.searchPartnerTerm = value;
-        
-        if (this.searchTimeout) {
-            clearTimeout(this.searchTimeout);
-        }
-        
-        this.searchTimeout = setTimeout(() => {
-            this.searchPartners();
-        }, 300);
+        if (this.searchTimeout) clearTimeout(this.searchTimeout);
+        this.searchTimeout = setTimeout(() => { this.searchPartners(); }, 300);
     }
     
     async searchPartners() {
         try {
-            const partners = await this.orm.call(
-                "stock.quant",
-                "search_partners",
-                [],
-                { name: this.state.searchPartnerTerm.trim() }
-            );
-            
+            const partners = await this.orm.call("stock.quant", "search_partners", [], { name: this.state.searchPartnerTerm.trim() });
             this.state.partners = partners;
-        } catch (error) {
-            console.error("Error buscando clientes:", error);
-            this.notification.add("Error al buscar clientes", { type: "danger" });
-        }
+        } catch (error) { this.notification.add("Error al buscar clientes", { type: "danger" }); }
     }
     
     selectPartner(partner) {
@@ -187,74 +181,33 @@ export class HoldWizard extends Component {
     
     toggleCreatePartner() {
         this.state.showCreatePartner = !this.state.showCreatePartner;
-        if (this.state.showCreatePartner) {
-            this.state.selectedPartnerId = null;
-            this.state.selectedPartnerName = '';
-        }
+        if (this.state.showCreatePartner) { this.state.selectedPartnerId = null; this.state.selectedPartnerName = ''; }
     }
     
     async createPartner() {
-        if (!this.state.newPartnerName.trim()) {
-            this.notification.add("El nombre del cliente es requerido", { type: "warning" });
-            return;
-        }
-        
+        if (!this.state.newPartnerName.trim()) { this.notification.add("El nombre es requerido", { type: "warning" }); return; }
         try {
-            const result = await this.orm.call(
-                "stock.quant",
-                "create_partner",
-                [],
-                {
-                    name: this.state.newPartnerName.trim(),
-                    vat: this.state.newPartnerVat.trim(),
-                    ref: this.state.newPartnerRef.trim()
-                }
-            );
-            
-            if (result.error) {
-                this.notification.add(result.error, { type: "danger" });
-            } else if (result.success) {
-                this.selectPartner(result.partner);
-                this.notification.add(`Cliente "${result.partner.name}" creado exitosamente`, { type: "success" });
-                this.state.newPartnerName = '';
-                this.state.newPartnerVat = '';
-                this.state.newPartnerRef = '';
-            }
-        } catch (error) {
-            console.error("Error creando cliente:", error);
-            this.notification.add("Error al crear cliente", { type: "danger" });
-        }
+            const result = await this.orm.call("stock.quant", "create_partner", [], {
+                name: this.state.newPartnerName.trim(), vat: this.state.newPartnerVat.trim(), ref: this.state.newPartnerRef.trim()
+            });
+            if (result.success) { this.selectPartner(result.partner); this.notification.add("Cliente creado", { type: "success" }); }
+        } catch (error) { this.notification.add("Error creando cliente", { type: "danger" }); }
     }
-    
+
     // ========== PROYECTO ==========
-    
+
     onSearchProject(ev) {
         const value = ev.target.value;
         this.state.searchProjectTerm = value;
-        
-        if (this.searchTimeout) {
-            clearTimeout(this.searchTimeout);
-        }
-        
-        this.searchTimeout = setTimeout(() => {
-            this.searchProjects();
-        }, 300);
+        if (this.searchTimeout) clearTimeout(this.searchTimeout);
+        this.searchTimeout = setTimeout(() => { this.searchProjects(); }, 300);
     }
     
     async searchProjects() {
         try {
-            const projects = await this.orm.call(
-                "stock.quant",
-                "get_projects",
-                [],
-                { search_term: this.state.searchProjectTerm.trim() }
-            );
-            
+            const projects = await this.orm.call("stock.quant", "get_projects", [], { search_term: this.state.searchProjectTerm.trim() });
             this.state.projects = projects;
-        } catch (error) {
-            console.error("Error buscando proyectos:", error);
-            this.notification.add("Error al buscar proyectos", { type: "danger" });
-        }
+        } catch (error) { this.notification.add("Error buscando proyectos", { type: "danger" }); }
     }
     
     selectProject(project) {
@@ -265,68 +218,31 @@ export class HoldWizard extends Component {
     
     toggleCreateProject() {
         this.state.showCreateProject = !this.state.showCreateProject;
-        if (this.state.showCreateProject) {
-            this.state.selectedProjectId = null;
-            this.state.selectedProjectName = '';
-        }
+        if (this.state.showCreateProject) { this.state.selectedProjectId = null; this.state.selectedProjectName = ''; }
     }
     
     async createProject() {
-        if (!this.state.newProjectName.trim()) {
-            this.notification.add("El nombre del proyecto es requerido", { type: "warning" });
-            return;
-        }
-        
+        if (!this.state.newProjectName.trim()) { this.notification.add("Nombre requerido", { type: "warning" }); return; }
         try {
-            const result = await this.orm.call(
-                "stock.quant",
-                "create_project",
-                [],
-                { name: this.state.newProjectName.trim() }
-            );
-            
-            if (result.error) {
-                this.notification.add(result.error, { type: "danger" });
-            } else if (result.success) {
-                this.selectProject(result.project);
-                this.notification.add(`Proyecto "${result.project.name}" creado exitosamente`, { type: "success" });
-                this.state.newProjectName = '';
-            }
-        } catch (error) {
-            console.error("Error creando proyecto:", error);
-            this.notification.add("Error al crear proyecto", { type: "danger" });
-        }
+            const result = await this.orm.call("stock.quant", "create_project", [], { name: this.state.newProjectName.trim() });
+            if (result.success) { this.selectProject(result.project); this.notification.add("Proyecto creado", { type: "success" }); }
+        } catch (error) { this.notification.add("Error creando proyecto", { type: "danger" }); }
     }
-    
+
     // ========== ARQUITECTO ==========
-    
+
     onSearchArchitect(ev) {
         const value = ev.target.value;
         this.state.searchArchitectTerm = value;
-        
-        if (this.searchTimeout) {
-            clearTimeout(this.searchTimeout);
-        }
-        
-        this.searchTimeout = setTimeout(() => {
-            this.searchArchitects();
-        }, 300);
+        if (this.searchTimeout) clearTimeout(this.searchTimeout);
+        this.searchTimeout = setTimeout(() => { this.searchArchitects(); }, 300);
     }
     
     async searchArchitects() {
         try {
-            const architects = await this.orm.call(
-                "stock.quant",
-                "get_architects",
-                [],
-                { search_term: this.state.searchArchitectTerm.trim() }
-            );
-            
+            const architects = await this.orm.call("stock.quant", "get_architects", [], { search_term: this.state.searchArchitectTerm.trim() });
             this.state.architects = architects;
-        } catch (error) {
-            console.error("Error buscando arquitectos:", error);
-            this.notification.add("Error al buscar arquitectos", { type: "danger" });
-        }
+        } catch (error) { this.notification.add("Error buscando arquitectos", { type: "danger" }); }
     }
     
     selectArchitect(architect) {
@@ -337,58 +253,26 @@ export class HoldWizard extends Component {
     
     toggleCreateArchitect() {
         this.state.showCreateArchitect = !this.state.showCreateArchitect;
-        if (this.state.showCreateArchitect) {
-            this.state.selectedArchitectId = null;
-            this.state.selectedArchitectName = '';
-        }
+        if (this.state.showCreateArchitect) { this.state.selectedArchitectId = null; this.state.selectedArchitectName = ''; }
     }
     
     async createArchitect() {
-        if (!this.state.newArchitectName.trim()) {
-            this.notification.add("El nombre del arquitecto es requerido", { type: "warning" });
-            return;
-        }
-        
+        if (!this.state.newArchitectName.trim()) { this.notification.add("Nombre requerido", { type: "warning" }); return; }
         try {
-            const result = await this.orm.call(
-                "stock.quant",
-                "create_architect",
-                [],
-                {
-                    name: this.state.newArchitectName.trim(),
-                    vat: this.state.newArchitectVat.trim(),
-                    ref: this.state.newArchitectRef.trim()
-                }
-            );
-            
-            if (result.error) {
-                this.notification.add(result.error, { type: "danger" });
-            } else if (result.success) {
-                this.selectArchitect(result.architect);
-                this.notification.add(`Arquitecto "${result.architect.name}" creado exitosamente`, { type: "success" });
-                this.state.newArchitectName = '';
-                this.state.newArchitectVat = '';
-                this.state.newArchitectRef = '';
-            }
-        } catch (error) {
-            console.error("Error creando arquitecto:", error);
-            this.notification.add("Error al crear arquitecto", { type: "danger" });
-        }
+            const result = await this.orm.call("stock.quant", "create_architect", [], {
+                name: this.state.newArchitectName.trim(), vat: this.state.newArchitectVat.trim(), ref: this.state.newArchitectRef.trim()
+            });
+            if (result.success) { this.selectArchitect(result.architect); this.notification.add("Arquitecto creado", { type: "success" }); }
+        } catch (error) { this.notification.add("Error creando arquitecto", { type: "danger" }); }
     }
 
-    // ========== SERVICIOS (NUEVO) ==========
+    // ========== SERVICIOS ==========
     
     onSearchService(ev) {
         const value = ev.target.value;
         this.state.searchServiceTerm = value;
-        
-        if (this.searchTimeout) {
-            clearTimeout(this.searchTimeout);
-        }
-        
-        this.searchTimeout = setTimeout(() => {
-            this.searchServices();
-        }, 300);
+        if (this.searchTimeout) clearTimeout(this.searchTimeout);
+        this.searchTimeout = setTimeout(() => { this.searchServices(); }, 300);
     }
     
     async searchServices() {
@@ -405,10 +289,8 @@ export class HoldWizard extends Component {
                 ['id', 'display_name', 'list_price', 'uom_id'],
                 { limit: 20 }
             );
-            
             this.state.availableServices = services;
         } catch (error) {
-            console.error("Error buscando servicios:", error);
             this.notification.add("Error al buscar servicios", { type: "danger" });
         }
     }
@@ -419,7 +301,6 @@ export class HoldWizard extends Component {
             this.notification.add("Este servicio ya fue agregado", { type: "warning" });
             return;
         }
-        
         this.state.selectedServices.push({
             product_id: service.id,
             display_name: service.display_name,
@@ -427,7 +308,6 @@ export class HoldWizard extends Component {
             price_unit: service.list_price,
             uom_name: service.uom_id[1]
         });
-        
         this.state.searchServiceTerm = '';
         this.state.availableServices = [];
     }
@@ -449,20 +329,91 @@ export class HoldWizard extends Component {
     getTotalServices() {
         return this.state.selectedServices.reduce((sum, s) => sum + (s.quantity * s.price_unit), 0);
     }
+
+    // ========== NUEVO: MATERIALES POR PEDIDO (BACKORDER) ==========
+
+    onSearchBackorder(ev) {
+        const value = ev.target.value;
+        this.state.searchBackorderTerm = value;
+        if (this.searchTimeout) clearTimeout(this.searchTimeout);
+        this.searchTimeout = setTimeout(() => { this.searchBackorderProducts(); }, 300);
+    }
+
+    async searchBackorderProducts() {
+        try {
+            // Buscamos productos que NO sean servicios (Almacenables o Consumibles)
+            const products = await this.orm.searchRead(
+                "product.product",
+                [
+                    ['type', '!=', 'service'], 
+                    ['sale_ok', '=', true],
+                    '|',
+                    ['name', 'ilike', this.state.searchBackorderTerm.trim()],
+                    ['default_code', 'ilike', this.state.searchBackorderTerm.trim()]
+                ],
+                ['id', 'display_name', 'list_price', 'uom_id', 'qty_available'],
+                { limit: 20 }
+            );
+            this.state.availableBackorderProducts = products;
+        } catch (error) {
+            this.notification.add("Error buscando productos", { type: "danger" });
+        }
+    }
+
+    addBackorderItem(product) {
+        const exists = this.state.selectedBackorderItems.find(b => b.product_id === product.id);
+        if (exists) {
+            this.notification.add("Este producto ya está en la lista de pedidos", { type: "warning" });
+            return;
+        }
+        
+        // Obtener precio según moneda seleccionada si es posible
+        // Nota: list_price base es en moneda de compañía, aquí asumimos conversión simple o base
+        // Idealmente usaríamos get_custom_prices pero por rendimiento usamos list_price como base
+        
+        this.state.selectedBackorderItems.push({
+            product_id: product.id,
+            display_name: product.display_name,
+            quantity: 1, // m² por defecto
+            price_unit: product.list_price,
+            uom_name: product.uom_id[1]
+        });
+        
+        this.state.searchBackorderTerm = '';
+        this.state.availableBackorderProducts = [];
+    }
+
+    removeBackorderItem(index) {
+        this.state.selectedBackorderItems.splice(index, 1);
+    }
+
+    updateBackorderQuantity(index, value) {
+        const qty = parseFloat(value) || 1;
+        this.state.selectedBackorderItems[index].quantity = qty > 0 ? qty : 1;
+    }
+
+    updateBackorderPrice(index, value) {
+        const price = parseFloat(value) || 0;
+        this.state.selectedBackorderItems[index].price_unit = price >= 0 ? price : 0;
+    }
+
+    getTotalBackorders() {
+        return this.state.selectedBackorderItems.reduce((sum, b) => sum + (b.quantity * b.price_unit), 0);
+    }
     
     // ========== NAVEGACIÓN ==========
     
     nextStep() {
         if (this.state.currentStep === 1 && !this.state.selectedPartnerId) {
-            this.notification.add("Debe seleccionar o crear un cliente", { type: "warning" });
+            this.notification.add("Debe seleccionar un cliente", { type: "warning" });
             return;
         }
         if (this.state.currentStep === 2 && !this.state.selectedProjectId) {
-            this.notification.add("Debe seleccionar o crear un proyecto", { type: "warning" });
+            this.notification.add("Debe seleccionar un proyecto", { type: "warning" });
             return;
         }
         if (this.state.currentStep === 3 && !this.state.selectedArchitectId) {
-            this.notification.add("Debe seleccionar o crear un arquitecto", { type: "warning" });
+            this.notification.add("Debe seleccionar un arquitecto", { type: "warning" });
             return;
         }
         if (this.state.currentStep === 4) {
@@ -470,15 +421,14 @@ export class HoldWizard extends Component {
                 const price = this.state.productPrices[pid];
                 return !price || price <= 0;
             });
-            
             if (hasInvalidPrice) {
-                this.notification.add("Debe configurar precios para todos los productos", { type: "warning" });
+                this.notification.add("Revise los precios de los lotes seleccionados", { type: "warning" });
                 return;
             }
         }
         
-        // Incrementado el límite a 6 pasos (5 es Servicios, 6 es Confirmar)
-        if (this.state.currentStep < 6) {
+        // Ahora hay 7 pasos: Cliente, Proyecto, Arq, Precios, Backorders, Servicios, Confirmar
+        if (this.state.currentStep < 7) {
             this.state.currentStep++;
         }
     }
@@ -500,11 +450,17 @@ export class HoldWizard extends Component {
         this.state.isCreating = true;
         
         try {
-            // Preparar lista de servicios para enviar al backend
             const services = this.state.selectedServices.map(s => ({
                 product_id: s.product_id,
                 quantity: s.quantity,
                 price_unit: s.price_unit
+            }));
+
+            // Agregar items de backorder
+            const backorders = this.state.selectedBackorderItems.map(b => ({
+                product_id: b.product_id,
+                quantity: b.quantity,
+                price_unit: b.price_unit
             }));
 
             const result = await this.orm.call(
@@ -519,35 +475,26 @@ export class HoldWizard extends Component {
                     notes: this.state.notas,
                     currency_code: this.state.selectedCurrency,
                     product_prices: this.state.productPrices,
-                    services: services // ✅ Enviamos los servicios
+                    services: services,
+                    backorder_items: backorders // NUEVO CAMPO ENVIADO
                 }
             );
             
-            // ✅ MANEJAR CASO DE AUTORIZACIÓN REQUERIDA
             if (result.needs_authorization) {
-                this.notification.add(
-                    `${result.message}\n\nPuede ver el estado en "Autorizaciones de Precio"`, 
-                    { type: "warning", sticky: true }
-                );
-                await this.props.onSuccess(); // Limpiar carrito
+                this.notification.add(`${result.message}`, { type: "warning", sticky: true });
+                await this.props.onSuccess();
                 this.props.close();
                 return;
             }
             
-            // ✅ CASO NORMAL: APARTADOS CREADOS
-            if (result.success > 0 || (services.length > 0 && result.order_id)) {
-                this.notification.add(
-                    `${result.success} lotes apartados correctamente`, 
-                    { type: "success" }
-                );
-                
-                // ✅ PASO 1: Limpiar carrito y actualizar UI
-                await this.props.onSuccess(); 
+            // Condición de éxito: Lotes creados OR Servicios/Backorders agregados a la orden
+            const hasNonLotItems = (services.length > 0 || backorders.length > 0) && result.order_id;
 
-                // ✅ PASO 2: Cerrar el diálogo modal
+            if (result.success > 0 || hasNonLotItems) {
+                this.notification.add(`${result.success} lotes y ${backorders.length} pedidos creados`, { type: "success" });
+                await this.props.onSuccess(); 
                 this.props.close();
 
-                // ✅ PASO 3: Navegar (Ahora es seguro porque ya limpiamos y cerramos)
                 if (result.order_id) {
                     await this.action.doAction({
                         type: 'ir.actions.act_window',
@@ -560,20 +507,15 @@ export class HoldWizard extends Component {
             }
             
             if (result.errors > 0) {
-                let msg = `${result.errors} lotes no pudieron apartarse:\n`;
-                result.failed.forEach(f => { 
-                    msg += `\n• ${f.lot_name || 'Lote'}: ${f.error}`; 
-                });
+                let msg = `${result.errors} errores:\n`;
+                result.failed.forEach(f => { msg += `\n• ${f.lot_name}: ${f.error}`; });
                 this.notification.add(msg, { type: "warning", sticky: true });
             }
         } catch (error) {
             console.error("Error creando apartados:", error);
-            this.notification.add("Error al crear apartados", { type: "danger" });
+            this.notification.add("Error al crear apartados: " + error.message, { type: "danger" });
         } finally {
-            // Solo actualizar el estado si el componente no ha sido desmontado
-            if (this.state) {
-                this.state.isCreating = false;
-            }
+            if (this.state) this.state.isCreating = false;
         }
     }
     

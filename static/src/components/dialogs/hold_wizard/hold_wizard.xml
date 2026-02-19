@@ -18,7 +18,7 @@
                     </div>
                 </div>
                 
-                <!-- Indicador de pasos (6 pasos ahora) -->
+                <!-- Indicador de pasos (7 pasos ahora) -->
                 <div class="steps-indicator mb-4">
                     <div class="d-flex justify-content-between align-items-center">
                         <div class="step-item" t-att-class="{ active: state.currentStep >= 1, completed: state.currentStep > 1 }">
@@ -44,17 +44,24 @@
                             <div class="step-label">Precios</div>
                         </div>
                         <div class="step-line" t-att-class="{ active: state.currentStep > 4 }"></div>
-                        
-                        <!-- NUEVO PASO 5: SERVICIOS -->
+
+                        <!-- NUEVO PASO 5: PEDIDOS SIN EXISTENCIA -->
                         <div class="step-item" t-att-class="{ active: state.currentStep >= 5, completed: state.currentStep > 5 }">
                             <div class="step-number">5</div>
-                            <div class="step-label">Servicios</div>
+                            <div class="step-label">Pedidos</div>
                         </div>
                         <div class="step-line" t-att-class="{ active: state.currentStep > 5 }"></div>
                         
-                        <!-- PASO 6: CONFIRMAR -->
-                        <div class="step-item" t-att-class="{ active: state.currentStep >= 6 }">
+                        <!-- PASO 6: SERVICIOS -->
+                        <div class="step-item" t-att-class="{ active: state.currentStep >= 6, completed: state.currentStep > 6 }">
                             <div class="step-number">6</div>
+                            <div class="step-label">Servicios</div>
+                        </div>
+                        <div class="step-line" t-att-class="{ active: state.currentStep > 6 }"></div>
+                        
+                        <!-- PASO 7: CONFIRMAR -->
+                        <div class="step-item" t-att-class="{ active: state.currentStep >= 7 }">
+                            <div class="step-number">7</div>
                             <div class="step-label">Confirmar</div>
                         </div>
                     </div>
@@ -392,7 +399,7 @@
                 <div class="step-content" t-if="state.currentStep === 4">
                     <h5 class="mb-3">
                         <i class="fa fa-dollar text-secondary me-2"></i>
-                        Configurar Precios
+                        Configurar Precios (Lotes Existentes)
                     </h5>
                     
                     <div class="mb-3">
@@ -444,8 +451,138 @@
                     </t>
                 </div>
 
-                <!-- PASO 5: SERVICIOS (NUEVO) -->
+                <!-- NUEVO PASO 5: PEDIDOS SIN EXISTENCIA -->
                 <div class="step-content" t-if="state.currentStep === 5">
+                    <h5 class="mb-3">
+                        <i class="fa fa-cart-plus text-secondary me-2"></i>
+                        Agregar Pedidos sin Existencia
+                    </h5>
+                    
+                    <div class="alert alert-info mb-3">
+                        <i class="fa fa-info-circle me-2"></i>
+                        Aquí puedes agregar material que se va a pedir al cliente pero que no está disponible físicamente (Backorder).
+                    </div>
+                    
+                    <!-- Buscador de productos (Materiales) -->
+                    <div class="card border mb-3">
+                        <div class="card-body">
+                            <h6 class="card-title mb-3">Buscar Material</h6>
+                            <div class="input-group mb-2">
+                                <span class="input-group-text">
+                                    <i class="fa fa-search"></i>
+                                </span>
+                                <input 
+                                    type="text"
+                                    class="form-control"
+                                    placeholder="Buscar producto por nombre o código..."
+                                    t-model="state.searchBackorderTerm"
+                                    t-on-input="onSearchBackorder"
+                                />
+                            </div>
+                            
+                            <div class="list-group" style="max-height: 200px; overflow-y: auto;" t-if="state.availableBackorderProducts.length > 0">
+                                <t t-foreach="state.availableBackorderProducts" t-as="product" t-key="product.id">
+                                    <button 
+                                        type="button"
+                                        class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                                        t-on-click="() => this.addBackorderItem(product)"
+                                    >
+                                        <div>
+                                            <strong t-esc="product.display_name"></strong>
+                                            <br/>
+                                            <small class="text-muted">
+                                                <t t-if="product.qty_available > 0">Stock: <t t-esc="formatNumber(product.qty_available)"/></t>
+                                                <t t-else="">Sin stock</t>
+                                            </small>
+                                        </div>
+                                        <i class="fa fa-plus-circle text-primary"></i>
+                                    </button>
+                                </t>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Lista de pedidos seleccionados -->
+                    <div class="card border" t-if="state.selectedBackorderItems.length > 0">
+                        <div class="card-body">
+                            <h6 class="card-title mb-3">Pedidos Agregados</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th style="width: 40%;">Producto</th>
+                                            <th class="text-center" style="width: 20%;">Cantidad (m²)</th>
+                                            <th class="text-end" style="width: 20%;">Precio/m²</th>
+                                            <th class="text-end" style="width: 15%;">Total</th>
+                                            <th style="width: 5%;"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <t t-foreach="state.selectedBackorderItems" t-as="item" t-key="item_index">
+                                            <tr>
+                                                <td>
+                                                    <strong t-esc="item.display_name"></strong>
+                                                    <br/>
+                                                    <small class="text-muted" t-esc="item.uom_name"></small>
+                                                </td>
+                                                <td class="text-center">
+                                                    <input 
+                                                        type="number"
+                                                        class="form-control form-control-sm text-center"
+                                                        t-model.number="item.quantity"
+                                                        t-on-change="(ev) => this.updateBackorderQuantity(item_index, ev.target.value)"
+                                                        min="0.01"
+                                                        step="0.01"
+                                                        style="width: 90px; display: inline-block;"
+                                                    />
+                                                </td>
+                                                <td class="text-end">
+                                                    <input 
+                                                        type="number"
+                                                        class="form-control form-control-sm text-end"
+                                                        t-model.number="item.price_unit"
+                                                        t-on-change="(ev) => this.updateBackorderPrice(item_index, ev.target.value)"
+                                                        min="0"
+                                                        step="0.01"
+                                                        style="width: 100px; display: inline-block;"
+                                                    />
+                                                </td>
+                                                <td class="text-end">
+                                                    <strong t-esc="formatNumber(item.quantity * item.price_unit)"></strong>
+                                                </td>
+                                                <td class="text-center">
+                                                    <button 
+                                                        type="button"
+                                                        class="btn btn-sm btn-link text-danger p-0"
+                                                        t-on-click="() => this.removeBackorderItem(item_index)"
+                                                        title="Eliminar"
+                                                    >
+                                                        <i class="fa fa-trash"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        </t>
+                                    </tbody>
+                                    <tfoot class="table-light">
+                                        <tr>
+                                            <th colspan="3">TOTAL PEDIDOS</th>
+                                            <th class="text-end">
+                                                <strong class="text-info">
+                                                    <t t-esc="formatNumber(getTotalBackorders())"/>
+                                                    <small><t t-esc="state.selectedCurrency"/></small>
+                                                </strong>
+                                            </th>
+                                            <th></th>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PASO 6: SERVICIOS -->
+                <div class="step-content" t-if="state.currentStep === 6">
                     <h5 class="mb-3">
                         <i class="fa fa-wrench text-secondary me-2"></i>
                         Agregar Servicios (Opcional)
@@ -453,8 +590,7 @@
                     
                     <div class="alert alert-info mb-3">
                         <i class="fa fa-info-circle me-2"></i>
-                        Agrega servicios como fletes, maniobras, seguros, etc. Puedes continuar sin agregar servicios.
-                        Estos servicios se incluirán en el presupuesto.
+                        Agrega servicios como fletes, maniobras, seguros, etc.
                     </div>
                     
                     <!-- Buscador de servicios -->
@@ -574,8 +710,8 @@
                     </div>
                 </div>
                 
-                <!-- PASO 6: CONFIRMAR -->
-                <div class="step-content" t-if="state.currentStep === 6">
+                <!-- PASO 7: CONFIRMAR -->
+                <div class="step-content" t-if="state.currentStep === 7">
                     <h5 class="mb-3">
                         <i class="fa fa-check-circle text-success me-2"></i>
                         Confirmar Apartados
@@ -610,17 +746,17 @@
                                     <t t-esc="state.selectedCurrency"/>
                                 </div>
                                 <div class="col-md-6">
-                                    <strong>Total de lotes:</strong><br/>
+                                    <strong>Lotes físicos:</strong><br/>
                                     <t t-esc="props.selectedLots.length"/>
                                 </div>
                             </div>
                         </div>
                     </div>
                     
-                    <!-- Tabla de Precios de Productos -->
-                    <div class="card border mb-3">
+                    <!-- Tabla de Productos (Lotes) -->
+                    <div class="card border mb-3" t-if="Object.keys(props.productGroups).length > 0">
                         <div class="card-header bg-light">
-                            <strong>Productos</strong>
+                            <strong>Productos en Lotes (Existencia Física)</strong>
                         </div>
                         <div class="card-body p-0">
                             <table class="table table-sm mb-0">
@@ -641,6 +777,35 @@
                                             <td class="text-end"><t t-esc="formatNumber(group.total_quantity)"/> m²</td>
                                             <td class="text-end"><t t-esc="formatNumber(state.productPrices[productId])"/> <t t-esc="state.selectedCurrency"/></td>
                                             <td class="text-end"><t t-esc="formatNumber(group.total_quantity * state.productPrices[productId])"/> <t t-esc="state.selectedCurrency"/></td>
+                                        </tr>
+                                    </t>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Tabla de Backorders (Pedidos sin Existencia) -->
+                    <div class="card border mb-3" t-if="state.selectedBackorderItems.length > 0">
+                        <div class="card-header bg-info text-white">
+                            <strong>Pedidos sin Existencia (Backorder)</strong>
+                        </div>
+                        <div class="card-body p-0">
+                            <table class="table table-sm mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Producto</th>
+                                        <th class="text-end">Cantidad</th>
+                                        <th class="text-end">Precio Unit.</th>
+                                        <th class="text-end">Subtotal</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <t t-foreach="state.selectedBackorderItems" t-as="item" t-key="item_index">
+                                        <tr>
+                                            <td><t t-esc="item.display_name"/></td>
+                                            <td class="text-end"><t t-esc="formatNumber(item.quantity)"/> m²</td>
+                                            <td class="text-end"><t t-esc="formatNumber(item.price_unit)"/> <t t-esc="state.selectedCurrency"/></td>
+                                            <td class="text-end"><t t-esc="formatNumber(item.quantity * item.price_unit)"/> <t t-esc="state.selectedCurrency"/></td>
                                         </tr>
                                     </t>
                                 </tbody>
@@ -682,7 +847,10 @@
                         <strong style="font-size: 1.1em;">TOTAL ESTIMADO:</strong>
                         <h4 class="mb-0 text-primary">
                             <t t-set="totalProducts" t-value="Object.entries(props.productGroups).reduce((sum, [pid, g]) => sum + (g.total_quantity * state.productPrices[pid]), 0)"/>
-                            <t t-esc="formatNumber(totalProducts + getTotalServices())"/> <t t-esc="state.selectedCurrency"/>
+                            <t t-set="totalBackorders" t-value="getTotalBackorders()"/>
+                            <t t-set="totalServices" t-value="getTotalServices()"/>
+                            
+                            <t t-esc="formatNumber(totalProducts + totalBackorders + totalServices)"/> <t t-esc="state.selectedCurrency"/>
                         </h4>
                     </div>
                     
@@ -717,7 +885,7 @@
                 <button 
                     class="btn btn-light border btn-lg"
                     t-on-click="prevStep"
-                    t-if="state.currentStep > 1 and state.currentStep &lt; 6"
+                    t-if="state.currentStep > 1 and state.currentStep &lt; 7"
                 >
                     <i class="fa fa-chevron-left me-2"></i>
                     Anterior
@@ -735,7 +903,7 @@
                 <button 
                     class="btn btn-secondary btn-lg"
                     t-on-click="nextStep"
-                    t-if="state.currentStep &lt; 6"
+                    t-if="state.currentStep &lt; 7"
                 >
                     Siguiente
                     <i class="fa fa-chevron-right ms-2"></i>
@@ -744,7 +912,7 @@
                 <button 
                     class="btn btn-light border btn-lg"
                     t-on-click="prevStep"
-                    t-if="state.currentStep === 6"
+                    t-if="state.currentStep === 7"
                 >
                     <i class="fa fa-chevron-left me-2"></i>
                     Anterior
@@ -753,7 +921,7 @@
                 <button 
                     class="btn btn-primary btn-lg"
                     t-on-click="createHolds"
-                    t-if="state.currentStep === 6"
+                    t-if="state.currentStep === 7"
                     t-att-disabled="state.isCreating"
                 >
                     <t t-if="!state.isCreating">
