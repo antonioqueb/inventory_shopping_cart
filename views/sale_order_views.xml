@@ -27,17 +27,19 @@
             <!-- ===================== COLUMNA DERECHA (partner_details) ===================== -->
             <xpath expr="//group[@name='partner_details']" position="inside">
                 <field name="partner_invoice_id"
-                    string="Dir. Facturación"
-                    context="{'default_parent_id': partner_id, 'default_type': 'invoice'}"
+                    string="Dirección de Facturación"
+                    context="{'default_parent_id': partner_id, 'default_type': 'invoice', 'show_address': 1}"
                     options='{"always_reload": True}'
-                    domain="['|', ('id', '=', partner_id), '&amp;', ('parent_id', '=', partner_id), ('type', '=', 'invoice')]"/>
+                    domain="[('parent_id', '=', partner_id), ('type', '=', 'invoice')]"/>
                 <field name="partner_shipping_id"
-                    string="Dir. Entrega"
-                    context="{'default_parent_id': partner_id, 'default_type': 'delivery'}"
+                    string="Dirección de Entrega"
+                    context="{'default_parent_id': partner_id, 'default_type': 'delivery', 'show_address': 1}"
                     options='{"always_reload": True}'
-                    domain="['|', ('id', '=', partner_id), '&amp;', ('parent_id', '=', partner_id), ('type', '=', 'delivery')]"/>
+                    domain="[('parent_id', '=', partner_id), ('type', '=', 'delivery')]"/>
                 <field name="x_project_id" string="Job Name / Proyecto"/>
-                <field name="x_architect_id" string="Arquitecto"/>
+                <field name="x_architect_id" 
+                    string="Arquitecto"
+                    domain="[('x_es_arquitecto', '=', True)]"/>
             </xpath>
 
             <!-- ===================== COLUMNA IZQUIERDA (order_details) ===================== -->
