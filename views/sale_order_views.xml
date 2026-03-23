@@ -48,6 +48,15 @@
                     string="Autorización de Precio"
                     readonly="1"
                     invisible="not x_price_authorization_id"/>
+                
+                <!-- === TIPO DE CAMBIO (solo visible en USD) === -->
+                <field name="x_is_usd" invisible="1"/>
+                <field name="x_exchange_rate_source" 
+                    string="Fuente TC"
+                    invisible="not x_is_usd"/>
+                <field name="x_exchange_rate" 
+                    string="Tipo de Cambio MXN/USD"
+                    invisible="not x_is_usd"/>
             </xpath>
 
             <!-- ===================== ORDER LINES: PRICE SELECTOR ===================== -->

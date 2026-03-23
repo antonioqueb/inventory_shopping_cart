@@ -77,6 +77,86 @@ class SaleOrder(models.Model):
     # Campo para identificar si una orden es una copia de respaldo de cotización
     x_is_quote_backup = fields.Boolean(string="Es Respaldo de Cotización", default=False, copy=False)
 
+    # === TIPO DE CAMBIO ===
+    x_exchange_rate_source = fields.Selection([
+        ('banorte', 'Banorte'),
+        ('official', 'Diario Oficial (SAT)'),
+    ], string='Fuente Tipo de Cambio', default='banorte', tracking=True,
+       help="Seleccione la fuente del tipo de cambio a utilizar.")
+    
+    x_exchange_rate = fields.Float(
+        string='Tipo de Cambio',
+        digits=(12, 4),
+        compute='_compute_exchange_rate',
+        inverse='_inverse_exchange_rate',
+        store=True,
+        tracking=True,
+        help="Tipo de cambio MXN/USD utilizado en esta orden."
+    )
+    
+    x_exchange_rate_manual = fields.Float(
+        string='TC Manual', 
+        digits=(12, 4),
+        help="Valor manual del tipo de cambio (se usa si se edita directamente)."
+    )
+    
+    x_is_usd = fields.Boolean(
+        string='Es USD',
+        compute='_compute_is_usd',
+        store=True,
+    )
+
+    @api.depends('pricelist_id', 'pricelist_id.currency_id')
+    def _compute_is_usd(self):
+        for order in self:
+            order.x_is_usd = (
+                order.pricelist_id 
+                and order.pricelist_id.currency_id 
+                and order.pricelist_id.currency_id.name == 'USD'
+            )
+
+    @api.depends('x_exchange_rate_source', 'x_exchange_rate_manual', 'pricelist_id')
+    def _compute_exchange_rate(self):
+        banorte_rate = self._get_banorte_rate()
+        official_rate = self._get_official_rate()
+        
+        for order in self:
+            if order.x_exchange_rate_manual > 0:
+                order.x_exchange_rate = order.x_exchange_rate_manual
+            elif order.x_exchange_rate_source == 'banorte':
+                order.x_exchange_rate = banorte_rate
+            else:
+                order.x_exchange_rate = official_rate
+
+    def _inverse_exchange_rate(self):
+        for order in self:
+            order.x_exchange_rate_manual = order.x_exchange_rate
+
+    @api.onchange('x_exchange_rate_source')
+    def _onchange_exchange_rate_source(self):
+        """Al cambiar la fuente, resetear el manual para que tome el valor de la fuente"""
+        self.x_exchange_rate_manual = 0.0
+
+    def _get_banorte_rate(self):
+        """Obtiene el tipo de cambio de Banorte almacenado"""
+        rate_param = self.env['ir.config_parameter'].sudo().get_param('banorte.last_rate', '0')
+        try:
+            rate = float(rate_param)
+            if rate > 0:
+                return rate
+        except (ValueError, TypeError):
+            pass
+        # Fallback al rate del sistema
+        return self._get_official_rate()
+
+    def _get_official_rate(self):
+        """Obtiene el tipo de cambio del sistema Odoo (Diario Oficial / rates configurados)"""
+        usd_currency = self.env.ref('base.USD', raise_if_not_found=False)
+        company_currency = self.env.company.currency_id
+        if usd_currency and company_currency and usd_currency != company_currency:
+            return usd_currency._convert(1.0, company_currency, self.env.company, fields.Date.today())
+        return 1.0
+
     # 1. CREATE: Asigna secuencia COT/ al crear
     @api.model_create_multi
     def create(self, vals_list):
@@ -156,7 +236,7 @@ class SaleOrder(models.Model):
             'sale_order_id': self.id,
             'temp_data': {
                 'source': 'manual_order',
-                'sale_order_id': self.id,  # FIX: Guardar referencia a la orden existente
+                'sale_order_id': self.id,
                 'product_groups': product_groups,
                 'architect_id': self.x_architect_id.id
             }
