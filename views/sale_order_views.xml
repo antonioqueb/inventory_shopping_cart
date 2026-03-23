@@ -27,16 +27,13 @@
                     groups="base.group_user"/>
             </xpath>
 
-            <!-- ===================== COLUMNA IZQUIERDA (partner_details) ===================== -->
-            <!-- Proyecto y Arquitecto después de la dirección de envío -->
+            <!-- ===================== COLUMNA DERECHA (partner_details) ===================== -->
+            <!-- Cliente ya está aquí. Agregamos Proyecto, Arquitecto y Autorización
+                 para balancear contra la columna izquierda que tiene todos los campos
+                 CFDI de la localización mexicana -->
             <xpath expr="//group[@name='partner_details']" position="inside">
                 <field name="x_project_id" string="Job Name / Proyecto"/>
                 <field name="x_architect_id" string="Arquitecto"/>
-            </xpath>
-
-            <!-- ===================== COLUMNA DERECHA (order_details) ===================== -->
-            <!-- Autorización de precio después de payment_term_id -->
-            <xpath expr="//group[@name='order_details']/field[@name='payment_term_id']" position="after">
                 <field name="x_price_authorization_id"
                     string="Autorización de Precio"
                     readonly="1"
@@ -44,7 +41,6 @@
             </xpath>
 
             <!-- ===================== ORDER LINES: PRICE SELECTOR ===================== -->
-            <!-- Selector de tipo de precio antes del precio unitario -->
             <xpath expr="//field[@name='order_line']/list//field[@name='price_unit']" position="before">
                 <field name="x_price_selector"
                     optional="show"
@@ -52,7 +48,6 @@
                     required="1"/>
             </xpath>
 
-            <!-- price_unit: readonly si el selector no es 'custom', force_save para persistir -->
             <xpath expr="//field[@name='order_line']/list//field[@name='price_unit']" position="attributes">
                 <attribute name="readonly">x_price_selector != 'custom'</attribute>
                 <attribute name="force_save">1</attribute>
@@ -76,7 +71,7 @@
     </record>
 
     <!-- ============================================================
-         Vista Tree: Presupuestos (Quotations) - Columna Job Name/Proyecto
+         Vista Tree: Presupuestos - Columna Job Name/Proyecto
          ============================================================ -->
     <record id="view_quotation_tree_project_column" model="ir.ui.view">
         <field name="name">sale.order.quotation.tree.project.column</field>
