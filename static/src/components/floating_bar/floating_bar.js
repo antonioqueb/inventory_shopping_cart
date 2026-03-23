@@ -32,24 +32,20 @@ patch(InventoryVisualController.prototype, {
     async openHoldWizard() {
         if (!this.cart.hasSalesPermissions) {
             this.notification.add(
-                "No tiene permisos para crear apartados. Contacte al administrador.", 
+                "No tiene permisos para crear apartados. Contacte al administrador.",
                 { type: "warning" }
             );
             return;
         }
-        
+
         await this.syncCartToDB();
-        
+
         this.dialog.add(HoldWizard, {
             selectedLots: this.cart.items.map(item => item.id),
             productGroups: this.cart.productGroups,
             onSuccess: async () => {
-                // CORRECCIÓN: Usar reload para asegurar que los 'holds' se visualicen
-                // this.clearCart(); // Esto solo limpia la memoria JS
-                // await this.searchProducts(); // ESTO CAUSABA EL ERROR
-                
-                await this.clearCart(); // Limpia visualmente el carrito
-                window.location.reload(); // Recarga la página para ver los candados nuevos
+                // Solo limpiar carrito. NO recargar aquí porque vamos a abrir la orden.
+                await this.clearCart();
             }
         });
     },

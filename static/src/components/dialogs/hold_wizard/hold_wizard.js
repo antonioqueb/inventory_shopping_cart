@@ -491,10 +491,18 @@ export class HoldWizard extends Component {
             const hasNonLotItems = (services.length > 0 || backorders.length > 0) && result.order_id;
 
             if (result.success > 0 || hasNonLotItems) {
-                this.notification.add(`${result.success} lotes y ${backorders.length} pedidos creados`, { type: "success" });
-                await this.props.onSuccess(); 
+                this.notification.add(
+                    `${result.success} lotes y ${backorders.length} pedidos creados`,
+                    { type: "success" }
+                );
+
+                // Limpiar carrito primero, sin recargar
+                await this.props.onSuccess();
+
+                // Cerrar wizard
                 this.props.close();
 
+                // Abrir la orden de reserva creada
                 if (result.order_id) {
                     await this.action.doAction({
                         type: 'ir.actions.act_window',
@@ -504,6 +512,8 @@ export class HoldWizard extends Component {
                         target: 'current',
                     });
                 }
+
+                return;
             }
             
             if (result.errors > 0) {

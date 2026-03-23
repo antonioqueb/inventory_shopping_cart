@@ -1,67 +1,69 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+
+    <!-- ============================================================
+         Vista Form: Sale Order - Enhanced Prices & Custom Fields
+         ============================================================ -->
     <record id="view_order_form_enhanced_prices" model="ir.ui.view">
         <field name="name">sale.order.form.enhanced.prices</field>
         <field name="model">sale.order</field>
         <field name="inherit_id" ref="sale.view_order_form"/>
         <field name="arch" type="xml">
-            
-            <!-- Botones en Header -->
+
+            <!-- ===================== HEADER BUTTONS ===================== -->
             <xpath expr="//header" position="inside">
-                <!-- 1. Botón para AGREGAR DESDE CARRITO (Nuevo) -->
-                <button name="action_add_from_cart" 
-                        string="📥 Agregar desde Carrito" 
-                        type="object" 
-                        class="btn-secondary"
-                        invisible="state not in ['draft', 'sent']"
-                        groups="base.group_user"
-                        help="Agrega los productos que tengas actualmente en tu carrito visual a esta orden."/>
-
-                <!-- 2. Botón para solicitar autorización -->
-                <button name="action_request_authorization" 
-                        string="Solicitar Autorización de Precio" 
-                        type="object" 
-                        class="btn-warning"
-                        invisible="state not in ['draft', 'sent'] or x_price_authorization_id"
-                        groups="base.group_user"/>
+                <button name="action_add_from_cart"
+                    string="📥 Agregar desde Carrito"
+                    type="object"
+                    class="btn-secondary"
+                    invisible="state not in ['draft', 'sent']"
+                    groups="base.group_user"
+                    help="Agrega los productos que tengas actualmente en tu carrito visual a esta orden."/>
+                <button name="action_request_authorization"
+                    string="Solicitar Autorización de Precio"
+                    type="object"
+                    class="btn-warning"
+                    invisible="state not in ['draft', 'sent'] or x_price_authorization_id"
+                    groups="base.group_user"/>
             </xpath>
 
-            <!-- Mostrar campo de autorización vinculada -->
-            <xpath expr="//group[@name='sale_header']" position="after">
-                <group>
-                     <field name="x_price_authorization_id" 
-                            readonly="1" 
-                            invisible="not x_price_authorization_id"
-                            decoration-success="1"/>
-                </group>
+            <!-- ===================== COLUMNA IZQUIERDA (partner_details) ===================== -->
+            <!-- Proyecto y Arquitecto después de la dirección de envío -->
+            <xpath expr="//group[@name='partner_details']" position="inside">
+                <field name="x_project_id" string="Job Name / Proyecto"/>
+                <field name="x_architect_id" string="Arquitecto"/>
             </xpath>
 
-            <!-- Inyectar selector de precio ANTES del precio unitario -->
+            <!-- ===================== COLUMNA DERECHA (order_details) ===================== -->
+            <!-- Autorización de precio después de payment_term_id -->
+            <xpath expr="//group[@name='order_details']/field[@name='payment_term_id']" position="after">
+                <field name="x_price_authorization_id"
+                    string="Autorización de Precio"
+                    readonly="1"
+                    invisible="not x_price_authorization_id"/>
+            </xpath>
+
+            <!-- ===================== ORDER LINES: PRICE SELECTOR ===================== -->
+            <!-- Selector de tipo de precio antes del precio unitario -->
             <xpath expr="//field[@name='order_line']/list//field[@name='price_unit']" position="before">
-                <field name="x_price_selector" 
-                       optional="show" 
-                       style="width: 140px;"
-                       required="1"/>
-            </xpath>
-            
-            <!-- Modificar comportamiento de price_unit -->
-            <xpath expr="//field[@name='order_line']/list//field[@name='price_unit']" position="attributes">
-                <!-- Solo editable si es 'custom' -->
-                <attribute name="readonly">x_price_selector != 'custom'</attribute>
-                <!-- Forzar guardado aunque sea readonly -->
-                <attribute name="force_save">1</attribute>
+                <field name="x_price_selector"
+                    optional="show"
+                    style="width: 140px;"
+                    required="1"/>
             </xpath>
 
-            <!-- Campos adicionales (Proyecto/Arquitecto) -->
-            <xpath expr="//field[@name='payment_term_id']" position="after">
-                <field name="x_project_id"/>
-                <field name="x_architect_id"/>
+            <!-- price_unit: readonly si el selector no es 'custom', force_save para persistir -->
+            <xpath expr="//field[@name='order_line']/list//field[@name='price_unit']" position="attributes">
+                <attribute name="readonly">x_price_selector != 'custom'</attribute>
+                <attribute name="force_save">1</attribute>
             </xpath>
 
         </field>
     </record>
 
-    <!-- Agregar columna Job Name/Proyecto a la lista de Órdenes de Venta -->
+    <!-- ============================================================
+         Vista Tree: Órdenes de Venta - Columna Job Name/Proyecto
+         ============================================================ -->
     <record id="view_order_tree_project_column" model="ir.ui.view">
         <field name="name">sale.order.tree.project.column</field>
         <field name="model">sale.order</field>
@@ -73,7 +75,9 @@
         </field>
     </record>
 
-    <!-- Agregar columna Job Name/Proyecto a la lista de Presupuestos -->
+    <!-- ============================================================
+         Vista Tree: Presupuestos (Quotations) - Columna Job Name/Proyecto
+         ============================================================ -->
     <record id="view_quotation_tree_project_column" model="ir.ui.view">
         <field name="name">sale.order.quotation.tree.project.column</field>
         <field name="model">sale.order</field>
@@ -84,4 +88,5 @@
             </field>
         </field>
     </record>
+
 </odoo>
