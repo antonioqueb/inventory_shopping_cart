@@ -1,25 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- ============================================================
-         Vista Form: Sale Order - Enhanced Prices & Custom Fields
-
-         Distribución de columnas:
-         ─────────────────────────────────────────────────────────
-         IZQUIERDA (order_details)     │  DERECHA (partner_details)
-         ─────────────────────────────────────────────────────────
-         1. Vencimiento                │  1. Cliente
-         2. CFDI público en general    │  2. Dir. Facturación *
-         3. Forma de pago              │  3. Dir. Envío *
-         4. Política de pago           │  4. Job Name / Proyecto
-         5. Uso                        │  5. Arquitecto
-         6. Fecha de cotización        │
-         7. Lista de precios           │  (* solo con grupo delivery_invoice_address)
-         8. Términos de pago           │
-         9. Autorización de Precio **  │
-         ─────────────────────────────────────────────────────────
-         ** solo visible cuando existe autorización
-         ============================================================ -->
     <record id="view_order_form_enhanced_prices" model="ir.ui.view">
         <field name="name">sale.order.form.enhanced.prices</field>
         <field name="model">sale.order</field>
@@ -44,14 +25,22 @@
             </xpath>
 
             <!-- ===================== COLUMNA DERECHA (partner_details) ===================== -->
-            <!-- Campos 4 y 5: Proyecto y Arquitecto debajo de Cliente/Direcciones -->
             <xpath expr="//group[@name='partner_details']" position="inside">
+                <field name="partner_invoice_id"
+                    string="Dir. Facturación"
+                    context="{'default_parent_id': partner_id, 'default_type': 'invoice'}"
+                    options='{"always_reload": True}'
+                    domain="['|', ('id', '=', partner_id), '&amp;', ('parent_id', '=', partner_id), ('type', '=', 'invoice')]"/>
+                <field name="partner_shipping_id"
+                    string="Dir. Entrega"
+                    context="{'default_parent_id': partner_id, 'default_type': 'delivery'}"
+                    options='{"always_reload": True}'
+                    domain="['|', ('id', '=', partner_id), '&amp;', ('parent_id', '=', partner_id), ('type', '=', 'delivery')]"/>
                 <field name="x_project_id" string="Job Name / Proyecto"/>
                 <field name="x_architect_id" string="Arquitecto"/>
             </xpath>
 
             <!-- ===================== COLUMNA IZQUIERDA (order_details) ===================== -->
-            <!-- Campo 9: Autorización de Precio al final de la columna izquierda -->
             <xpath expr="//group[@name='order_details']/field[@name='payment_term_id']" position="after">
                 <field name="x_price_authorization_id"
                     string="Autorización de Precio"
