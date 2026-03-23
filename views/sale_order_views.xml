@@ -56,6 +56,7 @@
                     invisible="not x_is_usd"/>
                 <field name="x_exchange_rate" 
                     string="Tipo de Cambio MXN/USD"
+                    readonly="1"
                     invisible="not x_is_usd"/>
             </xpath>
 

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # models/sale_order.py
+import math
 from odoo import models, fields, api
 from odoo.exceptions import UserError, ValidationError
 import logging
@@ -58,11 +59,12 @@ class SaleOrderLine(models.Model):
                     new_price = template.x_price_mxn_1
                 elif line.x_price_selector == 'medium':
                     new_price = template.x_price_mxn_2
-            else: # USD
+            else:  # USD - usar TC de la orden
+                rate = line.order_id.x_exchange_rate or 1.0
                 if line.x_price_selector == 'high':
-                    new_price = template.x_price_usd_1
+                    new_price = math.ceil(template.x_price_mxn_1 / rate) if rate > 0 else template.x_price_usd_1
                 elif line.x_price_selector == 'medium':
-                    new_price = template.x_price_usd_2
+                    new_price = math.ceil(template.x_price_mxn_2 / rate) if rate > 0 else template.x_price_usd_2
             
             if new_price > 0:
                 line.price_unit = new_price
@@ -74,7 +76,6 @@ class SaleOrder(models.Model):
     x_architect_id = fields.Many2one('res.partner', string='Arquitecto')
     x_price_authorization_id = fields.Many2one('price.authorization', string="Autorización Vinculada", copy=False, readonly=True)
     
-    # Campo para identificar si una orden es una copia de respaldo de cotización
     x_is_quote_backup = fields.Boolean(string="Es Respaldo de Cotización", default=False, copy=False)
 
     # === TIPO DE CAMBIO ===
@@ -88,16 +89,9 @@ class SaleOrder(models.Model):
         string='Tipo de Cambio',
         digits=(12, 4),
         compute='_compute_exchange_rate',
-        inverse='_inverse_exchange_rate',
         store=True,
         tracking=True,
-        help="Tipo de cambio MXN/USD utilizado en esta orden."
-    )
-    
-    x_exchange_rate_manual = fields.Float(
-        string='TC Manual', 
-        digits=(12, 4),
-        help="Valor manual del tipo de cambio (se usa si se edita directamente)."
+        help="Tipo de cambio MXN/USD según la fuente seleccionada. Solo lectura."
     )
     
     x_is_usd = fields.Boolean(
@@ -115,27 +109,44 @@ class SaleOrder(models.Model):
                 and order.pricelist_id.currency_id.name == 'USD'
             )
 
-    @api.depends('x_exchange_rate_source', 'x_exchange_rate_manual', 'pricelist_id')
+    @api.depends('x_exchange_rate_source')
     def _compute_exchange_rate(self):
         banorte_rate = self._get_banorte_rate()
         official_rate = self._get_official_rate()
         
         for order in self:
-            if order.x_exchange_rate_manual > 0:
-                order.x_exchange_rate = order.x_exchange_rate_manual
-            elif order.x_exchange_rate_source == 'banorte':
-                order.x_exchange_rate = banorte_rate
-            else:
+            if order.x_exchange_rate_source == 'official':
                 order.x_exchange_rate = official_rate
-
-    def _inverse_exchange_rate(self):
-        for order in self:
-            order.x_exchange_rate_manual = order.x_exchange_rate
+            else:
+                order.x_exchange_rate = banorte_rate
 
     @api.onchange('x_exchange_rate_source')
     def _onchange_exchange_rate_source(self):
-        """Al cambiar la fuente, resetear el manual para que tome el valor de la fuente"""
-        self.x_exchange_rate_manual = 0.0
+        """Al cambiar la fuente de TC, recalcular precios USD de las líneas"""
+        if not self.x_is_usd:
+            return
+        
+        new_rate = self._get_official_rate() if self.x_exchange_rate_source == 'official' else self._get_banorte_rate()
+        if new_rate <= 0:
+            return
+        
+        for line in self.order_line:
+            if not line.product_id or line.display_type:
+                continue
+            if line.x_price_selector == 'custom':
+                continue
+            
+            template = line.product_id.product_tmpl_id
+            
+            if line.x_price_selector == 'high':
+                mxn_price = template.x_price_mxn_1
+            elif line.x_price_selector == 'medium':
+                mxn_price = template.x_price_mxn_2
+            else:
+                continue
+            
+            if mxn_price > 0:
+                line.price_unit = math.ceil(mxn_price / new_rate)
 
     def _get_banorte_rate(self):
         """Obtiene el tipo de cambio de Banorte almacenado"""
@@ -146,11 +157,10 @@ class SaleOrder(models.Model):
                 return rate
         except (ValueError, TypeError):
             pass
-        # Fallback al rate del sistema
         return self._get_official_rate()
 
     def _get_official_rate(self):
-        """Obtiene el tipo de cambio del sistema Odoo (Diario Oficial / rates configurados)"""
+        """Obtiene el tipo de cambio del sistema Odoo (rates configurados en Contabilidad)"""
         usd_currency = self.env.ref('base.USD', raise_if_not_found=False)
         company_currency = self.env.company.currency_id
         if usd_currency and company_currency and usd_currency != company_currency:
@@ -180,19 +190,17 @@ class SaleOrder(models.Model):
                     new_price = template.x_price_mxn_1
                 elif line.x_price_selector == 'medium':
                     new_price = template.x_price_mxn_2
-            else: 
+            else:
+                # USD: calcular con el TC actual de la orden
+                rate = self.x_exchange_rate or 1.0
                 if line.x_price_selector == 'high':
-                    new_price = template.x_price_usd_1
+                    new_price = math.ceil(template.x_price_mxn_1 / rate) if rate > 0 else template.x_price_usd_1
                 elif line.x_price_selector == 'medium':
-                    new_price = template.x_price_usd_2
+                    new_price = math.ceil(template.x_price_mxn_2 / rate) if rate > 0 else template.x_price_usd_2
             if new_price > 0:
                 line.price_unit = new_price
 
     def action_request_authorization(self):
-        """
-        Solicitar autorización de precio.
-        FIX: NO duplicar la orden aquí, solo crear la autorización.
-        """
         self.ensure_one()
         if self.state not in ['draft', 'sent']:
             return
@@ -323,7 +331,9 @@ class SaleOrder(models.Model):
             if currency_code == 'MXN':
                 price_unit = product.product_tmpl_id.x_price_mxn_1
             else:
-                price_unit = product.product_tmpl_id.x_price_usd_1
+                # Usar TC de la orden para calcular precio USD
+                rate = self.x_exchange_rate or 1.0
+                price_unit = math.ceil(product.product_tmpl_id.x_price_mxn_1 / rate) if rate > 0 else product.product_tmpl_id.x_price_usd_1
             
             tax_ids = [(6, 0, product.taxes_id.ids)]
             
@@ -359,26 +369,16 @@ class SaleOrder(models.Model):
         else:
              raise UserError("No se pudieron agregar los items.")
 
-    # ==========================================================================
-    # FIX CRÍTICO: VALIDAR PRECIOS ANTES DE DUPLICAR
-    # ==========================================================================
     def action_confirm(self):
-        # ======================================================================
-        # FIX #1: VALIDAR PRECIOS PRIMERO, ANTES de cualquier duplicación
-        # Si falla la validación, no se duplica nada.
-        # ======================================================================
         if not self.env.context.get('skip_auth_check'):
             self._check_prices_before_confirm()
         
-        # Solo si pasó la validación, proceder con clonado y confirmación
         for order in self:
             if order.state in ['draft', 'sent'] and not order.x_is_quote_backup:
-                # A) Obtener secuencia nueva para la OV
                 new_ov_name = self.env['ir.sequence'].next_by_code('sale.order.confirmed')
                 if not new_ov_name:
                     new_ov_name = "OV/NEW"
 
-                # B) Crear copia como "Cotización Histórica"
                 current_cot_name = order.name 
                 
                 copy_defaults = {
@@ -391,14 +391,11 @@ class SaleOrder(models.Model):
                 
                 backup_quote = order.copy(default=copy_defaults)
                 
-                # C) Transformar la orden ACTUAL en la Orden de Venta
                 order.name = new_ov_name
                 order.origin = current_cot_name
 
-        # Lógica estándar de confirmación
         res = super().action_confirm()
         
-        # Limpieza y asignación de lotes
         self._clear_auto_assigned_lots()
         
         for order in self:
@@ -543,7 +540,6 @@ class SaleOrder(models.Model):
                     }
                     self.env['sale.order.line'].create(line_vals)
 
-            # Invalidar caché
             sale_order.invalidate_recordset()
             
             _logger.info("[CART-DEBUG] Ejecutando action_confirm...")
