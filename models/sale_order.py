@@ -13,16 +13,17 @@ try:
 except ImportError:
     PickingLotCleaner = None
 
+
 class SaleOrderLine(models.Model):
     _inherit = 'sale.order.line'
-    
+
     x_selected_lots = fields.Many2many('stock.quant', string='Lotes Seleccionados', copy=True)
     x_lot_breakdown_json = fields.Json(string='Desglose de Lotes', copy=True)
     x_price_selector = fields.Selection([
         ('high', 'Precio 1'),
         ('medium', 'Precio 2'),
         ('custom', 'Precio Personalizado')
-    ], string='Nivel de Precio', default='high', 
+    ], string='Nivel de Precio', default='high',
        help="Seleccione el nivel de precio.")
 
     @api.onchange('product_id')
@@ -30,27 +31,22 @@ class SaleOrderLine(models.Model):
         if not self.product_id:
             return
         self.x_price_selector = 'high'
-        self._update_price_from_selector()
+        self._apply_price_from_selector()
 
     @api.onchange('x_price_selector')
     def _onchange_price_selector(self):
-        self._update_price_from_selector()
+        self._apply_price_from_selector()
 
-    def _update_price_from_selector(self):
+    def _apply_price_from_selector(self):
+        """Calcula el precio unitario según el selector y la moneda de la orden."""
         for line in self:
-            if not line.product_id:
-                continue
-            if line.x_price_selector == 'custom':
+            if not line.product_id or line.x_price_selector == 'custom':
                 continue
 
-            currency_name = 'USD' 
-            if line.order_id.pricelist_id.currency_id:
+            currency_name = 'USD'
+            if line.order_id.pricelist_id and line.order_id.pricelist_id.currency_id:
                 currency_name = line.order_id.pricelist_id.currency_id.name
-            elif line.env.context.get('default_pricelist_id'):
-                pricelist = line.env['product.pricelist'].browse(line.env.context['default_pricelist_id'])
-                if pricelist.exists():
-                    currency_name = pricelist.currency_id.name
-            
+
             template = line.product_id.product_tmpl_id
             new_price = 0.0
 
@@ -59,23 +55,29 @@ class SaleOrderLine(models.Model):
                     new_price = template.x_price_mxn_1
                 elif line.x_price_selector == 'medium':
                     new_price = template.x_price_mxn_2
-            else:  # USD - usar TC de la orden
-                rate = line.order_id.x_exchange_rate or 1.0
+            else:
+                # USD: Precio MXN / TC de la orden
+                rate = line.order_id.x_exchange_rate if line.order_id.x_exchange_rate > 0 else 1.0
+                mxn_price = 0.0
                 if line.x_price_selector == 'high':
-                    new_price = math.ceil(template.x_price_mxn_1 / rate) if rate > 0 else template.x_price_usd_1
+                    mxn_price = template.x_price_mxn_1
                 elif line.x_price_selector == 'medium':
-                    new_price = math.ceil(template.x_price_mxn_2 / rate) if rate > 0 else template.x_price_usd_2
-            
+                    mxn_price = template.x_price_mxn_2
+
+                if mxn_price > 0 and rate > 0:
+                    new_price = math.ceil(mxn_price / rate)
+
             if new_price > 0:
                 line.price_unit = new_price
 
+
 class SaleOrder(models.Model):
     _inherit = 'sale.order'
-    
+
     x_project_id = fields.Many2one('project.project', string='Proyecto')
     x_architect_id = fields.Many2one('res.partner', string='Arquitecto')
     x_price_authorization_id = fields.Many2one('price.authorization', string="Autorización Vinculada", copy=False, readonly=True)
-    
+
     x_is_quote_backup = fields.Boolean(string="Es Respaldo de Cotización", default=False, copy=False)
 
     # === TIPO DE CAMBIO ===
@@ -84,7 +86,7 @@ class SaleOrder(models.Model):
         ('official', 'Diario Oficial (SAT)'),
     ], string='Fuente Tipo de Cambio', default='banorte', tracking=True,
        help="Seleccione la fuente del tipo de cambio a utilizar.")
-    
+
     x_exchange_rate = fields.Float(
         string='Tipo de Cambio',
         digits=(12, 4),
@@ -93,7 +95,7 @@ class SaleOrder(models.Model):
         tracking=True,
         help="Tipo de cambio MXN/USD según la fuente seleccionada. Solo lectura."
     )
-    
+
     x_is_usd = fields.Boolean(
         string='Es USD',
         compute='_compute_is_usd',
@@ -103,9 +105,9 @@ class SaleOrder(models.Model):
     @api.depends('pricelist_id', 'pricelist_id.currency_id')
     def _compute_is_usd(self):
         for order in self:
-            order.x_is_usd = (
-                order.pricelist_id 
-                and order.pricelist_id.currency_id 
+            order.x_is_usd = bool(
+                order.pricelist_id
+                and order.pricelist_id.currency_id
                 and order.pricelist_id.currency_id.name == 'USD'
             )
 
@@ -113,7 +115,7 @@ class SaleOrder(models.Model):
     def _compute_exchange_rate(self):
         banorte_rate = self._get_banorte_rate()
         official_rate = self._get_official_rate()
-        
+
         for order in self:
             if order.x_exchange_rate_source == 'official':
                 order.x_exchange_rate = official_rate
@@ -122,31 +124,49 @@ class SaleOrder(models.Model):
 
     @api.onchange('x_exchange_rate_source')
     def _onchange_exchange_rate_source(self):
-        """Al cambiar la fuente de TC, recalcular precios USD de las líneas"""
+        """
+        Al cambiar la fuente de TC, recalcular precios USD de TODAS las líneas.
+        Solo afecta líneas con selector 'high' o 'medium' (no 'custom').
+        """
         if not self.x_is_usd:
             return
-        
-        new_rate = self._get_official_rate() if self.x_exchange_rate_source == 'official' else self._get_banorte_rate()
+
+        # Obtener el nuevo rate según la fuente seleccionada
+        if self.x_exchange_rate_source == 'official':
+            new_rate = self._get_official_rate()
+        else:
+            new_rate = self._get_banorte_rate()
+
         if new_rate <= 0:
             return
-        
+
+        _logger.info(f"[TC] Cambiando fuente a '{self.x_exchange_rate_source}' - Rate: {new_rate}")
+
         for line in self.order_line:
             if not line.product_id or line.display_type:
                 continue
+            # Solo recalcular líneas que NO son precio personalizado
             if line.x_price_selector == 'custom':
+                _logger.info(f"[TC] Línea {line.product_id.display_name} es 'custom', se omite")
                 continue
-            
+
             template = line.product_id.product_tmpl_id
-            
+
             if line.x_price_selector == 'high':
                 mxn_price = template.x_price_mxn_1
             elif line.x_price_selector == 'medium':
                 mxn_price = template.x_price_mxn_2
             else:
                 continue
-            
+
             if mxn_price > 0:
-                line.price_unit = math.ceil(mxn_price / new_rate)
+                new_usd_price = math.ceil(mxn_price / new_rate)
+                _logger.info(
+                    f"[TC] {line.product_id.display_name}: "
+                    f"MXN {mxn_price} / {new_rate} = USD {new_usd_price} "
+                    f"(antes: {line.price_unit})"
+                )
+                line.price_unit = new_usd_price
 
     def _get_banorte_rate(self):
         """Obtiene el tipo de cambio de Banorte almacenado"""
@@ -157,6 +177,7 @@ class SaleOrder(models.Model):
                 return rate
         except (ValueError, TypeError):
             pass
+        # Fallback al rate del sistema
         return self._get_official_rate()
 
     def _get_official_rate(self):
@@ -192,7 +213,7 @@ class SaleOrder(models.Model):
                     new_price = template.x_price_mxn_2
             else:
                 # USD: calcular con el TC actual de la orden
-                rate = self.x_exchange_rate or 1.0
+                rate = self.x_exchange_rate if self.x_exchange_rate > 0 else 1.0
                 if line.x_price_selector == 'high':
                     new_price = math.ceil(template.x_price_mxn_1 / rate) if rate > 0 else template.x_price_usd_1
                 elif line.x_price_selector == 'medium':
@@ -209,7 +230,7 @@ class SaleOrder(models.Model):
         product_prices = {}
         product_groups = {}
         has_low_price = False
-        
+
         for line in self.order_line:
             if not line.product_id or line.display_type:
                 continue
@@ -218,7 +239,7 @@ class SaleOrder(models.Model):
                 medium = template.x_price_mxn_2
             else:
                 medium = template.x_price_usd_2
-            
+
             if medium > 0 and line.price_unit < (medium - 0.01):
                 has_low_price = True
                 pid_str = str(line.product_id.id)
@@ -226,7 +247,7 @@ class SaleOrder(models.Model):
                 if pid_str not in product_groups:
                     product_groups[pid_str] = {
                         'name': line.product_id.display_name,
-                        'lots': [], 
+                        'lots': [],
                         'total_quantity': 0
                     }
                 product_groups[pid_str]['total_quantity'] += line.product_uom_qty
@@ -251,7 +272,7 @@ class SaleOrder(models.Model):
         }
         authorization = self.env['price.authorization'].create(auth_vals)
         self.x_price_authorization_id = authorization.id
-        
+
         for pid_str, group in product_groups.items():
             product = self.env['product.product'].browse(int(pid_str))
             requested_price = product_prices[pid_str]
@@ -272,7 +293,7 @@ class SaleOrder(models.Model):
                 'medium_price': medium,
                 'minimum_price': minimum,
             })
-            
+
         return {
             'type': 'ir.actions.act_window',
             'res_model': 'price.authorization',
@@ -297,7 +318,7 @@ class SaleOrder(models.Model):
                 if line.x_selected_lots and item.quant_id.id in line.x_selected_lots.ids:
                     already_in_line = True
                     break
-            
+
             if already_in_line:
                 continue
 
@@ -309,7 +330,7 @@ class SaleOrder(models.Model):
                     'lots': [],
                     'breakdown': {}
                 }
-            
+
             grouped_items[prod_id]['total_qty'] += item.quantity
             grouped_items[prod_id]['lots'].append(item.quant_id.id)
             grouped_items[prod_id]['breakdown'][str(item.quant_id.id)] = item.quantity
@@ -319,11 +340,11 @@ class SaleOrder(models.Model):
 
         pricelist = self.pricelist_id or self.partner_id.property_product_pricelist
         if not pricelist:
-             raise UserError("Defina una lista de precios en la orden antes de agregar items.")
-             
+            raise UserError("Defina una lista de precios en la orden antes de agregar items.")
+
         currency_code = pricelist.currency_id.name or 'USD'
         company_id = self.company_id.id or self.env.company.id
-        
+
         lines_to_create = []
         for prod_id, data in grouped_items.items():
             product = data['product_obj']
@@ -331,12 +352,11 @@ class SaleOrder(models.Model):
             if currency_code == 'MXN':
                 price_unit = product.product_tmpl_id.x_price_mxn_1
             else:
-                # Usar TC de la orden para calcular precio USD
-                rate = self.x_exchange_rate or 1.0
-                price_unit = math.ceil(product.product_tmpl_id.x_price_mxn_1 / rate) if rate > 0 else product.product_tmpl_id.x_price_usd_1
-            
+                rate = self.x_exchange_rate if self.x_exchange_rate > 0 else 1.0
+                price_unit = math.ceil(product.product_tmpl_id.x_price_mxn_1 / rate)
+
             tax_ids = [(6, 0, product.taxes_id.ids)]
-            
+
             lines_to_create.append({
                 'order_id': self.id,
                 'name': product.get_product_multiline_description_sale() or product.name,
@@ -350,11 +370,11 @@ class SaleOrder(models.Model):
                 'x_lot_breakdown_json': data['breakdown'],
                 'company_id': company_id,
             })
-        
+
         if lines_to_create:
             self.env['sale.order.line'].create(lines_to_create)
             self.env['shopping.cart'].clear_cart()
-            
+
             return {
                 'type': 'ir.actions.client',
                 'tag': 'display_notification',
@@ -363,24 +383,24 @@ class SaleOrder(models.Model):
                     'message': 'Los productos del carrito se han agregado a la orden correctamente.',
                     'type': 'success',
                     'sticky': False,
-                    'next': {'type': 'ir.actions.act_window_close'} 
+                    'next': {'type': 'ir.actions.act_window_close'}
                 }
             }
         else:
-             raise UserError("No se pudieron agregar los items.")
+            raise UserError("No se pudieron agregar los items.")
 
     def action_confirm(self):
         if not self.env.context.get('skip_auth_check'):
             self._check_prices_before_confirm()
-        
+
         for order in self:
             if order.state in ['draft', 'sent'] and not order.x_is_quote_backup:
                 new_ov_name = self.env['ir.sequence'].next_by_code('sale.order.confirmed')
                 if not new_ov_name:
                     new_ov_name = "OV/NEW"
 
-                current_cot_name = order.name 
-                
+                current_cot_name = order.name
+
                 copy_defaults = {
                     'name': current_cot_name,
                     'state': 'draft',
@@ -388,28 +408,28 @@ class SaleOrder(models.Model):
                     'x_is_quote_backup': True,
                     'date_order': fields.Datetime.now()
                 }
-                
+
                 backup_quote = order.copy(default=copy_defaults)
-                
+
                 order.name = new_ov_name
                 order.origin = current_cot_name
 
         res = super().action_confirm()
-        
+
         self._clear_auto_assigned_lots()
-        
+
         for order in self:
             for line in order.order_line:
                 if line.display_type or not line.product_id:
                     continue
                 if line.product_id.type not in ['product', 'consu']:
                     continue
-                    
+
                 if line.x_selected_lots:
                     pickings = line.move_ids.mapped('picking_id')
                     if not pickings:
                         continue
-                    
+
                     breakdown = line.x_lot_breakdown_json or {}
                     breakdown_int = {}
                     if breakdown:
@@ -419,7 +439,7 @@ class SaleOrder(models.Model):
                             _logger.warning(f"Error parseando breakdown JSON en linea {line.id}: {e}")
 
                     order._assign_specific_lots(pickings, line.product_id, line.x_selected_lots, breakdown=breakdown_int)
-        
+
         return res
 
     def _check_prices_before_confirm(self):
@@ -445,12 +465,12 @@ class SaleOrder(models.Model):
 
     @api.model
     def create_from_shopping_cart(self, partner_id=None, products=None, services=None, notes=None, pricelist_id=None, apply_tax=True, project_id=None, architect_id=None):
-        _logger.info("="*60)
+        _logger.info("=" * 60)
         _logger.info(f"[CART-DEBUG] Inicio create_from_shopping_cart | Partner: {partner_id}")
-        
+
         if not partner_id:
             raise UserError("El cliente es obligatorio.")
-        
+
         try:
             if not pricelist_id:
                 pricelist_id = self.env['res.partner'].browse(partner_id).property_product_pricelist.id
@@ -459,7 +479,7 @@ class SaleOrder(models.Model):
 
             pricelist = self.env['product.pricelist'].browse(pricelist_id)
             currency_code = pricelist.currency_id.name
-            
+
             prices_map = {}
             if products:
                 for p in products:
@@ -474,7 +494,7 @@ class SaleOrder(models.Model):
                     }
 
             company_id = self.env.company.id
-            
+
             vals = {
                 'partner_id': partner_id,
                 'pricelist_id': pricelist_id,
@@ -484,23 +504,23 @@ class SaleOrder(models.Model):
                 'company_id': company_id,
                 'user_id': self.env.user.id,
             }
-            
+
             sale_order = self.create(vals)
             _logger.info(f"[CART-DEBUG] Orden creada {sale_order.name} (ID: {sale_order.id})")
-            
+
             if products:
                 for product_data in products:
                     product_rec = self.env['product.product'].browse(product_data['product_id'])
-                    
+
                     tax_ids = []
                     if apply_tax:
                         tax_ids = [(6, 0, product_rec.taxes_id.ids)]
                     else:
                         tax_ids = [(5, 0, 0)]
-                    
+
                     selected_lots_ids = product_data.get('selected_lots', [])
                     product_name = product_rec.get_product_multiline_description_sale() or product_rec.name
-                    
+
                     breakdown_json = {}
                     if 'lots_breakdown' in product_data and product_data['lots_breakdown']:
                         for l in product_data['lots_breakdown']:
@@ -541,16 +561,16 @@ class SaleOrder(models.Model):
                     self.env['sale.order.line'].create(line_vals)
 
             sale_order.invalidate_recordset()
-            
+
             _logger.info("[CART-DEBUG] Ejecutando action_confirm...")
             sale_order.action_confirm()
-            
+
             return {
                 'success': True,
                 'order_id': sale_order.id,
                 'order_name': sale_order.name
             }
-            
+
         except Exception as e:
             _logger.error(f"[CART-DEBUG] ❌ Error CRÍTICO en create_from_shopping_cart: {str(e)}", exc_info=True)
             raise UserError(f"Error al procesar la orden: {str(e)}")
@@ -558,7 +578,7 @@ class SaleOrder(models.Model):
     def _assign_specific_lots(self, pickings, product, selected_quants, breakdown=None):
         sale_order = pickings.mapped('sale_id')
         cart_owner_id = sale_order.user_id.id if sale_order else self.env.user.id
-        
+
         if not breakdown:
             sample_move = pickings.mapped('move_ids').filtered(lambda m: m.product_id.id == product.id)[:1]
             if sample_move and sample_move.sale_line_id and sample_move.sale_line_id.x_lot_breakdown_json:
@@ -573,28 +593,28 @@ class SaleOrder(models.Model):
         for picking in pickings:
             if picking.state in ['done', 'cancel']:
                 continue
-                
+
             moves = picking.move_ids.filtered(lambda m: m.product_id.id == product.id)
-            
+
             for move in moves:
                 try:
                     if move.move_line_ids:
                         move.move_line_ids.unlink()
                 except Exception as e:
                     _logger.error(f"[CART-DEBUG] Error limpiando reservas: {e}")
-                
+
                 remaining_demand = move.product_uom_qty
-                
+
                 for quant in selected_quants:
                     if quant.product_id.id != product.id:
                         continue
-                        
+
                     if remaining_demand <= 0:
                         break
 
                     raw_tipo = quant.lot_id.x_tipo
                     tipo_lote = (str(raw_tipo) if raw_tipo else 'placa').lower()
-                    
+
                     qty_to_use = 0.0
 
                     if 'formato' in tipo_lote:
@@ -629,7 +649,7 @@ class SaleOrder(models.Model):
                             'product_uom_id': product.uom_id.id,
                         })
                         remaining_demand -= qty_to_reserve
-                        
+
                     except Exception as e:
                         _logger.error(f"[CART-DEBUG] ❌ Error reservando lote {quant.lot_id.name}: {e}")
 
