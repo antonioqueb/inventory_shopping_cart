@@ -31,21 +31,26 @@ class SaleOrderLine(models.Model):
         if not self.product_id:
             return
         self.x_price_selector = 'high'
-        self._apply_price_from_selector()
+        self._update_price_from_selector()
 
     @api.onchange('x_price_selector')
     def _onchange_price_selector(self):
-        self._apply_price_from_selector()
+        self._update_price_from_selector()
 
-    def _apply_price_from_selector(self):
-        """Calcula el precio unitario según el selector y la moneda de la orden."""
+    def _update_price_from_selector(self):
         for line in self:
-            if not line.product_id or line.x_price_selector == 'custom':
+            if not line.product_id:
+                continue
+            if line.x_price_selector == 'custom':
                 continue
 
             currency_name = 'USD'
-            if line.order_id.pricelist_id and line.order_id.pricelist_id.currency_id:
+            if line.order_id.pricelist_id.currency_id:
                 currency_name = line.order_id.pricelist_id.currency_id.name
+            elif line.env.context.get('default_pricelist_id'):
+                pricelist = line.env['product.pricelist'].browse(line.env.context['default_pricelist_id'])
+                if pricelist.exists():
+                    currency_name = pricelist.currency_id.name
 
             template = line.product_id.product_tmpl_id
             new_price = 0.0
@@ -55,17 +60,11 @@ class SaleOrderLine(models.Model):
                     new_price = template.x_price_mxn_1
                 elif line.x_price_selector == 'medium':
                     new_price = template.x_price_mxn_2
-            else:
-                # USD: Precio MXN / TC de la orden
-                rate = line.order_id.x_exchange_rate if line.order_id.x_exchange_rate > 0 else 1.0
-                mxn_price = 0.0
+            else:  # USD - siempre usa la escalera USD tal cual
                 if line.x_price_selector == 'high':
-                    mxn_price = template.x_price_mxn_1
+                    new_price = template.x_price_usd_1
                 elif line.x_price_selector == 'medium':
-                    mxn_price = template.x_price_mxn_2
-
-                if mxn_price > 0 and rate > 0:
-                    new_price = math.ceil(mxn_price / rate)
+                    new_price = template.x_price_usd_2
 
             if new_price > 0:
                 line.price_unit = new_price
@@ -80,12 +79,12 @@ class SaleOrder(models.Model):
 
     x_is_quote_backup = fields.Boolean(string="Es Respaldo de Cotización", default=False, copy=False)
 
-    # === TIPO DE CAMBIO ===
+    # === TIPO DE CAMBIO (Informativo / Contractual) ===
     x_exchange_rate_source = fields.Selection([
         ('banorte', 'Banorte'),
         ('official', 'Diario Oficial (SAT)'),
     ], string='Fuente Tipo de Cambio', default='banorte', tracking=True,
-       help="Seleccione la fuente del tipo de cambio a utilizar.")
+       help="Fuente del tipo de cambio para la conversión a MXN al momento del cobro.")
 
     x_exchange_rate = fields.Float(
         string='Tipo de Cambio',
@@ -93,7 +92,7 @@ class SaleOrder(models.Model):
         compute='_compute_exchange_rate',
         store=True,
         tracking=True,
-        help="Tipo de cambio MXN/USD según la fuente seleccionada. Solo lectura."
+        help="Tipo de cambio MXN/USD con el que se cobrará esta orden."
     )
 
     x_is_usd = fields.Boolean(
@@ -122,52 +121,6 @@ class SaleOrder(models.Model):
             else:
                 order.x_exchange_rate = banorte_rate
 
-    @api.onchange('x_exchange_rate_source')
-    def _onchange_exchange_rate_source(self):
-        """
-        Al cambiar la fuente de TC, recalcular precios USD de TODAS las líneas.
-        Solo afecta líneas con selector 'high' o 'medium' (no 'custom').
-        """
-        if not self.x_is_usd:
-            return
-
-        # Obtener el nuevo rate según la fuente seleccionada
-        if self.x_exchange_rate_source == 'official':
-            new_rate = self._get_official_rate()
-        else:
-            new_rate = self._get_banorte_rate()
-
-        if new_rate <= 0:
-            return
-
-        _logger.info(f"[TC] Cambiando fuente a '{self.x_exchange_rate_source}' - Rate: {new_rate}")
-
-        for line in self.order_line:
-            if not line.product_id or line.display_type:
-                continue
-            # Solo recalcular líneas que NO son precio personalizado
-            if line.x_price_selector == 'custom':
-                _logger.info(f"[TC] Línea {line.product_id.display_name} es 'custom', se omite")
-                continue
-
-            template = line.product_id.product_tmpl_id
-
-            if line.x_price_selector == 'high':
-                mxn_price = template.x_price_mxn_1
-            elif line.x_price_selector == 'medium':
-                mxn_price = template.x_price_mxn_2
-            else:
-                continue
-
-            if mxn_price > 0:
-                new_usd_price = math.ceil(mxn_price / new_rate)
-                _logger.info(
-                    f"[TC] {line.product_id.display_name}: "
-                    f"MXN {mxn_price} / {new_rate} = USD {new_usd_price} "
-                    f"(antes: {line.price_unit})"
-                )
-                line.price_unit = new_usd_price
-
     def _get_banorte_rate(self):
         """Obtiene el tipo de cambio de Banorte almacenado"""
         rate_param = self.env['ir.config_parameter'].sudo().get_param('banorte.last_rate', '0')
@@ -177,7 +130,6 @@ class SaleOrder(models.Model):
                 return rate
         except (ValueError, TypeError):
             pass
-        # Fallback al rate del sistema
         return self._get_official_rate()
 
     def _get_official_rate(self):
@@ -188,7 +140,6 @@ class SaleOrder(models.Model):
             return usd_currency._convert(1.0, company_currency, self.env.company, fields.Date.today())
         return 1.0
 
-    # 1. CREATE: Asigna secuencia COT/ al crear
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
@@ -212,12 +163,10 @@ class SaleOrder(models.Model):
                 elif line.x_price_selector == 'medium':
                     new_price = template.x_price_mxn_2
             else:
-                # USD: calcular con el TC actual de la orden
-                rate = self.x_exchange_rate if self.x_exchange_rate > 0 else 1.0
                 if line.x_price_selector == 'high':
-                    new_price = math.ceil(template.x_price_mxn_1 / rate) if rate > 0 else template.x_price_usd_1
+                    new_price = template.x_price_usd_1
                 elif line.x_price_selector == 'medium':
-                    new_price = math.ceil(template.x_price_mxn_2 / rate) if rate > 0 else template.x_price_usd_2
+                    new_price = template.x_price_usd_2
             if new_price > 0:
                 line.price_unit = new_price
 
@@ -352,8 +301,7 @@ class SaleOrder(models.Model):
             if currency_code == 'MXN':
                 price_unit = product.product_tmpl_id.x_price_mxn_1
             else:
-                rate = self.x_exchange_rate if self.x_exchange_rate > 0 else 1.0
-                price_unit = math.ceil(product.product_tmpl_id.x_price_mxn_1 / rate)
+                price_unit = product.product_tmpl_id.x_price_usd_1
 
             tax_ids = [(6, 0, product.taxes_id.ids)]
 
@@ -409,7 +357,7 @@ class SaleOrder(models.Model):
                     'date_order': fields.Datetime.now()
                 }
 
-                backup_quote = order.copy(default=copy_defaults)
+                order.copy(default=copy_defaults)
 
                 order.name = new_ov_name
                 order.origin = current_cot_name
@@ -587,8 +535,6 @@ class SaleOrder(models.Model):
                     breakdown = {int(k): float(v) for k, v in raw_json.items()}
                 except Exception as e:
                     _logger.error(f"[CART-DEBUG] Error leyendo breakdown SOL: {e}")
-
-        _logger.info(f"[CART-DEBUG] >>> Iniciando _assign_specific_lots para {product.display_name} (ID: {product.id})")
 
         for picking in pickings:
             if picking.state in ['done', 'cancel']:
