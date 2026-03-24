@@ -13,8 +13,13 @@
                 <page string="Precios y Costos All-In" name="custom_prices" 
                       groups="inventory_shopping_cart.group_price_authorizer,inventory_shopping_cart.group_seller">
                     
+                    <!-- ============================================================
+                         SECCIÓN SOLO AUTORIZADORES: Logística, Costos, Estrategia
+                         ============================================================ -->
+                    
                     <!-- PANEL DE CONFIGURACIÓN LOGÍSTICA -->
-                    <group string="Configuración Logística y Arancelaria">
+                    <group string="Configuración Logística y Arancelaria"
+                           groups="inventory_shopping_cart.group_price_authorizer">
                         <group>
                             <field name="x_origin_country_id"/>
                             <field name="x_pol_id" options="{'no_create': True}"/>
@@ -28,8 +33,8 @@
                     </group>
 
                     <!-- DESGLOSE DE COSTOS -->
-                    <group>
-                        <group string="Desglose del Costo (MXN)" groups="inventory_shopping_cart.group_price_authorizer">
+                    <group groups="inventory_shopping_cart.group_price_authorizer">
+                        <group string="Desglose del Costo (MXN)">
                             <field name="x_has_purchases" invisible="1"/>
                             
                             <label for="x_max_avg_cost_mxn" string="1. Costo Base"/>
@@ -75,7 +80,11 @@
                         </group>
                     </group>
 
-                    <!-- ESCALERA DE PRECIOS -->
+                    <!-- ============================================================
+                         ESCALERA DE PRECIOS
+                         - Autorizadores: Ven los 3 niveles
+                         - Vendedores: Solo ven Precio 1 y Precio 2
+                         ============================================================ -->
                     <group>
                         <group string="Escalera MXN">
                             <field name="x_price_mxn_1" readonly="1" force_save="1" string="1. Precio 1"/>

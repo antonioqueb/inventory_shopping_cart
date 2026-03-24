@@ -24,15 +24,20 @@
                     groups="inventory_shopping_cart.group_seller"/>
             </xpath>
 
-            <!-- ===================== OCULTAR BOTONES CUANDO HAY PRECIOS BAJOS (VENDEDOR) ===================== -->
+            <!-- ===================== OCULTAR BOTONES CUANDO HAY PRECIOS BAJOS ===================== -->
             <!-- Botón "Enviar por correo" -->
             <xpath expr="//header/button[@name='action_quotation_send']" position="attributes">
                 <attribute name="invisible">state not in ['draft', 'sent'] or x_has_low_prices</attribute>
             </xpath>
 
-            <!-- Botón "Confirmar" estándar de Odoo -->
+            <!-- Botón "Confirmar" -->
             <xpath expr="//header/button[@name='action_confirm']" position="attributes">
                 <attribute name="invisible">state not in ['draft', 'sent'] or x_has_low_prices</attribute>
+            </xpath>
+
+            <!-- Botón "Imprimir" (tipo action, ID sale.action_report_saleorder) -->
+            <xpath expr="//header/button[@name='%(sale.action_report_saleorder)d']" position="attributes">
+                <attribute name="invisible">x_has_low_prices</attribute>
             </xpath>
 
             <!-- ===================== BANNER ROJO ALARMANTE ===================== -->
