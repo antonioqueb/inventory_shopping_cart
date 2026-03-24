@@ -24,19 +24,43 @@
                     groups="inventory_shopping_cart.group_seller"/>
             </xpath>
 
-            <!-- ===================== BANNER DE PRECIOS BAJOS (dentro del sheet) ===================== -->
-            <xpath expr="//sheet/div[hasclass('oe_title')]" position="before">
+            <!-- ===================== OCULTAR BOTONES CUANDO HAY PRECIOS BAJOS (VENDEDOR) ===================== -->
+            <!-- Botón "Enviar por correo" -->
+            <xpath expr="//header/button[@name='action_quotation_send']" position="attributes">
+                <attribute name="invisible">state not in ['draft', 'sent'] or x_has_low_prices</attribute>
+            </xpath>
+
+            <!-- Botón "Confirmar" estándar de Odoo -->
+            <xpath expr="//header/button[@name='action_confirm']" position="attributes">
+                <attribute name="invisible">state not in ['draft', 'sent'] or x_has_low_prices</attribute>
+            </xpath>
+
+            <!-- ===================== BANNER ROJO ALARMANTE ===================== -->
+            <xpath expr="//sheet" position="before">
                 <field name="x_has_low_prices" invisible="1"/>
-                <div class="alert alert-warning text-center mb-3" role="alert"
-                     invisible="not x_has_low_prices or state not in ['draft', 'sent']">
-                    <strong>⚠️ Esta cotización tiene productos con precio por debajo del nivel medio.</strong>
+                
+                <!-- BANNER PARA VENDEDORES: Rojo, bloqueante -->
+                <div class="alert alert-danger text-center" role="alert" style="font-size: 1.1em; border: 3px solid #dc3545; background-color: #f8d7da;"
+                     invisible="not x_has_low_prices or state not in ['draft', 'sent']"
+                     groups="inventory_shopping_cart.group_seller">
+                    <i class="fa fa-ban fa-2x mb-2" style="display: block; color: #dc3545;"></i>
+                    <strong style="font-size: 1.3em; color: #721c24;">🚫 ORDEN BLOQUEADA - PRECIOS NO AUTORIZADOS</strong>
                     <br/>
-                    <span groups="inventory_shopping_cart.group_seller">
-                        Debe solicitar autorización de precio antes de confirmar.
+                    <span style="color: #721c24;">
+                        Esta cotización tiene productos con precio por debajo del nivel medio permitido.
+                        <br/>
+                        <strong>No puede enviar, imprimir ni confirmar esta orden.</strong>
+                        <br/>
+                        Use el botón "Solicitar Autorización de Precio" para continuar.
                     </span>
-                    <span groups="inventory_shopping_cart.group_price_authorizer">
-                        Como autorizador, puede continuar sin restricción.
-                    </span>
+                </div>
+
+                <!-- BANNER PARA AUTORIZADORES: Informativo amarillo suave -->
+                <div class="alert alert-warning text-center" role="alert"
+                     invisible="not x_has_low_prices or state not in ['draft', 'sent']"
+                     groups="inventory_shopping_cart.group_price_authorizer">
+                    <i class="fa fa-info-circle me-2"></i>
+                    <strong>Nota:</strong> Esta cotización tiene precios por debajo del nivel medio. Como autorizador, puede continuar sin restricción.
                 </div>
             </xpath>
 

@@ -79,7 +79,6 @@ class SaleOrder(models.Model):
 
     x_is_quote_backup = fields.Boolean(string="Es Respaldo de Cotización", default=False, copy=False)
 
-    # === NUEVO: Flag que indica si tiene precios bajos sin autorizar ===
     x_has_low_prices = fields.Boolean(
         string="Tiene Precios Bajos",
         compute='_compute_has_low_prices',
@@ -130,7 +129,6 @@ class SaleOrder(models.Model):
                 order.x_exchange_rate = banorte_rate
 
     def _get_banorte_rate(self):
-        """Obtiene el tipo de cambio de Banorte almacenado"""
         rate_param = self.env['ir.config_parameter'].sudo().get_param('banorte.last_rate', '0')
         try:
             rate = float(rate_param)
@@ -141,7 +139,6 @@ class SaleOrder(models.Model):
         return self._get_official_rate()
 
     def _get_official_rate(self):
-        """Obtiene el tipo de cambio del sistema Odoo (rates configurados en Contabilidad)"""
         usd_currency = self.env.ref('base.USD', raise_if_not_found=False)
         company_currency = self.env.company.currency_id
         if usd_currency and company_currency and usd_currency != company_currency:
@@ -156,10 +153,6 @@ class SaleOrder(models.Model):
         'x_price_authorization_id.state',
     )
     def _compute_has_low_prices(self):
-        """
-        Calcula si la orden tiene precios por debajo del nivel medio.
-        Se usa para mostrar advertencia visual en la UI.
-        """
         for order in self:
             if order.x_price_authorization_id and order.x_price_authorization_id.state == 'approved':
                 order.x_has_low_prices = False
@@ -179,6 +172,43 @@ class SaleOrder(models.Model):
 
             order.x_has_low_prices = has_low
 
+    def _check_seller_low_price_block(self):
+        """
+        Verifica si el vendedor tiene precios bajos sin autorización.
+        Lanza UserError si es vendedor y hay precios bajos.
+        Autorizadores pasan libre.
+        """
+        for order in self:
+            if not order.x_has_low_prices:
+                continue
+            if order.x_price_authorization_id and order.x_price_authorization_id.state == 'approved':
+                continue
+
+            is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
+            if is_authorizer:
+                continue
+
+            violating = order._get_violating_products()
+            if violating:
+                raise UserError(
+                    f"🚫 ACCIÓN BLOQUEADA - PRECIOS NO AUTORIZADOS\n\n"
+                    f"La orden {order.name} tiene productos con precios menores al permitido:\n"
+                    f"• {chr(10).join(violating)}\n\n"
+                    f"No puede enviar, imprimir ni confirmar esta orden.\n"
+                    f"Solicite autorización de precio primero."
+                )
+
+    # === BLOQUEO EN ENVIAR POR CORREO ===
+    def action_quotation_send(self):
+        self._check_seller_low_price_block()
+        return super().action_quotation_send()
+
+    # === BLOQUEO EN IMPRIMIR (report) ===
+    def _get_report_base_filename(self):
+        """Override para bloquear impresión si hay precios bajos para vendedores"""
+        self._check_seller_low_price_block()
+        return super()._get_report_base_filename()
+
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
@@ -187,19 +217,11 @@ class SaleOrder(models.Model):
         return super(SaleOrder, self).create(vals_list)
 
     def write(self, vals):
-        """
-        Override write para validar precios al guardar.
-        - Si el usuario es autorizador (group_price_authorizer): NO bloquea, solo registra warning en log.
-        - Si el usuario es vendedor (group_seller): Bloquea si hay precios bajos sin autorización.
-        - Si viene del contexto skip_auth_check: No valida (flujo automático post-autorización).
-        """
         res = super(SaleOrder, self).write(vals)
 
-        # No validar si viene de flujo automático
         if self.env.context.get('skip_auth_check'):
             return res
 
-        # Solo validar si se modificaron campos relevantes de precio o líneas
         price_fields = {'order_line', 'pricelist_id'}
         if not any(f in vals for f in price_fields):
             return res
@@ -209,8 +231,6 @@ class SaleOrder(models.Model):
                 continue
             if order.x_is_quote_backup:
                 continue
-
-            # Si ya tiene autorización aprobada, no validar
             if order.x_price_authorization_id and order.x_price_authorization_id.state == 'approved':
                 continue
 
@@ -221,15 +241,13 @@ class SaleOrder(models.Model):
             is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
 
             if is_authorizer:
-                # Autorizadores: Solo log, NO bloquea
                 _logger.info(
                     f"[PRICE-AUTH] Autorizador {self.env.user.name} guardó orden {order.name} "
                     f"con precios bajos en: {', '.join(violating_products)}. Permitido sin autorización."
                 )
             else:
-                # Vendedores: Bloquea y pide autorización
                 raise UserError(
-                    f"⚠️ PRECIOS POR DEBAJO DEL NIVEL MEDIO\n\n"
+                    f"🚫 PRECIOS POR DEBAJO DEL NIVEL MEDIO\n\n"
                     f"La orden {order.name} tiene productos con precios menores al permitido:\n"
                     f"• {chr(10).join(violating_products)}\n\n"
                     f"Debe solicitar autorización de precio antes de continuar.\n"
@@ -239,9 +257,6 @@ class SaleOrder(models.Model):
         return res
 
     def _get_violating_products(self):
-        """
-        Retorna lista de nombres de productos con precio por debajo del nivel medio.
-        """
         self.ensure_one()
         currency_code = self.pricelist_id.currency_id.name or 'USD' if self.pricelist_id else 'USD'
         violating = []
@@ -447,32 +462,8 @@ class SaleOrder(models.Model):
             raise UserError("No se pudieron agregar los items.")
 
     def action_confirm(self):
-        """
-        Confirmar orden.
-        - Ya NO valida precios aquí (se valida al guardar).
-        - Si tiene autorización aprobada o el usuario es autorizador, pasa directo.
-        - Si es vendedor con precios bajos sin autorización, bloquea.
-        """
         if not self.env.context.get('skip_auth_check'):
-            for order in self:
-                if order.x_price_authorization_id and order.x_price_authorization_id.state == 'approved':
-                    continue
-
-                violating = order._get_violating_products()
-                if violating:
-                    is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
-                    if not is_authorizer:
-                        raise UserError(
-                            f"⚠️ PRECIOS POR DEBAJO DEL NIVEL MEDIO\n\n"
-                            f"No puede confirmar la orden {order.name} sin autorización:\n"
-                            f"• {chr(10).join(violating)}\n\n"
-                            f"Solicite autorización de precio primero."
-                        )
-                    else:
-                        _logger.info(
-                            f"[PRICE-AUTH] Autorizador {self.env.user.name} confirmó orden {order.name} "
-                            f"con precios bajos. Permitido."
-                        )
+            self._check_seller_low_price_block()
 
         for order in self:
             if order.state in ['draft', 'sent'] and not order.x_is_quote_backup:
@@ -545,8 +536,6 @@ class SaleOrder(models.Model):
                 for p in products:
                     prices_map[str(p['product_id'])] = p['price_unit']
 
-            # === VERIFICACIÓN DE AUTORIZACIÓN ===
-            # Si el usuario es autorizador, NO necesita autorización (pasa directo)
             is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
 
             if not self.env.context.get('skip_auth_check') and not is_authorizer:
@@ -558,7 +547,6 @@ class SaleOrder(models.Model):
                     }
 
             if is_authorizer and not self.env.context.get('skip_auth_check'):
-                # Log informativo para autorizadores
                 auth_result = self.env['product.template'].check_price_authorization_needed(prices_map, currency_code)
                 if auth_result.get('needs_authorization'):
                     _logger.info(
