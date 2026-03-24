@@ -51,7 +51,7 @@ export class SaleOrderWizard extends Component {
             // Servicios
             searchServiceTerm: '',
             availableServices: [],
-            selectedServices: [], // Array de {product_id, name, quantity, price_unit, display_name}
+            selectedServices: [],
             
             // Notas
             notas: '',
@@ -60,10 +60,25 @@ export class SaleOrderWizard extends Component {
             // UI
             isCreating: false,
             currentStep: 1,
+
+            // === NUEVO: Info de autorizador ===
+            isAuthorizer: false,
+            lowPriceWarningProducts: [],
+            showLowPriceWarning: false,
         });
         
         this.searchTimeout = null;
         this.loadPricelists();
+        this.checkAuthorizerStatus();
+    }
+
+    async checkAuthorizerStatus() {
+        try {
+            const groups = await this.orm.call("res.users", "has_group", ["inventory_shopping_cart.group_price_authorizer"]);
+            this.state.isAuthorizer = groups;
+        } catch (e) {
+            this.state.isAuthorizer = false;
+        }
     }
     
     async loadPricelists() {
@@ -129,9 +144,6 @@ export class SaleOrderWizard extends Component {
     
     onPriceChange(productId, value) {
         const numValue = parseFloat(value);
-        
-        // ✅ PERMITIR CUALQUIER PRECIO (incluso menor al mínimo)
-        // El backend se encargará de crear la autorización si es necesario
         this.state.productPrices[productId] = numValue;
     }
     
@@ -439,6 +451,28 @@ export class SaleOrderWizard extends Component {
     
     // ========== NAVEGACIÓN ==========
     
+    /**
+     * Detecta productos con precio bajo del medio para mostrar warning al autorizador.
+     */
+    _detectLowPriceProducts() {
+        const lowProducts = [];
+        for (const productId of this.productIds) {
+            const price = this.state.productPrices[productId];
+            const options = this.state.productPriceOptions[productId] || [];
+            // Buscar precio medio (level === 'medium')
+            const mediumOption = options.find(o => o.level === 'medium');
+            if (mediumOption && price < (mediumOption.value - 0.01)) {
+                const group = this.props.productGroups[productId];
+                lowProducts.push({
+                    name: group ? group.name : `Producto ${productId}`,
+                    price: price,
+                    medium: mediumOption.value
+                });
+            }
+        }
+        return lowProducts;
+    }
+
     nextStep() {
         if (this.state.currentStep === 1 && !this.state.selectedPartnerId) {
             this.notification.add("Debe seleccionar o crear un cliente", { type: "warning" });
@@ -461,6 +495,16 @@ export class SaleOrderWizard extends Component {
             if (hasInvalidPrice) {
                 this.notification.add("Debe configurar precios para todos los productos", { type: "warning" });
                 return;
+            }
+
+            // === NUEVO: Detectar precios bajos para mostrar warning informativo al autorizador ===
+            const lowProducts = this._detectLowPriceProducts();
+            if (lowProducts.length > 0) {
+                this.state.lowPriceWarningProducts = lowProducts;
+                this.state.showLowPriceWarning = true;
+            } else {
+                this.state.lowPriceWarningProducts = [];
+                this.state.showLowPriceWarning = false;
             }
         }
         
@@ -489,8 +533,6 @@ export class SaleOrderWizard extends Component {
                     quantity: group.total_quantity,
                     price_unit: parseFloat(this.state.productPrices[productId]),
                     selected_lots: group.lots.map(lot => lot.id),
-                    // ✅ AÑADIDO: Desglose explícito de cantidades por lote
-                    // Esto es crítico para que el backend sepa cuánto tomar de cada lote
                     lots_breakdown: group.lots.map(lot => ({ 
                         id: lot.id, 
                         quantity: lot.quantity 
@@ -530,7 +572,7 @@ export class SaleOrderWizard extends Component {
                 architect_id: this.state.selectedArchitectId
             });
             
-            // ✅ MANEJAR CASO DE AUTORIZACIÓN REQUERIDA
+            // MANEJAR CASO DE AUTORIZACIÓN REQUERIDA (solo para vendedores)
             if (result.needs_authorization) {
                 this.notification.add(
                     `${result.message}\n\nPuede ver el estado en "Autorizaciones de Precio"`, 
@@ -541,13 +583,12 @@ export class SaleOrderWizard extends Component {
                 return;
             }
             
-            // ✅ CASO NORMAL: ORDEN CREADA
+            // CASO NORMAL: ORDEN CREADA
             if (result.success) {
                 this.notification.add(`Orden ${result.order_name} creada exitosamente`, { type: "success" });
                 this.props.onSuccess();
                 this.props.close();
                 
-                // Abrir la orden recién creada
                 this.action.doAction({
                     type: 'ir.actions.act_window',
                     res_model: 'sale.order',

@@ -332,6 +332,15 @@ class ProductTemplate(models.Model):
 
     @api.model
     def check_price_authorization_needed(self, product_prices, currency_code):
+        """
+        Verifica si se necesita autorización de precio.
+        CAMBIO: Si el usuario es autorizador (group_price_authorizer), NUNCA requiere autorización.
+        """
+        # === AUTORIZADORES NO NECESITAN AUTORIZACIÓN ===
+        is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
+        if is_authorizer:
+            return {'needs_authorization': False, 'products': [], 'is_authorizer': True}
+
         needs_auth = []
         is_seller = self.env.user.has_group('inventory_shopping_cart.group_seller')
         if not is_seller:
@@ -349,6 +358,7 @@ class ProductTemplate(models.Model):
                     'minimum_price': product.x_price_mxn_3 if currency_code == 'MXN' else product.x_price_usd_3
                 })
         return {'needs_authorization': len(needs_auth) > 0, 'products': needs_auth}
+
 
 class ProductProduct(models.Model):
     _inherit = 'product.product'

@@ -633,6 +633,27 @@
                         <i class="fa fa-check-circle text-success me-2"></i>
                         Confirmar Orden
                     </h5>
+
+                    <!-- === NUEVO: WARNING INFORMATIVO PARA AUTORIZADORES === -->
+                    <div class="alert alert-warning" t-if="state.showLowPriceWarning and state.isAuthorizer">
+                        <div class="d-flex align-items-start">
+                            <i class="fa fa-exclamation-triangle fa-2x me-3"></i>
+                            <div>
+                                <h6 class="mb-2 fw-bold">Precios por debajo del nivel medio</h6>
+                                <p class="mb-2">Los siguientes productos tienen precio menor al nivel medio. Como autorizador, puede continuar sin restricción:</p>
+                                <ul class="mb-0">
+                                    <t t-foreach="state.lowPriceWarningProducts" t-as="item" t-key="item_index">
+                                        <li>
+                                            <strong t-esc="item.name"></strong>: 
+                                            Precio <t t-esc="formatNumber(item.price)"/> 
+                                            (Medio: <t t-esc="formatNumber(item.medium)"/>)
+                                            <t t-esc="state.selectedCurrency"/>
+                                        </li>
+                                    </t>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
                     
                     <!-- Resumen general -->
                     <div class="card border mb-3">

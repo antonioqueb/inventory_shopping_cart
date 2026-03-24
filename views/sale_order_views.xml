@@ -21,7 +21,23 @@
                     type="object"
                     class="btn-warning"
                     invisible="state not in ['draft', 'sent'] or x_price_authorization_id"
-                    groups="base.group_user"/>
+                    groups="inventory_shopping_cart.group_seller"/>
+            </xpath>
+
+            <!-- ===================== BANNER DE PRECIOS BAJOS ===================== -->
+            <xpath expr="//sheet" position="before">
+                <field name="x_has_low_prices" invisible="1"/>
+                <div class="alert alert-warning text-center" role="alert"
+                     invisible="not x_has_low_prices or state not in ['draft', 'sent']">
+                    <strong>⚠️ Esta cotización tiene productos con precio por debajo del nivel medio.</strong>
+                    <br/>
+                    <span groups="inventory_shopping_cart.group_seller">
+                        Debe solicitar autorización de precio antes de confirmar.
+                    </span>
+                    <span groups="inventory_shopping_cart.group_price_authorizer">
+                        Como autorizador, puede continuar sin restricción.
+                    </span>
+                </div>
             </xpath>
 
             <!-- ===================== COLUMNA DERECHA (partner_details) ===================== -->
