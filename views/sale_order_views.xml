@@ -24,10 +24,10 @@
                     groups="inventory_shopping_cart.group_seller"/>
             </xpath>
 
-            <!-- ===================== BANNER DE PRECIOS BAJOS ===================== -->
-            <xpath expr="//sheet" position="before">
+            <!-- ===================== BANNER DE PRECIOS BAJOS (dentro del sheet) ===================== -->
+            <xpath expr="//sheet/div[hasclass('oe_title')]" position="before">
                 <field name="x_has_low_prices" invisible="1"/>
-                <div class="alert alert-warning text-center" role="alert"
+                <div class="alert alert-warning text-center mb-3" role="alert"
                      invisible="not x_has_low_prices or state not in ['draft', 'sent']">
                     <strong>⚠️ Esta cotización tiene productos con precio por debajo del nivel medio.</strong>
                     <br/>
