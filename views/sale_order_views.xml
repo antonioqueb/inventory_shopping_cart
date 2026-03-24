@@ -35,11 +35,6 @@
                 <attribute name="invisible">state not in ['draft', 'sent'] or x_has_low_prices</attribute>
             </xpath>
 
-            <!-- Botón "Imprimir" (tipo action, ID sale.action_report_saleorder) -->
-            <xpath expr="//header/button[@name='%(sale.action_report_saleorder)d']" position="attributes">
-                <attribute name="invisible">x_has_low_prices</attribute>
-            </xpath>
-
             <!-- ===================== BANNER ROJO ALARMANTE ===================== -->
             <xpath expr="//sheet" position="before">
                 <field name="x_has_low_prices" invisible="1"/>
@@ -48,7 +43,7 @@
                 <div class="alert alert-danger text-center" role="alert" style="font-size: 1.1em; border: 3px solid #dc3545; background-color: #f8d7da;"
                      invisible="not x_has_low_prices or state not in ['draft', 'sent']"
                      groups="inventory_shopping_cart.group_seller">
-                    <i class="fa fa-ban fa-2x mb-2" style="display: block; color: #dc3545;"></i>
+                    <i class="fa fa-ban fa-2x mb-2" title="Orden bloqueada" style="display: block; color: #dc3545;"></i>
                     <strong style="font-size: 1.3em; color: #721c24;">🚫 ORDEN BLOQUEADA - PRECIOS NO AUTORIZADOS</strong>
                     <br/>
                     <span style="color: #721c24;">
@@ -64,7 +59,7 @@
                 <div class="alert alert-warning text-center" role="alert"
                      invisible="not x_has_low_prices or state not in ['draft', 'sent']"
                      groups="inventory_shopping_cart.group_price_authorizer">
-                    <i class="fa fa-info-circle me-2"></i>
+                    <i class="fa fa-info-circle me-2" title="Información de precios"></i>
                     <strong>Nota:</strong> Esta cotización tiene precios por debajo del nivel medio. Como autorizador, puede continuar sin restricción.
                 </div>
             </xpath>
