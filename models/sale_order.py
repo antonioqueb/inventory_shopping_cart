@@ -86,12 +86,11 @@ class SaleOrder(models.Model):
         help="Indica si la orden tiene líneas con precio por debajo del nivel medio sin autorización aprobada."
     )
 
-    # === TIPO DE CAMBIO (Informativo / Contractual) ===
+    # === TIPO DE CAMBIO ===
     x_exchange_rate_source = fields.Selection([
         ('banorte', 'Banorte'),
         ('official', 'Diario Oficial (SAT)'),
-    ], string='Fuente Tipo de Cambio', default='banorte', tracking=True,
-       help="Fuente del tipo de cambio para la conversión a MXN al momento del cobro.")
+    ], string='Fuente Tipo de Cambio', default='banorte', tracking=True)
 
     x_exchange_rate = fields.Float(
         string='Tipo de Cambio',
@@ -99,7 +98,6 @@ class SaleOrder(models.Model):
         compute='_compute_exchange_rate',
         store=True,
         tracking=True,
-        help="Tipo de cambio MXN/USD con el que se cobrará esta orden."
     )
 
     x_is_usd = fields.Boolean(
@@ -121,7 +119,6 @@ class SaleOrder(models.Model):
     def _compute_exchange_rate(self):
         banorte_rate = self._get_banorte_rate()
         official_rate = self._get_official_rate()
-
         for order in self:
             if order.x_exchange_rate_source == 'official':
                 order.x_exchange_rate = official_rate
@@ -154,6 +151,7 @@ class SaleOrder(models.Model):
     )
     def _compute_has_low_prices(self):
         for order in self:
+            # Si tiene autorización aprobada -> no tiene precios bajos
             if order.x_price_authorization_id and order.x_price_authorization_id.state == 'approved':
                 order.x_has_low_prices = False
                 continue
@@ -172,11 +170,12 @@ class SaleOrder(models.Model):
 
             order.x_has_low_prices = has_low
 
-    def _check_seller_low_price_block(self):
+    def _check_seller_low_price_block(self, action_name="realizar esta acción"):
         """
-        Verifica si el vendedor tiene precios bajos sin autorización.
-        Lanza UserError si es vendedor y hay precios bajos.
+        Bloquea vendedores si hay precios bajos sin autorización.
         Autorizadores pasan libre.
+        Se usa en: confirmar, enviar, imprimir.
+        NO se usa en: guardar (write).
         """
         for order in self:
             if not order.x_has_low_prices:
@@ -192,75 +191,16 @@ class SaleOrder(models.Model):
             if violating:
                 raise UserError(
                     f"🚫 ACCIÓN BLOQUEADA - PRECIOS NO AUTORIZADOS\n\n"
-                    f"La orden {order.name} tiene productos con precios menores al permitido:\n"
+                    f"No puede {action_name} la orden {order.name}.\n"
+                    f"Productos con precios menores al permitido:\n"
                     f"• {chr(10).join(violating)}\n\n"
-                    f"No puede enviar, imprimir ni confirmar esta orden.\n"
                     f"Solicite autorización de precio primero."
                 )
-
-    # === BLOQUEO EN ENVIAR POR CORREO ===
-    def action_quotation_send(self):
-        self._check_seller_low_price_block()
-        return super().action_quotation_send()
-
-    # === BLOQUEO EN IMPRIMIR (report) ===
-    def _get_report_base_filename(self):
-        """Override para bloquear impresión si hay precios bajos para vendedores"""
-        self._check_seller_low_price_block()
-        return super()._get_report_base_filename()
-
-    @api.model_create_multi
-    def create(self, vals_list):
-        for vals in vals_list:
-            if vals.get('name', 'New') == 'New':
-                vals['name'] = self.env['ir.sequence'].next_by_code('sale.quotation') or 'New'
-        return super(SaleOrder, self).create(vals_list)
-
-    def write(self, vals):
-        res = super(SaleOrder, self).write(vals)
-
-        if self.env.context.get('skip_auth_check'):
-            return res
-
-        price_fields = {'order_line', 'pricelist_id'}
-        if not any(f in vals for f in price_fields):
-            return res
-
-        for order in self:
-            if order.state not in ('draft', 'sent'):
-                continue
-            if order.x_is_quote_backup:
-                continue
-            if order.x_price_authorization_id and order.x_price_authorization_id.state == 'approved':
-                continue
-
-            violating_products = order._get_violating_products()
-            if not violating_products:
-                continue
-
-            is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
-
-            if is_authorizer:
-                _logger.info(
-                    f"[PRICE-AUTH] Autorizador {self.env.user.name} guardó orden {order.name} "
-                    f"con precios bajos en: {', '.join(violating_products)}. Permitido sin autorización."
-                )
-            else:
-                raise UserError(
-                    f"🚫 PRECIOS POR DEBAJO DEL NIVEL MEDIO\n\n"
-                    f"La orden {order.name} tiene productos con precios menores al permitido:\n"
-                    f"• {chr(10).join(violating_products)}\n\n"
-                    f"Debe solicitar autorización de precio antes de continuar.\n"
-                    f"Use el botón 'Solicitar Autorización de Precio' en la cabecera."
-                )
-
-        return res
 
     def _get_violating_products(self):
         self.ensure_one()
         currency_code = self.pricelist_id.currency_id.name or 'USD' if self.pricelist_id else 'USD'
         violating = []
-
         for line in self.order_line:
             if not line.product_id or line.display_type or line.product_id.type == 'service':
                 continue
@@ -268,8 +208,75 @@ class SaleOrder(models.Model):
             medium_price = template.x_price_mxn_2 if currency_code == 'MXN' else template.x_price_usd_2
             if medium_price > 0 and line.price_unit < (medium_price - 0.01):
                 violating.append(f"{line.product_id.display_name} (Precio: {line.price_unit:.2f}, Medio: {medium_price:.2f})")
-
         return violating
+
+    # === BLOQUEO EN ENVIAR ===
+    def action_quotation_send(self):
+        self._check_seller_low_price_block("enviar")
+        return super().action_quotation_send()
+
+    # === BLOQUEO EN IMPRIMIR ===
+    def _get_report_base_filename(self):
+        self._check_seller_low_price_block("imprimir")
+        return super()._get_report_base_filename()
+
+    # === BLOQUEO EN CONFIRMAR ===
+    def action_confirm(self):
+        if not self.env.context.get('skip_auth_check'):
+            self._check_seller_low_price_block("confirmar")
+
+        for order in self:
+            if order.state in ['draft', 'sent'] and not order.x_is_quote_backup:
+                new_ov_name = self.env['ir.sequence'].next_by_code('sale.order.confirmed')
+                if not new_ov_name:
+                    new_ov_name = "OV/NEW"
+
+                current_cot_name = order.name
+                copy_defaults = {
+                    'name': current_cot_name,
+                    'state': 'draft',
+                    'origin': f"Convertido a {new_ov_name}",
+                    'x_is_quote_backup': True,
+                    'date_order': fields.Datetime.now()
+                }
+                order.copy(default=copy_defaults)
+                order.name = new_ov_name
+                order.origin = current_cot_name
+
+        res = super().action_confirm()
+        self._clear_auto_assigned_lots()
+
+        for order in self:
+            for line in order.order_line:
+                if line.display_type or not line.product_id:
+                    continue
+                if line.product_id.type not in ['product', 'consu']:
+                    continue
+                if line.x_selected_lots:
+                    pickings = line.move_ids.mapped('picking_id')
+                    if not pickings:
+                        continue
+                    breakdown = line.x_lot_breakdown_json or {}
+                    breakdown_int = {}
+                    if breakdown:
+                        try:
+                            breakdown_int = {int(k): float(v) for k, v in breakdown.items()}
+                        except Exception as e:
+                            _logger.warning(f"Error parseando breakdown JSON en linea {line.id}: {e}")
+                    order._assign_specific_lots(pickings, line.product_id, line.x_selected_lots, breakdown=breakdown_int)
+
+        return res
+
+    # === GUARDAR: SIN BLOQUEO - Solo el computed x_has_low_prices se actualiza ===
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            if vals.get('name', 'New') == 'New':
+                vals['name'] = self.env['ir.sequence'].next_by_code('sale.quotation') or 'New'
+        return super(SaleOrder, self).create(vals_list)
+
+    # write() SIN validación de precios - siempre permite guardar
+    # El banner rojo se muestra vía x_has_low_prices computed
 
     @api.onchange('pricelist_id')
     def _onchange_pricelist_id_custom_prices(self):
@@ -308,10 +315,7 @@ class SaleOrder(models.Model):
             if not line.product_id or line.display_type:
                 continue
             template = line.product_id.product_tmpl_id
-            if currency_code == 'MXN':
-                medium = template.x_price_mxn_2
-            else:
-                medium = template.x_price_usd_2
+            medium = template.x_price_mxn_2 if currency_code == 'MXN' else template.x_price_usd_2
 
             if medium > 0 and line.price_unit < (medium - 0.01):
                 has_low_price = True
@@ -349,12 +353,8 @@ class SaleOrder(models.Model):
         for pid_str, group in product_groups.items():
             product = self.env['product.product'].browse(int(pid_str))
             requested_price = product_prices[pid_str]
-            if currency_code == 'MXN':
-                medium = product.product_tmpl_id.x_price_mxn_2
-                minimum = product.product_tmpl_id.x_price_mxn_3
-            else:
-                medium = product.product_tmpl_id.x_price_usd_2
-                minimum = product.product_tmpl_id.x_price_usd_3
+            medium = product.product_tmpl_id.x_price_mxn_2 if currency_code == 'MXN' else product.product_tmpl_id.x_price_usd_2
+            minimum = product.product_tmpl_id.x_price_mxn_3 if currency_code == 'MXN' else product.product_tmpl_id.x_price_usd_3
 
             self.env['price.authorization.line'].create({
                 'authorization_id': authorization.id,
@@ -391,7 +391,6 @@ class SaleOrder(models.Model):
                 if line.x_selected_lots and item.quant_id.id in line.x_selected_lots.ids:
                     already_in_line = True
                     break
-
             if already_in_line:
                 continue
 
@@ -403,7 +402,6 @@ class SaleOrder(models.Model):
                     'lots': [],
                     'breakdown': {}
                 }
-
             grouped_items[prod_id]['total_qty'] += item.quantity
             grouped_items[prod_id]['lots'].append(item.quant_id.id)
             grouped_items[prod_id]['breakdown'][str(item.quant_id.id)] = item.quantity
@@ -421,12 +419,7 @@ class SaleOrder(models.Model):
         lines_to_create = []
         for prod_id, data in grouped_items.items():
             product = data['product_obj']
-            price_unit = 0.0
-            if currency_code == 'MXN':
-                price_unit = product.product_tmpl_id.x_price_mxn_1
-            else:
-                price_unit = product.product_tmpl_id.x_price_usd_1
-
+            price_unit = product.product_tmpl_id.x_price_mxn_1 if currency_code == 'MXN' else product.product_tmpl_id.x_price_usd_1
             tax_ids = [(6, 0, product.taxes_id.ids)]
 
             lines_to_create.append({
@@ -446,7 +439,6 @@ class SaleOrder(models.Model):
         if lines_to_create:
             self.env['sale.order.line'].create(lines_to_create)
             self.env['shopping.cart'].clear_cart()
-
             return {
                 'type': 'ir.actions.client',
                 'tag': 'display_notification',
@@ -460,59 +452,6 @@ class SaleOrder(models.Model):
             }
         else:
             raise UserError("No se pudieron agregar los items.")
-
-    def action_confirm(self):
-        if not self.env.context.get('skip_auth_check'):
-            self._check_seller_low_price_block()
-
-        for order in self:
-            if order.state in ['draft', 'sent'] and not order.x_is_quote_backup:
-                new_ov_name = self.env['ir.sequence'].next_by_code('sale.order.confirmed')
-                if not new_ov_name:
-                    new_ov_name = "OV/NEW"
-
-                current_cot_name = order.name
-
-                copy_defaults = {
-                    'name': current_cot_name,
-                    'state': 'draft',
-                    'origin': f"Convertido a {new_ov_name}",
-                    'x_is_quote_backup': True,
-                    'date_order': fields.Datetime.now()
-                }
-
-                order.copy(default=copy_defaults)
-
-                order.name = new_ov_name
-                order.origin = current_cot_name
-
-        res = super().action_confirm()
-
-        self._clear_auto_assigned_lots()
-
-        for order in self:
-            for line in order.order_line:
-                if line.display_type or not line.product_id:
-                    continue
-                if line.product_id.type not in ['product', 'consu']:
-                    continue
-
-                if line.x_selected_lots:
-                    pickings = line.move_ids.mapped('picking_id')
-                    if not pickings:
-                        continue
-
-                    breakdown = line.x_lot_breakdown_json or {}
-                    breakdown_int = {}
-                    if breakdown:
-                        try:
-                            breakdown_int = {int(k): float(v) for k, v in breakdown.items()}
-                        except Exception as e:
-                            _logger.warning(f"Error parseando breakdown JSON en linea {line.id}: {e}")
-
-                    order._assign_specific_lots(pickings, line.product_id, line.x_selected_lots, breakdown=breakdown_int)
-
-        return res
 
     @api.model
     def create_from_shopping_cart(self, partner_id=None, products=None, services=None, notes=None, pricelist_id=None, apply_tax=True, project_id=None, architect_id=None):
@@ -546,14 +485,6 @@ class SaleOrder(models.Model):
                         'message': 'Se detectaron precios por debajo del nivel medio. Se requiere autorización.',
                     }
 
-            if is_authorizer and not self.env.context.get('skip_auth_check'):
-                auth_result = self.env['product.template'].check_price_authorization_needed(prices_map, currency_code)
-                if auth_result.get('needs_authorization'):
-                    _logger.info(
-                        f"[PRICE-AUTH] Autorizador {self.env.user.name} creando orden desde carrito "
-                        f"con precios bajos. Permitido sin autorización."
-                    )
-
             company_id = self.env.company.id
 
             vals = {
@@ -572,13 +503,7 @@ class SaleOrder(models.Model):
             if products:
                 for product_data in products:
                     product_rec = self.env['product.product'].browse(product_data['product_id'])
-
-                    tax_ids = []
-                    if apply_tax:
-                        tax_ids = [(6, 0, product_rec.taxes_id.ids)]
-                    else:
-                        tax_ids = [(5, 0, 0)]
-
+                    tax_ids = [(6, 0, product_rec.taxes_id.ids)] if apply_tax else [(5, 0, 0)]
                     selected_lots_ids = product_data.get('selected_lots', [])
                     product_name = product_rec.get_product_multiline_description_sale() or product_rec.name
 
@@ -587,7 +512,7 @@ class SaleOrder(models.Model):
                         for l in product_data['lots_breakdown']:
                             breakdown_json[str(l['id'])] = float(l['quantity'])
 
-                    line_vals = {
+                    self.env['sale.order.line'].create({
                         'order_id': sale_order.id,
                         'name': product_name,
                         'product_id': product_rec.id,
@@ -599,18 +524,15 @@ class SaleOrder(models.Model):
                         'x_lot_breakdown_json': breakdown_json,
                         'company_id': company_id,
                         'x_price_selector': 'custom',
-                    }
-                    self.env['sale.order.line'].create(line_vals)
+                    })
 
             if services:
                 for service_data in services:
                     service_rec = self.env['product.product'].browse(service_data['product_id'])
                     tax_ids = [(6, 0, service_rec.taxes_id.ids)] if apply_tax else [(5, 0, 0)]
-                    service_name = service_rec.get_product_multiline_description_sale() or service_rec.name
-
-                    line_vals = {
+                    self.env['sale.order.line'].create({
                         'order_id': sale_order.id,
-                        'name': service_name,
+                        'name': service_rec.get_product_multiline_description_sale() or service_rec.name,
                         'product_id': service_rec.id,
                         'product_uom_id': service_rec.uom_id.id,
                         'product_uom_qty': service_data['quantity'],
@@ -618,11 +540,9 @@ class SaleOrder(models.Model):
                         'tax_ids': tax_ids,
                         'company_id': company_id,
                         'x_price_selector': 'custom',
-                    }
-                    self.env['sale.order.line'].create(line_vals)
+                    })
 
             sale_order.invalidate_recordset()
-
             _logger.info("[CART-DEBUG] Ejecutando action_confirm...")
             sale_order.with_context(skip_auth_check=True).action_confirm()
 
@@ -633,7 +553,7 @@ class SaleOrder(models.Model):
             }
 
         except Exception as e:
-            _logger.error(f"[CART-DEBUG] ❌ Error CRÍTICO en create_from_shopping_cart: {str(e)}", exc_info=True)
+            _logger.error(f"[CART-DEBUG] Error CRÍTICO en create_from_shopping_cart: {str(e)}", exc_info=True)
             raise UserError(f"Error al procesar la orden: {str(e)}")
 
     def _assign_specific_lots(self, pickings, product, selected_quants, breakdown=None):
@@ -652,9 +572,7 @@ class SaleOrder(models.Model):
         for picking in pickings:
             if picking.state in ['done', 'cancel']:
                 continue
-
             moves = picking.move_ids.filtered(lambda m: m.product_id.id == product.id)
-
             for move in moves:
                 try:
                     if move.move_line_ids:
@@ -663,17 +581,14 @@ class SaleOrder(models.Model):
                     _logger.error(f"[CART-DEBUG] Error limpiando reservas: {e}")
 
                 remaining_demand = move.product_uom_qty
-
                 for quant in selected_quants:
                     if quant.product_id.id != product.id:
                         continue
-
                     if remaining_demand <= 0:
                         break
 
                     raw_tipo = quant.lot_id.x_tipo
                     tipo_lote = (str(raw_tipo) if raw_tipo else 'placa').lower()
-
                     qty_to_use = 0.0
 
                     if 'formato' in tipo_lote:
@@ -684,15 +599,11 @@ class SaleOrder(models.Model):
                                 ('user_id', '=', cart_owner_id),
                                 ('quant_id', '=', quant.id)
                             ], limit=1)
-                            if cart_item:
-                                qty_to_use = cart_item.quantity
-                            else:
-                                qty_to_use = quant.quantity
+                            qty_to_use = cart_item.quantity if cart_item else quant.quantity
                     else:
                         qty_to_use = quant.quantity
 
                     qty_to_reserve = min(qty_to_use, remaining_demand)
-
                     if qty_to_reserve <= 0.001:
                         continue
 
@@ -708,9 +619,8 @@ class SaleOrder(models.Model):
                             'product_uom_id': product.uom_id.id,
                         })
                         remaining_demand -= qty_to_reserve
-
                     except Exception as e:
-                        _logger.error(f"[CART-DEBUG] ❌ Error reservando lote {quant.lot_id.name}: {e}")
+                        _logger.error(f"[CART-DEBUG] Error reservando lote {quant.lot_id.name}: {e}")
 
     def _clear_auto_assigned_lots(self):
         if PickingLotCleaner:
@@ -718,5 +628,3 @@ class SaleOrder(models.Model):
             for order in self:
                 if order.picking_ids:
                     cleaner.clear_pickings_lots(order.picking_ids)
-        else:
-            pass

@@ -87,16 +87,18 @@ class PriceAuthorization(models.Model):
         self.ensure_one()
         
         if approved:
-            status = "APROBADA"
             activity_summary = f'Autorización Aprobada - {self.name}'
             message_text = f"<p>Su solicitud {self.name} ha sido <strong>aprobada</strong> por {self.authorizer_id.name}.</p>"
             
             if self.operation_type == 'sale' and self.sale_order_id:
-                message_text += f"<p>Orden de venta generada: <a href='/web#id={self.sale_order_id.id}&model=sale.order&view_type=form'>{self.sale_order_id.name}</a></p>"
+                message_text += (
+                    f"<p>La orden <a href='/web#id={self.sale_order_id.id}&model=sale.order&view_type=form'>"
+                    f"{self.sale_order_id.name}</a> ha sido actualizada con los precios autorizados.</p>"
+                    f"<p><strong>Ya puede confirmar la orden.</strong></p>"
+                )
             elif self.operation_type == 'hold':
                 message_text += "<p>Los apartados han sido creados automáticamente.</p>"
         else:
-            status = "RECHAZADA"
             activity_summary = f'Autorización Rechazada - {self.name}'
             message_text = f"<p>Su solicitud {self.name} ha sido <strong>rechazada</strong> por {self.authorizer_id.name}.</p>"
         
@@ -148,8 +150,12 @@ class PriceAuthorization(models.Model):
     def _process_approved_authorization(self):
         """
         Procesa la autorización aprobada.
-        FIX: Siempre usa authorized_price (precio definido por el autorizador).
-        FIX: Si viene de una orden manual existente, actualiza sus precios en vez de crear nueva.
+        
+        CAMBIO IMPORTANTE:
+        - Para VENTAS desde orden manual: Solo actualiza precios, NO confirma la orden.
+          El vendedor debe confirmar manualmente.
+        - Para VENTAS desde carrito: Crea la orden y la confirma (flujo automático).
+        - Para HOLDS: Crea los apartados (igual que antes).
         """
         self.ensure_one()
         
@@ -167,16 +173,19 @@ class PriceAuthorization(models.Model):
             existing_order_id = temp_data.get('sale_order_id') or (self.sale_order_id.id if self.sale_order_id else False)
             
             if source == 'manual_order' and existing_order_id:
-                self._update_and_confirm_existing_order(existing_order_id)
+                # === ORDEN MANUAL: Solo actualizar precios, NO confirmar ===
+                self._update_existing_order_prices(existing_order_id)
             else:
+                # === DESDE CARRITO: Crear y confirmar (flujo completo) ===
                 self._create_sale_order_from_authorization(pricelist, temp_data)
         elif self.operation_type == 'hold':
             self._create_holds_from_authorization(temp_data)
 
-    def _update_and_confirm_existing_order(self, order_id):
+    def _update_existing_order_prices(self, order_id):
         """
-        FIX: Cuando la autorización viene de una orden manual existente,
-        actualiza los precios con los AUTORIZADOS (redondeados hacia arriba) y confirma.
+        Cuando la autorización viene de una orden manual existente:
+        Solo actualiza los precios con los AUTORIZADOS. NO confirma la orden.
+        El vendedor confirma manualmente después.
         """
         order = self.env['sale.order'].browse(order_id)
         if not order.exists():
@@ -196,13 +205,12 @@ class PriceAuthorization(models.Model):
                 })
         
         order.x_price_authorization_id = self.id
-        order.with_context(skip_auth_check=True).action_confirm()
         self.write({'sale_order_id': order.id})
     
     def _create_sale_order_from_authorization(self, pricelist, temp_data):
         """
         Crea orden de venta desde autorización aprobada (flujo carrito).
-        FIX: Usa authorized_price redondeado hacia arriba.
+        Usa authorized_price redondeado hacia arriba.
         """
         product_prices = {}
         for line in self.line_ids:
@@ -310,7 +318,6 @@ class PriceAuthorization(models.Model):
     def _create_holds_from_authorization(self, temp_data):
         """
         Crea apartados desde autorización aprobada.
-        FIX: Usa authorized_price redondeado hacia arriba.
         """
         product_prices = {}
         for line in self.line_ids:
@@ -343,6 +350,7 @@ class PriceAuthorization(models.Model):
             for failed in result.get('failed', []):
                 error_msg += f"• {failed.get('lot_name', 'Lote')}: {failed.get('error', 'Error desconocido')}\n"
             raise UserError(error_msg)
+
 
 class PriceAuthorizationLine(models.Model):
     _name = 'price.authorization.line'
