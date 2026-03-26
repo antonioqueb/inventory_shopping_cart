@@ -116,10 +116,7 @@
                         </page>
                     </notebook>
                 </sheet>
-                <div class="oe_chatter">
-                    <field name="message_follower_ids"/>
-                    <field name="message_ids"/>
-                </div>
+                <chatter/>
             </form>
         </field>
     </record>
@@ -156,8 +153,10 @@
     </record>
     
     <!-- Menú -->
-    <menuitem id="menu_price_authorizations" name="Autorizaciones de Precio" 
-              parent="sale.sale_order_menu" action="action_price_authorization" 
-              groups="inventory_shopping_cart.group_price_authorizer,inventory_shopping_cart.group_seller" 
-              sequence="30"/>
+    <menuitem id="menu_price_authorizations"
+          name="Autorizaciones de Precio"
+          parent="sale.sale_menu_root"
+          action="action_price_authorization"
+          groups="inventory_shopping_cart.group_price_authorizer,inventory_shopping_cart.group_seller"
+          sequence="35"/>
 </odoo>
