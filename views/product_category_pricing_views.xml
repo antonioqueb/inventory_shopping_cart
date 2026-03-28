@@ -99,7 +99,7 @@
 
     <!-- ==================== MENÚ RAÍZ ==================== -->
     <menuitem id="menu_pricing_config_root"
-              name="Configuración de Precios"
+              name="Utilidades"
               web_icon="inventory_shopping_cart,static/description/icon.png"
               groups="base.group_system"
               sequence="100"/>
