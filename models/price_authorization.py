@@ -14,11 +14,12 @@ class PriceAuthorization(models.Model):
     seller_id = fields.Many2one('res.users', string='Vendedor', required=True, readonly=True)
     authorizer_id = fields.Many2one('res.users', string='Autorizado por')
     state = fields.Selection([
+        ('draft', 'Borrador'),
         ('pending', 'Pendiente'),
         ('approved', 'Aprobado'),
         ('rejected', 'Rechazado'),
         ('expired', 'Expirado')
-    ], string='Estado', default='pending', required=True, tracking=True)
+    ], string='Estado', default='draft', required=True, tracking=True)
     
     operation_type = fields.Selection([
         ('hold', 'Apartado'),
