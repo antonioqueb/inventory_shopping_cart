@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ==================== TREE ==================== -->
+    <record id="product_category_pricing_tree" model="ir.ui.view">
+        <field name="name">product.category.pricing.list</field>
+        <field name="model">product.category.pricing</field>
+        <field name="arch" type="xml">
+            <list editable="bottom">
+                <field name="categ_id"/>
+                <field name="x_utilidad" string="% Utilidad"/>
+                <field name="x_discount_medium" string="% Desc. Medio"/>
+                <field name="x_discount_minimum" string="% Desc. Mínimo"/>
+                <field name="product_count" string="# Productos"/>
+                <button name="action_apply_to_products" type="object"
+                        string="Aplicar" icon="fa-check" class="btn-link text-success"
+                        help="Aplicar estos porcentajes a todos los productos de esta categoría"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ==================== FORM ==================== -->
+    <record id="product_category_pricing_form" model="ir.ui.view">
+        <field name="name">product.category.pricing.form</field>
+        <field name="model">product.category.pricing</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_apply_to_products" type="object"
+                            string="Aplicar a Productos" class="btn-primary" icon="fa-check"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button class="oe_stat_button" icon="fa-cubes" type="action"
+                                name="%(inventory_shopping_cart.action_category_pricing_products)d"
+                                context="{'search_default_categ_id': categ_id}">
+                            <field name="product_count" widget="statinfo" string="Productos"/>
+                        </button>
+                    </div>
+                    <group>
+                        <group string="Categoría">
+                            <field name="categ_id"/>
+                        </group>
+                        <group string="Niveles de Utilidad">
+                            <label for="x_utilidad"/>
+                            <div class="o_row">
+                                <field name="x_utilidad"/>
+                                <span class="text-muted">%</span>
+                            </div>
+                            <label for="x_discount_medium"/>
+                            <div class="o_row">
+                                <field name="x_discount_medium"/>
+                                <span class="text-muted">%</span>
+                            </div>
+                            <label for="x_discount_minimum"/>
+                            <div class="o_row">
+                                <field name="x_discount_minimum"/>
+                                <span class="text-muted">%</span>
+                            </div>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- ==================== ACTION ==================== -->
+    <record id="action_product_category_pricing" model="ir.actions.act_window">
+        <field name="name">Utilidades por Categoría</field>
+        <field name="res_model">product.category.pricing</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Configure los niveles de utilidad por categoría de producto
+            </p>
+            <p>
+                Defina el porcentaje de utilidad base, descuento medio y descuento mínimo 
+                para cada categoría. Luego aplíquelos masivamente a todos los productos.
+            </p>
+        </field>
+    </record>
+
+    <!-- Action auxiliar para ver productos de una categoría -->
+    <record id="action_category_pricing_products" model="ir.actions.act_window">
+        <field name="name">Productos</field>
+        <field name="res_model">product.template</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_categ_id': active_id}</field>
+    </record>
+
+    <!-- ==================== SERVER ACTION: Aplicar Todas ==================== -->
+    <record id="action_apply_all_category_pricing" model="ir.actions.server">
+        <field name="name">Aplicar Todas las Configuraciones</field>
+        <field name="model_id" ref="model_product_category_pricing"/>
+        <field name="binding_model_id" ref="model_product_category_pricing"/>
+        <field name="binding_view_types">list</field>
+        <field name="state">code</field>
+        <field name="code">records.action_apply_all()</field>
+    </record>
+
+    <!-- ==================== MENÚ RAÍZ ==================== -->
+    <menuitem id="menu_pricing_config_root"
+              name="Configuración de Precios"
+              web_icon="inventory_shopping_cart,static/description/icon.png"
+              groups="base.group_system"
+              sequence="100"/>
+
+    <menuitem id="menu_category_pricing"
+              name="Utilidades por Categoría"
+              parent="menu_pricing_config_root"
+              action="action_product_category_pricing"
+              sequence="10"/>
+
+</odoo>

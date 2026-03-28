@@ -6,3 +6,4 @@ from . import product_template
 from . import price_authorization
 from . import stock_picking
 from . import ir_actions_report
+from . import product_category_pricing  # NUEVO
