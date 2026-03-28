@@ -1,6 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
+    <!-- ==================== ACTIONS (antes del form que los referencia) ==================== -->
+    <record id="action_product_category_pricing" model="ir.actions.act_window">
+        <field name="name">Utilidades por Categoría</field>
+        <field name="res_model">product.category.pricing</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Configure los niveles de utilidad por categoría de producto
+            </p>
+            <p>
+                Defina el porcentaje de utilidad base, descuento medio y descuento mínimo 
+                para cada categoría. Luego aplíquelos masivamente a todos los productos.
+            </p>
+        </field>
+    </record>
+
+    <record id="action_category_pricing_products" model="ir.actions.act_window">
+        <field name="name">Productos</field>
+        <field name="res_model">product.template</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_categ_id': active_id}</field>
+    </record>
+
     <!-- ==================== TREE ==================== -->
     <record id="product_category_pricing_tree" model="ir.ui.view">
         <field name="name">product.category.pricing.list</field>
@@ -62,30 +85,6 @@
                 </sheet>
             </form>
         </field>
-    </record>
-
-    <!-- ==================== ACTION ==================== -->
-    <record id="action_product_category_pricing" model="ir.actions.act_window">
-        <field name="name">Utilidades por Categoría</field>
-        <field name="res_model">product.category.pricing</field>
-        <field name="view_mode">list,form</field>
-        <field name="help" type="html">
-            <p class="o_view_nocontent_smiling_face">
-                Configure los niveles de utilidad por categoría de producto
-            </p>
-            <p>
-                Defina el porcentaje de utilidad base, descuento medio y descuento mínimo 
-                para cada categoría. Luego aplíquelos masivamente a todos los productos.
-            </p>
-        </field>
-    </record>
-
-    <!-- Action auxiliar para ver productos de una categoría -->
-    <record id="action_category_pricing_products" model="ir.actions.act_window">
-        <field name="name">Productos</field>
-        <field name="res_model">product.template</field>
-        <field name="view_mode">list,form</field>
-        <field name="context">{'search_default_categ_id': active_id}</field>
     </record>
 
     <!-- ==================== SERVER ACTION: Aplicar Todas ==================== -->
