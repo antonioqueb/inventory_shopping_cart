@@ -19,7 +19,7 @@ class PriceAuthorization(models.Model):
         ('approved', 'Aprobado'),
         ('rejected', 'Rechazado'),
         ('expired', 'Expirado')
-    ], string='Estado', default='draft', required=True, tracking=True)
+    ], string='Estado', default='pending', required=True, tracking=True)
     
     operation_type = fields.Selection([
         ('hold', 'Apartado'),
