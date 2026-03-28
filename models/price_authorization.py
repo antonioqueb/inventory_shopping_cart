@@ -1,4 +1,3 @@
-# ./models/price_authorization.py
 # -*- coding: utf-8 -*-
 import math
 from odoo import models, fields, api
@@ -45,6 +44,8 @@ class PriceAuthorization(models.Model):
         for vals in vals_list:
             if vals.get('name', 'Nuevo') == 'Nuevo':
                 vals['name'] = self.env['ir.sequence'].next_by_code('price.authorization') or 'Nuevo'
+            # Forzar estado pending al crear
+            vals['state'] = 'pending'
         
         records = super().create(vals_list)
         
