@@ -99,10 +99,10 @@
 
     <!-- ==================== MENÚ RAÍZ ==================== -->
     <menuitem id="menu_pricing_config_root"
-              name="Utilidades"
-              web_icon="inventory_shopping_cart,static/description/icon.png"
-              groups="base.group_system"
-              sequence="100"/>
+          name="Utilidades"
+          web_icon="inventory_shopping_cart,static/description/icon.png"
+          groups="inventory_shopping_cart.group_price_authorizer"
+          sequence="100"/>
 
     <menuitem id="menu_category_pricing"
               name="Utilidades por Categoría"
