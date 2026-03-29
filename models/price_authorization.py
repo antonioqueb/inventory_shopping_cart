@@ -38,6 +38,14 @@ class PriceAuthorization(models.Model):
     
     temp_data = fields.Json(string='Datos Temporales')
     sale_order_id = fields.Many2one('sale.order', string='Orden de Venta Generada', readonly=True)
+    # En la clase PriceAuthorizationLine, agregar este campo:
+
+    product_cost = fields.Float(
+        string='Costo Destino',
+        related='product_id.product_tmpl_id.x_costo_mayor',
+        readonly=True,
+        digits='Product Price',
+    )
     
     @api.model_create_multi
     def create(self, vals_list):

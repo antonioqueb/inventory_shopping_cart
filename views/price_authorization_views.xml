@@ -74,6 +74,8 @@
                                     <field name="product_id" readonly="1"/>
                                     <field name="quantity" readonly="1"/>
                                     <field name="lot_count" readonly="1"/>
+                                    <field name="product_cost" string="Costo Destino" readonly="1"
+                                    groups="inventory_shopping_cart.group_price_authorizer"/>
                                     
                                     <!-- ✅ COLUMNAS VISIBLES SOLO PARA AUTORIZADORES -->
                                     <field name="medium_price" groups="inventory_shopping_cart.group_price_authorizer" readonly="1"/>
