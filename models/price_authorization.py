@@ -40,13 +40,7 @@ class PriceAuthorization(models.Model):
     sale_order_id = fields.Many2one('sale.order', string='Orden de Venta Generada', readonly=True)
     # En la clase PriceAuthorizationLine, agregar este campo:
 
-    product_cost = fields.Float(
-        string='Costo Destino',
-        related='product_id.product_tmpl_id.x_costo_mayor',
-        readonly=True,
-        digits='Product Price',
-    )
-    
+
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
@@ -387,6 +381,14 @@ class PriceAuthorizationLine(models.Model):
         ('minimum', 'Precio Mínimo'),
         ('below_medium', 'Entre Mínimo y Medio')
     ], string='Nivel de Precio', compute='_compute_price_level', store=True)
+
+    product_cost = fields.Float(
+        string='Costo Destino',
+        related='product_id.product_tmpl_id.x_costo_mayor',
+        readonly=True,
+        digits='Product Price',
+    )
+    
     
     @api.depends('requested_price', 'minimum_price', 'medium_price')
     def _compute_price_level(self):
