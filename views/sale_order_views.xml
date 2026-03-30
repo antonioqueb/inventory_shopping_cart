@@ -7,12 +7,14 @@
         <field name="inherit_id" ref="sale.view_order_form"/>
         <field name="arch" type="xml">
 
+            <!-- ===================== BOTÓN SOLICITAR AUTORIZACIÓN ===================== -->
+            <xpath expr="//header/button[@name='action_quotation_send']" position="after">
                 <button name="action_request_authorization"
-                    string="Solicitar Autorización de Precio"
-                    type="object"
-                    class="btn-warning"
-                    invisible="state not in ['draft', 'sent']"
-                    groups="inventory_shopping_cart.group_seller"/>
+                        string="Solicitar Autorización de Precio"
+                        type="object"
+                        class="btn-warning"
+                        invisible="state not in ['draft', 'sent']"
+                        groups="inventory_shopping_cart.group_seller"/>
             </xpath>
 
             <!-- ===================== OCULTAR BOTONES CUANDO HAY PRECIOS BAJOS ===================== -->
@@ -28,72 +30,35 @@
             <xpath expr="//sheet" position="before">
                 <field name="x_has_low_prices" invisible="1"/>
 
-                <!-- Banner para vendedor: bloquea acción -->
+                <!-- Banner para vendedor -->
                 <div
-                    invisible="not x_has_low_prices or state not in ['draft', 'sent']"
                     groups="inventory_shopping_cart.group_seller"
-                    style="
-                        margin: 0 0 16px 0;
-                        border: 1px solid #f1aeb5;
-                        border-left: 6px solid #c62828;
-                        border-radius: 14px;
-                        background: linear-gradient(135deg, #fff7f7 0%, #fdeaea 100%);
-                        box-shadow: 0 8px 24px rgba(198, 40, 40, 0.08);
-                        overflow: hidden;
-                    "
+                    invisible="not x_has_low_prices or state not in ['draft', 'sent']"
+                    style="margin: 0 0 16px 0; border: 1px solid #f1b5b9; border-left: 6px solid #c62828; border-radius: 14px; background: linear-gradient(135deg, #fff8f8 0%, #fdecec 100%); box-shadow: 0 8px 24px rgba(198, 40, 40, 0.08); overflow: hidden;"
                 >
                     <div style="padding: 16px 18px;">
                         <div style="display: flex; align-items: center; gap: 14px;">
                             <div
-                                style="
-                                    width: 52px;
-                                    height: 52px;
-                                    min-width: 52px;
-                                    border-radius: 50%;
-                                    background: #c62828;
-                                    color: #ffffff;
-                                    display: flex;
-                                    align-items: center;
-                                    justify-content: center;
-                                    box-shadow: 0 6px 16px rgba(198, 40, 40, 0.18);
-                                    font-size: 20px;
-                                "
+                                style="width: 52px; height: 52px; min-width: 52px; border-radius: 50%; background: #c62828; color: #ffffff; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 16px rgba(198, 40, 40, 0.18); font-size: 20px;"
                             >
-                                <i class="fa fa-shield"></i>
+                                <i class="fa fa-shield"/>
                             </div>
 
                             <div style="flex: 1;">
                                 <div
-                                    style="
-                                        font-size: 11px;
-                                        font-weight: 700;
-                                        letter-spacing: 0.08em;
-                                        text-transform: uppercase;
-                                        color: #b02a37;
-                                        margin-bottom: 4px;
-                                    "
+                                    style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #b02a37; margin-bottom: 4px;"
                                 >
                                     Control de precios
                                 </div>
 
                                 <div
-                                    style="
-                                        font-size: 20px;
-                                        font-weight: 700;
-                                        color: #7a1c24;
-                                        line-height: 1.2;
-                                        margin-bottom: 6px;
-                                    "
+                                    style="font-size: 20px; font-weight: 700; color: #7a1c24; line-height: 1.2; margin-bottom: 6px;"
                                 >
                                     Orden bloqueada por precios no autorizados
                                 </div>
 
                                 <div
-                                    style="
-                                        font-size: 13px;
-                                        color: #6c2b31;
-                                        line-height: 1.55;
-                                    "
+                                    style="font-size: 13px; color: #6c2b31; line-height: 1.55;"
                                 >
                                     Esta cotización contiene productos con precio por debajo del nivel medio permitido.
                                     No es posible <strong>enviar</strong>, <strong>imprimir</strong> ni <strong>confirmar</strong> la orden
@@ -103,69 +68,35 @@
                         </div>
 
                         <div
-                            style="
-                                margin-top: 14px;
-                                padding-top: 12px;
-                                border-top: 1px solid rgba(122, 28, 36, 0.10);
-                                font-size: 13px;
-                                color: #7a1c24;
-                            "
+                            style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(122, 28, 36, 0.10); font-size: 13px; color: #7a1c24;"
                         >
                             <strong>Acción requerida:</strong>
-                            use el botón <strong>“Solicitar Autorización de Precio”</strong> para continuar.
+                            use el botón <strong>Solicitar Autorización de Precio</strong> para continuar.
                         </div>
                     </div>
                 </div>
 
-                <!-- Banner para autorizador: solo informativo -->
+                <!-- Banner para autorizador -->
                 <div
-                    invisible="not x_has_low_prices or state not in ['draft', 'sent']"
                     groups="inventory_shopping_cart.group_price_authorizer"
-                    style="
-                        margin: 0 0 16px 0;
-                        border: 1px solid #ffe69c;
-                        border-left: 6px solid #d39e00;
-                        border-radius: 14px;
-                        background: linear-gradient(135deg, #fffdf5 0%, #fff7db 100%);
-                        box-shadow: 0 8px 24px rgba(211, 158, 0, 0.08);
-                        overflow: hidden;
-                    "
+                    invisible="not x_has_low_prices or state not in ['draft', 'sent']"
+                    style="margin: 0 0 16px 0; border: 1px solid #ffe08a; border-left: 6px solid #d39e00; border-radius: 14px; background: linear-gradient(135deg, #fffdf6 0%, #fff7db 100%); box-shadow: 0 8px 24px rgba(211, 158, 0, 0.08); overflow: hidden;"
                 >
                     <div style="padding: 14px 18px; display: flex; align-items: center; gap: 12px;">
                         <div
-                            style="
-                                width: 42px;
-                                height: 42px;
-                                min-width: 42px;
-                                border-radius: 50%;
-                                background: #d39e00;
-                                color: #ffffff;
-                                display: flex;
-                                align-items: center;
-                                justify-content: center;
-                                font-size: 16px;
-                            "
+                            style="width: 42px; height: 42px; min-width: 42px; border-radius: 50%; background: #d39e00; color: #ffffff; display: flex; align-items: center; justify-content: center; font-size: 16px;"
                         >
-                            <i class="fa fa-key"></i>
+                            <i class="fa fa-key"/>
                         </div>
 
                         <div style="flex: 1;">
                             <div
-                                style="
-                                    font-size: 15px;
-                                    font-weight: 700;
-                                    color: #7a5a00;
-                                    margin-bottom: 3px;
-                                "
+                                style="font-size: 15px; font-weight: 700; color: #7a5a00; margin-bottom: 3px;"
                             >
                                 Precios por debajo del nivel medio detectados
                             </div>
                             <div
-                                style="
-                                    font-size: 13px;
-                                    color: #6f5a1a;
-                                    line-height: 1.5;
-                                "
+                                style="font-size: 13px; color: #6f5a1a; line-height: 1.5;"
                             >
                                 Esta cotización requiere revisión de precios. Como usuario autorizador, puede continuar con la operación sin restricción.
                             </div>
@@ -177,51 +108,51 @@
             <!-- ===================== COLUMNA DERECHA (partner_details) ===================== -->
             <xpath expr="//group[@name='partner_details']" position="inside">
                 <field name="partner_invoice_id"
-                    string="Dirección de Facturación"
-                    required="0"
-                    context="{'default_parent_id': partner_id, 'default_type': 'invoice', 'show_address': 1}"
-                    options='{"always_reload": True, "no_create": False}'
-                    domain="['|', '&amp;', ('parent_id', '=', partner_id), ('type', '=', 'invoice'), ('id', '=', partner_id)]"/>
+                       string="Dirección de Facturación"
+                       required="0"
+                       context="{'default_parent_id': partner_id, 'default_type': 'invoice', 'show_address': 1}"
+                       options='{"always_reload": True, "no_create": False}'
+                       domain="['|', '&amp;', ('parent_id', '=', partner_id), ('type', '=', 'invoice'), ('id', '=', partner_id)]"/>
 
                 <field name="partner_shipping_id"
-                    string="Dirección de Entrega"
-                    required="0"
-                    context="{'default_parent_id': partner_id, 'default_type': 'delivery', 'show_address': 1}"
-                    options='{"always_reload": True, "no_create": False}'
-                    domain="['|', '&amp;', ('parent_id', '=', partner_id), ('type', '=', 'delivery'), ('id', '=', partner_id)]"/>
+                       string="Dirección de Entrega"
+                       required="0"
+                       context="{'default_parent_id': partner_id, 'default_type': 'delivery', 'show_address': 1}"
+                       options='{"always_reload": True, "no_create": False}'
+                       domain="['|', '&amp;', ('parent_id', '=', partner_id), ('type', '=', 'delivery'), ('id', '=', partner_id)]"/>
 
                 <field name="x_project_id" string="Job Name / Proyecto"/>
 
                 <field name="x_architect_id"
-                    string="Arquitecto"
-                    domain="[('x_es_arquitecto', '=', True)]"/>
+                       string="Arquitecto"
+                       domain="[('x_es_arquitecto', '=', True)]"/>
             </xpath>
 
             <!-- ===================== COLUMNA IZQUIERDA (order_details) ===================== -->
             <xpath expr="//group[@name='order_details']/field[@name='payment_term_id']" position="after">
                 <field name="x_price_authorization_id"
-                    string="Autorización de Precio"
-                    readonly="1"
-                    invisible="not x_price_authorization_id"/>
+                       string="Autorización de Precio"
+                       readonly="1"
+                       invisible="not x_price_authorization_id"/>
 
                 <field name="x_is_usd" invisible="1"/>
 
                 <field name="x_exchange_rate_source"
-                    string="Fuente TC"
-                    invisible="not x_is_usd"/>
+                       string="Fuente TC"
+                       invisible="not x_is_usd"/>
 
                 <field name="x_exchange_rate"
-                    string="Tipo de Cambio MXN/USD"
-                    readonly="1"
-                    invisible="not x_is_usd"/>
+                       string="Tipo de Cambio MXN/USD"
+                       readonly="1"
+                       invisible="not x_is_usd"/>
             </xpath>
 
             <!-- ===================== ORDER LINES: PRICE SELECTOR ===================== -->
             <xpath expr="//field[@name='order_line']/list//field[@name='price_unit']" position="before">
                 <field name="x_price_selector"
-                    optional="show"
-                    style="width: 140px;"
-                    required="1"/>
+                       optional="show"
+                       style="width: 140px;"
+                       required="1"/>
             </xpath>
 
             <xpath expr="//field[@name='order_line']/list//field[@name='price_unit']" position="attributes">
