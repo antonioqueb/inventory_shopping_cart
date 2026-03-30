@@ -73,6 +73,14 @@ class SaleOrderLine(models.Model):
 class SaleOrder(models.Model):
     _inherit = 'sale.order'
 
+    # ── OVERRIDE: Quitar required de direcciones ──
+    partner_invoice_id = fields.Many2one(
+        'res.partner', required=False,
+    )
+    partner_shipping_id = fields.Many2one(
+        'res.partner', required=False,
+    )
+
     x_project_id = fields.Many2one('project.project', string='Proyecto')
     x_architect_id = fields.Many2one('res.partner', string='Arquitecto')
     x_price_authorization_id = fields.Many2one('price.authorization', string="Autorización Vinculada", copy=False, readonly=True)
