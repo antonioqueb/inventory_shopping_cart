@@ -119,13 +119,33 @@ patch(InventoryVisualController.prototype, {
     },
     
     /**
+     * Verifica si un lote está bloqueado para selección.
+     * Bloqueado si tiene hold activo o está en una orden de venta confirmada.
+     */
+    _isLotBlocked(detail) {
+        return !!(detail.tiene_hold || detail.en_orden_venta);
+    },
+
+    /**
      * Lógica al hacer click en el Checkbox.
+     * - Bloquea lotes con hold o en orden de venta.
      * - Si está marcado: Lo quita.
      * - Si está desmarcado: Lo agrega.
      *   -> Si hay valor en input manual: Usa ese valor.
      *   -> Si input está vacío: Usa TODO el lote.
      */
     async toggleCartSelection(detail) {
+        // === BLOQUEO: No permitir seleccionar lotes con hold o en orden de venta ===
+        if (detail.tiene_hold) {
+            this.notification.add("Este lote tiene un apartado activo y no puede seleccionarse", { type: "warning" });
+            return;
+        }
+        if (detail.en_orden_venta) {
+            this.notification.add("Este lote está asignado a una orden de venta confirmada", { type: "warning" });
+            return;
+        }
+        // === FIN BLOQUEO ===
+
         const index = this.cart.items.findIndex(item => item.id === detail.id);
         
         if (index >= 0) {
@@ -226,7 +246,8 @@ patch(InventoryVisualController.prototype, {
         if (!this.state.activeProductId) return;
         const details = this.getProductDetails(this.state.activeProductId);
         for (const detail of details) {
-            if (!this.isInCart(detail.id)) {
+            // Solo seleccionar lotes que NO están bloqueados ni ya en carrito
+            if (!this.isInCart(detail.id) && !this._isLotBlocked(detail)) {
                 await this.toggleCartSelection(detail);
             }
         }
@@ -260,7 +281,10 @@ patch(InventoryVisualController.prototype, {
         if (!this.state.activeProductId) return false;
         const details = this.getProductDetails(this.state.activeProductId);
         if (details.length === 0) return false;
-        return details.every(detail => this.isInCart(detail.id));
+        // Solo considerar lotes seleccionables (no bloqueados)
+        const selectableDetails = details.filter(d => !this._isLotBlocked(d));
+        if (selectableDetails.length === 0) return false;
+        return selectableDetails.every(detail => this.isInCart(detail.id));
     },
     
     getCurrentProductId(detail) {

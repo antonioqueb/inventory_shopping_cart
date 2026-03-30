@@ -24,7 +24,7 @@
                         class="cart-checkbox-all" 
                         t-att-checked="props.areAllCurrentProductSelected ? (props.areAllCurrentProductSelected() ? 'checked' : undefined) : undefined"
                         t-on-click.stop="() => props.areAllCurrentProductSelected() ? props.deselectAllCurrentProduct() : props.selectAllCurrentProduct()"
-                        title="Seleccionar/Deseleccionar todos los lotes de este producto"
+                        title="Seleccionar/Deseleccionar todos los lotes disponibles de este producto"
                     />
                     <small style="font-size: 10px; color: #666;">Todo</small>
                 </div>
@@ -36,16 +36,18 @@
             <td class="col-checkbox text-center">
                 <div class="d-flex align-items-center justify-content-center gap-2" t-on-click.stop="">
                     
-                    <!-- Checkbox SIEMPRE visible -->
+                    <!-- Checkbox: deshabilitado si tiene hold o está en orden de venta -->
                     <input 
                         type="checkbox"
                         class="form-check-input cart-checkbox"
                         t-att-checked="props.isInCart ? (props.isInCart(detail.id) ? 'checked' : undefined) : undefined"
+                        t-att-disabled="detail.tiene_hold or detail.en_orden_venta"
                         t-on-click.stop="() => props.toggleCartSelection ? props.toggleCartSelection(detail) : null"
+                        t-att-title="detail.tiene_hold ? 'Lote con apartado activo' : (detail.en_orden_venta ? 'Lote en orden de venta confirmada' : '')"
                     />
 
-                    <!-- Input adicional SOLO si es Formato -->
-                    <t t-if="detail.tipo and (detail.tipo === 'formato' or detail.tipo === 'Formato')">
+                    <!-- Input adicional SOLO si es Formato Y no está bloqueado -->
+                    <t t-if="detail.tipo and (detail.tipo === 'formato' or detail.tipo === 'Formato') and !detail.tiene_hold and !detail.en_orden_venta">
                         <div class="d-flex align-items-center gap-1">
                             <input 
                                 type="number"
