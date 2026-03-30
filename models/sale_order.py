@@ -105,6 +105,19 @@ class SaleOrder(models.Model):
 
     x_is_usd = fields.Boolean(string='Es USD', compute='_compute_is_usd', store=True)
 
+    @api.onchange('partner_id')
+    def _onchange_partner_id_keep_addresses_empty(self):
+        """
+        Mantiene vacíos los campos de dirección de factura y entrega
+        al seleccionar el cliente, evitando que Odoo rellene ambos con
+        el mismo partner cuando no existen direcciones hijas específicas.
+        """
+        res = super()._onchange_partner_id()
+        for order in self:
+            order.partner_invoice_id = False
+            order.partner_shipping_id = False
+        return res
+
     @api.depends('pricelist_id', 'pricelist_id.currency_id')
     def _compute_is_usd(self):
         for order in self:
@@ -195,9 +208,11 @@ class SaleOrder(models.Model):
                 new_ov_name = self.env['ir.sequence'].next_by_code('sale.order.confirmed') or "OV/NEW"
                 current_cot_name = order.name
                 order.copy(default={
-                    'name': current_cot_name, 'state': 'draft',
+                    'name': current_cot_name,
+                    'state': 'draft',
                     'origin': f"Convertido a {new_ov_name}",
-                    'x_is_quote_backup': True, 'date_order': fields.Datetime.now()
+                    'x_is_quote_backup': True,
+                    'date_order': fields.Datetime.now()
                 })
                 order.name = new_ov_name
                 order.origin = current_cot_name
@@ -219,7 +234,12 @@ class SaleOrder(models.Model):
                             breakdown_int = {int(k): float(v) for k, v in line.x_lot_breakdown_json.items()}
                         except Exception as e:
                             _logger.warning(f"Error parseando breakdown: {e}")
-                    order._assign_specific_lots(pickings, line.product_id, line.x_selected_lots, breakdown=breakdown_int)
+                    order._assign_specific_lots(
+                        pickings,
+                        line.product_id,
+                        line.x_selected_lots,
+                        breakdown=breakdown_int
+                    )
         return res
 
     @api.model_create_multi
@@ -227,6 +247,13 @@ class SaleOrder(models.Model):
         for vals in vals_list:
             if vals.get('name', 'New') == 'New':
                 vals['name'] = self.env['ir.sequence'].next_by_code('sale.quotation') or 'New'
+
+            # Forzar que nazcan vacíos si no fueron enviados explícitamente
+            if 'partner_invoice_id' not in vals:
+                vals['partner_invoice_id'] = False
+            if 'partner_shipping_id' not in vals:
+                vals['partner_shipping_id'] = False
+
         return super().create(vals_list)
 
     @api.onchange('pricelist_id')
@@ -263,19 +290,30 @@ class SaleOrder(models.Model):
                 pid_str = str(line.product_id.id)
                 product_prices[pid_str] = line.price_unit
                 if pid_str not in product_groups:
-                    product_groups[pid_str] = {'name': line.product_id.display_name, 'lots': [], 'total_quantity': 0}
+                    product_groups[pid_str] = {
+                        'name': line.product_id.display_name,
+                        'lots': [],
+                        'total_quantity': 0
+                    }
                 product_groups[pid_str]['total_quantity'] += line.product_uom_qty
 
         if not has_low:
             raise UserError("No se detectaron precios por debajo del nivel medio.")
 
         auth = self.env['price.authorization'].create({
-            'seller_id': self.env.user.id, 'operation_type': 'sale',
-            'partner_id': self.partner_id.id, 'project_id': self.x_project_id.id,
+            'seller_id': self.env.user.id,
+            'operation_type': 'sale',
+            'partner_id': self.partner_id.id,
+            'project_id': self.x_project_id.id,
             'currency_code': currency_code,
             'notes': f"Solicitud desde Orden Manual {self.name}. {self.note or ''}",
             'sale_order_id': self.id,
-            'temp_data': {'source': 'manual_order', 'sale_order_id': self.id, 'product_groups': product_groups, 'architect_id': self.x_architect_id.id}
+            'temp_data': {
+                'source': 'manual_order',
+                'sale_order_id': self.id,
+                'product_groups': product_groups,
+                'architect_id': self.x_architect_id.id
+            }
         })
         self.x_price_authorization_id = auth.id
 
@@ -284,13 +322,23 @@ class SaleOrder(models.Model):
             medium = product.product_tmpl_id.x_price_mxn_2 if currency_code == 'MXN' else product.product_tmpl_id.x_price_usd_2
             minimum = product.product_tmpl_id.x_price_mxn_3 if currency_code == 'MXN' else product.product_tmpl_id.x_price_usd_3
             self.env['price.authorization.line'].create({
-                'authorization_id': auth.id, 'product_id': int(pid_str),
-                'quantity': group['total_quantity'], 'lot_count': 0,
-                'requested_price': product_prices[pid_str], 'authorized_price': product_prices[pid_str],
-                'medium_price': medium, 'minimum_price': minimum,
+                'authorization_id': auth.id,
+                'product_id': int(pid_str),
+                'quantity': group['total_quantity'],
+                'lot_count': 0,
+                'requested_price': product_prices[pid_str],
+                'authorized_price': product_prices[pid_str],
+                'medium_price': medium,
+                'minimum_price': minimum,
             })
 
-        return {'type': 'ir.actions.act_window', 'res_model': 'price.authorization', 'res_id': auth.id, 'view_mode': 'form', 'target': 'current'}
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'price.authorization',
+            'res_id': auth.id,
+            'view_mode': 'form',
+            'target': 'current'
+        }
 
     def action_add_from_cart(self):
         self.ensure_one()
@@ -306,7 +354,12 @@ class SaleOrder(models.Model):
                 continue
             prod_id = item.product_id.id
             if prod_id not in grouped_items:
-                grouped_items[prod_id] = {'product_obj': item.product_id, 'total_qty': 0.0, 'lots': [], 'breakdown': {}}
+                grouped_items[prod_id] = {
+                    'product_obj': item.product_id,
+                    'total_qty': 0.0,
+                    'lots': [],
+                    'breakdown': {}
+                }
             grouped_items[prod_id]['total_qty'] += item.quantity
             grouped_items[prod_id]['lots'].append(item.quant_id.id)
             grouped_items[prod_id]['breakdown'][str(item.quant_id.id)] = item.quantity
@@ -325,21 +378,33 @@ class SaleOrder(models.Model):
             product = data['product_obj']
             price_unit = product.product_tmpl_id.x_price_mxn_1 if currency_code == 'MXN' else product.product_tmpl_id.x_price_usd_1
             lines_to_create.append({
-                'order_id': self.id, 'name': product.get_product_multiline_description_sale() or product.name,
-                'product_id': prod_id, 'product_uom_id': product.uom_id.id,
-                'product_uom_qty': data['total_qty'], 'price_unit': price_unit,
-                'x_price_selector': 'high', 'tax_ids': [(6, 0, product.taxes_id.ids)],
-                'x_selected_lots': [(6, 0, data['lots'])], 'x_lot_breakdown_json': data['breakdown'],
+                'order_id': self.id,
+                'name': product.get_product_multiline_description_sale() or product.name,
+                'product_id': prod_id,
+                'product_uom_id': product.uom_id.id,
+                'product_uom_qty': data['total_qty'],
+                'price_unit': price_unit,
+                'x_price_selector': 'high',
+                'tax_ids': [(6, 0, product.taxes_id.ids)],
+                'x_selected_lots': [(6, 0, data['lots'])],
+                'x_lot_breakdown_json': data['breakdown'],
                 'company_id': company_id,
             })
 
         if lines_to_create:
             self.env['sale.order.line'].create(lines_to_create)
             self.env['shopping.cart'].clear_cart()
-            return {'type': 'ir.actions.client', 'tag': 'display_notification', 'params': {
-                'title': 'Items Agregados', 'message': 'Los productos del carrito se han agregado correctamente.',
-                'type': 'success', 'sticky': False, 'next': {'type': 'ir.actions.act_window_close'}
-            }}
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Items Agregados',
+                    'message': 'Los productos del carrito se han agregado correctamente.',
+                    'type': 'success',
+                    'sticky': False,
+                    'next': {'type': 'ir.actions.act_window_close'}
+                }
+            }
         raise UserError("No se pudieron agregar los items.")
 
     @api.model
@@ -360,40 +425,64 @@ class SaleOrder(models.Model):
             if not self.env.context.get('skip_auth_check') and not is_authorizer:
                 auth_result = self.env['product.template'].check_price_authorization_needed(prices_map, currency_code)
                 if auth_result.get('needs_authorization'):
-                    return {'needs_authorization': True, 'message': 'Se detectaron precios por debajo del nivel medio. Se requiere autorización.'}
+                    return {
+                        'needs_authorization': True,
+                        'message': 'Se detectaron precios por debajo del nivel medio. Se requiere autorización.'
+                    }
 
             company_id = self.env.company.id
             sale_order = self.with_context(skip_auth_check=True).create({
-                'partner_id': partner_id, 'pricelist_id': pricelist_id, 'note': notes,
-                'x_project_id': project_id, 'x_architect_id': architect_id,
-                'company_id': company_id, 'user_id': self.env.user.id,
+                'partner_id': partner_id,
+                'pricelist_id': pricelist_id,
+                'note': notes,
+                'x_project_id': project_id,
+                'x_architect_id': architect_id,
+                'company_id': company_id,
+                'user_id': self.env.user.id,
             })
 
             for pd in (products or []):
                 rec = self.env['product.product'].browse(pd['product_id'])
                 tax_ids = [(6, 0, rec.taxes_id.ids)] if apply_tax else [(5, 0, 0)]
-                breakdown_json = {str(l['id']): float(l['quantity']) for l in pd.get('lots_breakdown', [])} if pd.get('lots_breakdown') else {}
+                breakdown_json = {
+                    str(l['id']): float(l['quantity']) for l in pd.get('lots_breakdown', [])
+                } if pd.get('lots_breakdown') else {}
                 self.env['sale.order.line'].create({
-                    'order_id': sale_order.id, 'name': rec.get_product_multiline_description_sale() or rec.name,
-                    'product_id': rec.id, 'product_uom_id': rec.uom_id.id,
-                    'product_uom_qty': pd['quantity'], 'price_unit': pd['price_unit'],
-                    'tax_ids': tax_ids, 'x_selected_lots': [(6, 0, pd.get('selected_lots', []))],
-                    'x_lot_breakdown_json': breakdown_json, 'company_id': company_id, 'x_price_selector': 'custom',
+                    'order_id': sale_order.id,
+                    'name': rec.get_product_multiline_description_sale() or rec.name,
+                    'product_id': rec.id,
+                    'product_uom_id': rec.uom_id.id,
+                    'product_uom_qty': pd['quantity'],
+                    'price_unit': pd['price_unit'],
+                    'tax_ids': tax_ids,
+                    'x_selected_lots': [(6, 0, pd.get('selected_lots', []))],
+                    'x_lot_breakdown_json': breakdown_json,
+                    'company_id': company_id,
+                    'x_price_selector': 'custom',
                 })
 
             for sd in (services or []):
                 rec = self.env['product.product'].browse(sd['product_id'])
                 tax_ids = [(6, 0, rec.taxes_id.ids)] if apply_tax else [(5, 0, 0)]
                 self.env['sale.order.line'].create({
-                    'order_id': sale_order.id, 'name': rec.get_product_multiline_description_sale() or rec.name,
-                    'product_id': rec.id, 'product_uom_id': rec.uom_id.id,
-                    'product_uom_qty': sd['quantity'], 'price_unit': sd['price_unit'],
-                    'tax_ids': tax_ids, 'company_id': company_id, 'x_price_selector': 'custom',
+                    'order_id': sale_order.id,
+                    'name': rec.get_product_multiline_description_sale() or rec.name,
+                    'product_id': rec.id,
+                    'product_uom_id': rec.uom_id.id,
+                    'product_uom_qty': sd['quantity'],
+                    'price_unit': sd['price_unit'],
+                    'tax_ids': tax_ids,
+                    'company_id': company_id,
+                    'x_price_selector': 'custom',
                 })
 
             sale_order.invalidate_recordset()
             sale_order.with_context(skip_auth_check=True).action_confirm()
-            return {'success': True, 'order_id': sale_order.id, 'order_name': sale_order.name}
+            return {
+                'success': True,
+                'order_id': sale_order.id,
+                'order_name': sale_order.name
+            }
 
         except Exception as e:
             _logger.error(f"Error en create_from_shopping_cart: {str(e)}", exc_info=True)
@@ -428,7 +517,10 @@ class SaleOrder(models.Model):
                     tipo = (str(quant.lot_id.x_tipo) if quant.lot_id.x_tipo else 'placa').lower()
                     if 'formato' in tipo:
                         qty = breakdown.get(quant.id, 0) if breakdown and quant.id in breakdown else (
-                            self.env['shopping.cart'].search([('user_id', '=', cart_owner_id), ('quant_id', '=', quant.id)], limit=1).quantity or quant.quantity
+                            self.env['shopping.cart'].search([
+                                ('user_id', '=', cart_owner_id),
+                                ('quant_id', '=', quant.id)
+                            ], limit=1).quantity or quant.quantity
                         )
                     else:
                         qty = quant.quantity
@@ -437,9 +529,13 @@ class SaleOrder(models.Model):
                         continue
                     try:
                         self.env['stock.move.line'].create({
-                            'move_id': move.id, 'picking_id': picking.id, 'product_id': product.id,
-                            'lot_id': quant.lot_id.id, 'quantity': reserve,
-                            'location_id': move.location_id.id, 'location_dest_id': move.location_dest_id.id,
+                            'move_id': move.id,
+                            'picking_id': picking.id,
+                            'product_id': product.id,
+                            'lot_id': quant.lot_id.id,
+                            'quantity': reserve,
+                            'location_id': move.location_id.id,
+                            'location_dest_id': move.location_dest_id.id,
                             'product_uom_id': product.uom_id.id,
                         })
                         remaining -= reserve
