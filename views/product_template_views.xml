@@ -53,28 +53,39 @@
                             <field name="x_costo_mayor" nolabel="1" class="oe_subtotal_footer_separator" widget="monetary"/>
                         </group>
                         
-                        <group string="Estrategia de Ventas (Configuración)">
-                            <label for="x_utilidad" string="Utilidad Base"/>
+                        <group string="Estrategia de Precios">
+                            <!-- Modo de precio -->
+                            <field name="x_pricing_mode" widget="radio"/>
+                            
+                            <!-- Precio fijo (solo visible en modo fijo) -->
+                            <field name="x_fixed_price" 
+                                   invisible="x_pricing_mode != 'fixed'"
+                                   widget="monetary"/>
+
+                            <separator string="Niveles de Utilidad"/>
+
+                            <label for="x_utilidad" string="Utilidad Alta (Nivel 1)"/>
                             <div class="o_row">
                                 <field name="x_utilidad"/>
-                                <span class="text-muted">% (Costo / (1 - Utilidad))</span>
+                                <span class="text-muted">%</span>
                             </div>
 
-                            <label for="x_discount_medium" string="Desc. Nivel Medio"/>
+                            <label for="x_utilidad_media" string="Utilidad Media (Nivel 2)"/>
                             <div class="o_row">
-                                <field name="x_discount_medium"/>
-                                <span class="text-muted">% (Bajada desde Precio Alto)</span>
+                                <field name="x_utilidad_media"/>
+                                <span class="text-muted">%</span>
                             </div>
 
-                            <label for="x_discount_minimum" string="Desc. Nivel Mínimo"/>
+                            <label for="x_utilidad_minima" string="Utilidad Mínima (Nivel 3)"/>
                             <div class="o_row">
-                                <field name="x_discount_minimum"/>
-                                <span class="text-muted">% (Bajada desde Precio Medio)</span>
+                                <field name="x_utilidad_minima"/>
+                                <span class="text-muted">%</span>
                             </div>
                             
                             <div class="alert alert-info mt-2" role="alert" colspan="2">
                                 <small>
-                                    <strong>Nota:</strong> Los precios se recalculan automáticamente al guardar cambios en estos porcentajes.
+                                    <strong>Modo Calculado:</strong> Precio = Costo / (1 - %Utilidad)<br/>
+                                    <strong>Modo Fijo:</strong> Nivel 1 = Precio Fijo. Niveles 2 y 3 = Precio Fijo × (1 - %Utilidad)
                                 </small>
                             </div>
                         </group>
@@ -87,15 +98,15 @@
                          ============================================================ -->
                     <group>
                         <group string="Escalera MXN">
-                            <field name="x_price_mxn_1" readonly="1" force_save="1" string="1. Precio 1"/>
-                            <field name="x_price_mxn_2" readonly="1" force_save="1" string="2. Precio 2"/>
-                            <field name="x_price_mxn_3" readonly="1" force_save="1" string="3. Precio 3" 
+                            <field name="x_price_mxn_1" readonly="1" force_save="1" string="1. Precio Alto"/>
+                            <field name="x_price_mxn_2" readonly="1" force_save="1" string="2. Precio Medio"/>
+                            <field name="x_price_mxn_3" readonly="1" force_save="1" string="3. Precio Mínimo" 
                                    groups="inventory_shopping_cart.group_price_authorizer"/>
                         </group>
                         <group string="Escalera USD">
-                            <field name="x_price_usd_1" readonly="1" force_save="1" string="1. Precio 1"/>
-                            <field name="x_price_usd_2" readonly="1" force_save="1" string="2. Precio 2"/>
-                            <field name="x_price_usd_3" readonly="1" force_save="1" string="3. Precio 3" 
+                            <field name="x_price_usd_1" readonly="1" force_save="1" string="1. Precio Alto"/>
+                            <field name="x_price_usd_2" readonly="1" force_save="1" string="2. Precio Medio"/>
+                            <field name="x_price_usd_3" readonly="1" force_save="1" string="3. Precio Mínimo" 
                                    groups="inventory_shopping_cart.group_price_authorizer"/>
                         </group>
                     </group>

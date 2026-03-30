@@ -65,20 +65,39 @@ class ProductTemplate(models.Model):
         help="Costo de aranceles calculado sobre el Costo Bruto Base."
     )
 
-    # === CAMPOS DE ESTRATEGIA DE PRECIOS (NUEVOS) ===
+    # === MODO DE PRECIO ===
+    x_pricing_mode = fields.Selection([
+        ('calculated', 'Calculado (Costo + Utilidad)'),
+        ('fixed', 'Precio Fijo'),
+    ], string='Modo de Precio', default='calculated',
+       help="Calculado: Precio = Costo / (1 - %Utilidad). "
+            "Fijo: Se parte de un precio fijo base y se aplican las utilidades como niveles de descuento.")
+
+    x_fixed_price = fields.Float(
+        string='Precio Fijo Base (MXN)',
+        digits='Product Price',
+        default=0.0,
+        help="Precio base fijo en MXN. "
+             "Nivel 1 = este precio. "
+             "Nivel 2 = Precio Fijo * (1 - %Utilidad Media / 100). "
+             "Nivel 3 = Precio Fijo * (1 - %Utilidad Mínima / 100)."
+    )
+
+    # === ESTRATEGIA DE PRECIOS: UTILIDADES DIRECTAS ===
     
-    x_utilidad = fields.Float(string='% Utilidad Base', default=40.0, help="Margen sobre el costo para el Precio Alto.")
+    x_utilidad = fields.Float(string='% Utilidad Alta', default=40.0,
+                              help="Margen de utilidad para el Precio Alto (Nivel 1). Precio = Costo / (1 - %).")
     
-    x_discount_medium = fields.Float(
-        string='% Descuento Medio', 
-        default=5.0, 
-        help="Porcentaje que baja el precio Medio respecto al Alto."
+    x_utilidad_media = fields.Float(
+        string='% Utilidad Media', 
+        default=35.0, 
+        help="Margen de utilidad para el Precio Medio (Nivel 2). Precio = Costo / (1 - %)."
     )
     
-    x_discount_minimum = fields.Float(
-        string='% Descuento Mínimo', 
-        default=5.0, 
-        help="Porcentaje que baja el precio Mínimo respecto al Medio."
+    x_utilidad_minima = fields.Float(
+        string='% Utilidad Mínima', 
+        default=30.0, 
+        help="Margen de utilidad para el Precio Mínimo (Nivel 3). Precio = Costo / (1 - %)."
     )
 
     # === CAMPOS DE PRECIOS CALCULADOS ===
@@ -210,8 +229,19 @@ class ProductTemplate(models.Model):
 
     def _calculate_escalera_precios(self):
         """
-        Calcula la escalera de precios usando los porcentajes configurables.
-        Todos los precios se redondean hacia arriba (math.ceil) para obtener números enteros cerrados.
+        Calcula la escalera de precios.
+        
+        MODO CALCULADO (calculated):
+            Nivel 1 = Costo / (1 - %Utilidad Alta)
+            Nivel 2 = Costo / (1 - %Utilidad Media)
+            Nivel 3 = Costo / (1 - %Utilidad Mínima)
+        
+        MODO FIJO (fixed):
+            Nivel 1 = Precio Fijo Base
+            Nivel 2 = Precio Fijo * (1 - %Utilidad Media / 100)
+            Nivel 3 = Precio Fijo * (1 - %Utilidad Mínima / 100)
+            
+        Todos los precios se redondean hacia arriba (math.ceil).
         """
         rate_param = self.env['ir.config_parameter'].sudo().get_param('banorte.last_rate', '0')
         try:
@@ -225,37 +255,48 @@ class ProductTemplate(models.Model):
             banorte_rate = usd_currency._convert(1.0, company_currency, self.env.company, fields.Date.today())
 
         for record in self:
-            if record.x_costo_mayor > 0:
-                # 1. Calcular Precio Alto (Base + Utilidad)
-                divisor = (1 - (record.x_utilidad / 100.0))
-                if divisor <= 0: divisor = 0.01
-                mxn_1 = record.x_costo_mayor / divisor
+            mxn_1 = 0
+            mxn_2 = 0
+            mxn_3 = 0
+
+            if record.x_pricing_mode == 'fixed' and record.x_fixed_price > 0:
+                # === MODO PRECIO FIJO ===
+                # Nivel 1 = Precio fijo tal cual
+                mxn_1 = math.ceil(record.x_fixed_price)
                 
-                # 2. Calcular factores de descuento
-                pct_medium = record.x_discount_medium if record.x_discount_medium >= 0 else 5.0
-                pct_minimum = record.x_discount_minimum if record.x_discount_minimum >= 0 else 5.0
+                # Nivel 2 y 3: se interpretan las utilidades como % de descuento desde el precio fijo
+                pct_media = record.x_utilidad_media if record.x_utilidad_media >= 0 else 0.0
+                pct_minima = record.x_utilidad_minima if record.x_utilidad_minima >= 0 else 0.0
                 
-                factor_medium = 1 - (pct_medium / 100.0)
-                factor_minimum = 1 - (pct_minimum / 100.0)
+                mxn_2 = math.ceil(record.x_fixed_price * (1 - pct_media / 100.0))
+                mxn_3 = math.ceil(record.x_fixed_price * (1 - pct_minima / 100.0))
+
+            elif record.x_costo_mayor > 0:
+                # === MODO CALCULADO ===
+                # Cada nivel se calcula independientemente desde el costo
+                def _price_from_utility(cost, utility_pct):
+                    divisor = (1 - (utility_pct / 100.0))
+                    if divisor <= 0:
+                        divisor = 0.01
+                    return math.ceil(cost / divisor)
                 
-                # 3. Calcular cascada y redondear hacia arriba
-                mxn_1 = math.ceil(mxn_1)
-                mxn_2 = math.ceil(mxn_1 * factor_medium)
-                mxn_3 = math.ceil(mxn_2 * factor_minimum)
-                
-                # 4. Convertir a USD y redondear hacia arriba
-                usd_1 = math.ceil(mxn_1 / banorte_rate) if banorte_rate > 0 else 0
-                usd_2 = math.ceil(mxn_2 / banorte_rate) if banorte_rate > 0 else 0
-                usd_3 = math.ceil(mxn_3 / banorte_rate) if banorte_rate > 0 else 0
-                
-                record.sudo().write({
-                    'x_price_mxn_1': mxn_1,
-                    'x_price_mxn_2': mxn_2,
-                    'x_price_mxn_3': mxn_3,
-                    'x_price_usd_1': usd_1,
-                    'x_price_usd_2': usd_2,
-                    'x_price_usd_3': usd_3,
-                })
+                mxn_1 = _price_from_utility(record.x_costo_mayor, record.x_utilidad)
+                mxn_2 = _price_from_utility(record.x_costo_mayor, record.x_utilidad_media)
+                mxn_3 = _price_from_utility(record.x_costo_mayor, record.x_utilidad_minima)
+
+            # Convertir a USD y redondear hacia arriba
+            usd_1 = math.ceil(mxn_1 / banorte_rate) if banorte_rate > 0 else 0
+            usd_2 = math.ceil(mxn_2 / banorte_rate) if banorte_rate > 0 else 0
+            usd_3 = math.ceil(mxn_3 / banorte_rate) if banorte_rate > 0 else 0
+            
+            record.sudo().write({
+                'x_price_mxn_1': mxn_1,
+                'x_price_mxn_2': mxn_2,
+                'x_price_mxn_3': mxn_3,
+                'x_price_usd_1': usd_1,
+                'x_price_usd_2': usd_2,
+                'x_price_usd_3': usd_3,
+            })
 
     def write(self, vals):
         res = super(ProductTemplate, self).write(vals)
@@ -265,7 +306,10 @@ class ProductTemplate(models.Model):
             'x_container_capacity', 'x_arancel_pct'
         ]
         
-        price_triggers = ['x_utilidad', 'x_discount_medium', 'x_discount_minimum']
+        price_triggers = [
+            'x_utilidad', 'x_utilidad_media', 'x_utilidad_minima',
+            'x_pricing_mode', 'x_fixed_price',
+        ]
         
         if any(f in vals for f in triggers):
             self._compute_costo_all_in()
@@ -334,9 +378,8 @@ class ProductTemplate(models.Model):
     def check_price_authorization_needed(self, product_prices, currency_code):
         """
         Verifica si se necesita autorización de precio.
-        CAMBIO: Si el usuario es autorizador (group_price_authorizer), NUNCA requiere autorización.
+        Si el usuario es autorizador (group_price_authorizer), NUNCA requiere autorización.
         """
-        # === AUTORIZADORES NO NECESITAN AUTORIZACIÓN ===
         is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
         if is_authorizer:
             return {'needs_authorization': False, 'products': [], 'is_authorizer': True}

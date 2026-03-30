@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- ==================== ACTIONS (antes del form que los referencia) ==================== -->
+    <!-- ==================== ACTIONS ==================== -->
     <record id="action_product_category_pricing" model="ir.actions.act_window">
         <field name="name">Utilidades por Categoría</field>
         <field name="res_model">product.category.pricing</field>
@@ -11,7 +11,7 @@
                 Configure los niveles de utilidad por categoría de producto
             </p>
             <p>
-                Defina el porcentaje de utilidad base, descuento medio y descuento mínimo 
+                Defina el porcentaje de utilidad alta, media y mínima
                 para cada categoría. Luego aplíquelos masivamente a todos los productos.
             </p>
         </field>
@@ -31,10 +31,15 @@
         <field name="arch" type="xml">
             <list editable="bottom">
                 <field name="categ_id"/>
-                <field name="x_utilidad" string="% Utilidad"/>
-                <field name="x_discount_medium" string="% Desc. Medio"/>
-                <field name="x_discount_minimum" string="% Desc. Mínimo"/>
-                <field name="product_count" string="# Productos"/>
+                <field name="pricing_mode" string="Modo"/>
+                <field name="x_fixed_price" string="Precio Fijo"
+                       invisible="pricing_mode != 'fixed'"
+                       optional="show"/>
+                <field name="x_utilidad" string="% Ut. Alta"/>
+                <field name="x_utilidad_media" string="% Ut. Media"/>
+                <field name="x_utilidad_minima" string="% Ut. Mínima"/>
+                <field name="x_arancel_pct" string="% Arancel"/>
+                <field name="product_count" string="# Prod."/>
                 <button name="action_apply_to_products" type="object"
                         string="Aplicar" icon="fa-check" class="btn-link text-success"
                         help="Aplicar estos porcentajes a todos los productos de esta categoría"/>
@@ -64,24 +69,43 @@
                         <group string="Categoría">
                             <field name="categ_id"/>
                         </group>
+                        <group string="Modo de Precio">
+                            <field name="pricing_mode" widget="radio"/>
+                            <field name="x_fixed_price" 
+                                   invisible="pricing_mode != 'fixed'"
+                                   string="Precio Fijo Base (MXN)"/>
+                        </group>
+                    </group>
+                    <group>
                         <group string="Niveles de Utilidad">
                             <label for="x_utilidad"/>
                             <div class="o_row">
                                 <field name="x_utilidad"/>
-                                <span class="text-muted">%</span>
+                                <span class="text-muted">% Alta (Nivel 1)</span>
                             </div>
-                            <label for="x_discount_medium"/>
+                            <label for="x_utilidad_media"/>
                             <div class="o_row">
-                                <field name="x_discount_medium"/>
-                                <span class="text-muted">%</span>
+                                <field name="x_utilidad_media"/>
+                                <span class="text-muted">% Media (Nivel 2)</span>
                             </div>
-                            <label for="x_discount_minimum"/>
+                            <label for="x_utilidad_minima"/>
                             <div class="o_row">
-                                <field name="x_discount_minimum"/>
+                                <field name="x_utilidad_minima"/>
+                                <span class="text-muted">% Mínima (Nivel 3)</span>
+                            </div>
+                        </group>
+                        <group string="Arancel">
+                            <label for="x_arancel_pct"/>
+                            <div class="o_row">
+                                <field name="x_arancel_pct"/>
                                 <span class="text-muted">%</span>
                             </div>
                         </group>
                     </group>
+                    <div class="alert alert-info" role="alert">
+                        <strong>Modo Calculado:</strong> Precio Nivel N = Costo ALL-IN / (1 - %Utilidad N)<br/>
+                        <strong>Modo Fijo:</strong> Nivel 1 = Precio Fijo. Niveles 2 y 3 = Precio Fijo × (1 - %Utilidad)
+                    </div>
                 </sheet>
             </form>
         </field>
