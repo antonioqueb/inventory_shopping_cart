@@ -16,11 +16,12 @@
                     invisible="state not in ['draft', 'sent']"
                     groups="base.group_user"
                     help="Agrega los productos que tengas actualmente en tu carrito visual a esta orden."/>
+
                 <button name="action_request_authorization"
                     string="Solicitar Autorización de Precio"
                     type="object"
                     class="btn-warning"
-                    invisible="state not in ['draft', 'sent'] or x_price_authorization_id"
+                    invisible="state not in ['draft', 'sent']"
                     groups="inventory_shopping_cart.group_seller"/>
             </xpath>
 
@@ -68,15 +69,18 @@
                     context="{'default_parent_id': partner_id, 'default_type': 'invoice', 'show_address': 1}"
                     options='{"always_reload": True, "no_create": False}'
                     domain="['|', '&amp;', ('parent_id', '=', partner_id), ('type', '=', 'invoice'), ('id', '=', partner_id)]"/>
+
                 <field name="partner_shipping_id"
                     string="Dirección de Entrega"
                     required="0"
                     context="{'default_parent_id': partner_id, 'default_type': 'delivery', 'show_address': 1}"
                     options='{"always_reload": True, "no_create": False}'
                     domain="['|', '&amp;', ('parent_id', '=', partner_id), ('type', '=', 'delivery'), ('id', '=', partner_id)]"/>
+
                 <field name="x_project_id" string="Job Name / Proyecto"/>
+
                 <field name="x_architect_id"
-                     string="Arquitecto"
+                    string="Arquitecto"
                     domain="[('x_es_arquitecto', '=', True)]"/>
             </xpath>
 
@@ -88,11 +92,13 @@
                     invisible="not x_price_authorization_id"/>
 
                 <field name="x_is_usd" invisible="1"/>
+
                 <field name="x_exchange_rate_source"
-                     string="Fuente TC"
+                    string="Fuente TC"
                     invisible="not x_is_usd"/>
+
                 <field name="x_exchange_rate"
-                     string="Tipo de Cambio MXN/USD"
+                    string="Tipo de Cambio MXN/USD"
                     readonly="1"
                     invisible="not x_is_usd"/>
             </xpath>
