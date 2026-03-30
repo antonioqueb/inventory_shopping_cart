@@ -117,16 +117,24 @@ class StockQuant(models.Model):
 
     def _get_partner_delivery_address(self, partner):
         """Construir dirección de entrega del cliente"""
-        if not partner: return ''
+        if not partner:
+            return ''
         address_parts = []
-        if partner.street: address_parts.append(partner.street)
-        if partner.street2: address_parts.append(partner.street2)
+        if partner.street:
+            address_parts.append(partner.street)
+        if partner.street2:
+            address_parts.append(partner.street2)
         city_parts = []
-        if partner.city: city_parts.append(partner.city)
-        if partner.state_id: city_parts.append(partner.state_id.name)
-        if partner.zip: city_parts.append(f"C.P. {partner.zip}")
-        if city_parts: address_parts.append(', '.join(city_parts))
-        if partner.country_id: address_parts.append(partner.country_id.name)
+        if partner.city:
+            city_parts.append(partner.city)
+        if partner.state_id:
+            city_parts.append(partner.state_id.name)
+        if partner.zip:
+            city_parts.append(f"C.P. {partner.zip}")
+        if city_parts:
+            address_parts.append(', '.join(city_parts))
+        if partner.country_id:
+            address_parts.append(partner.country_id.name)
         return '\n'.join(address_parts) if address_parts else ''
 
     @api.model
@@ -140,12 +148,12 @@ class StockQuant(models.Model):
         currency_code='USD',
         product_prices=None,
         services=None,
-        backorder_items=None, # ✅ NUEVO PARAMETRO
+        backorder_items=None,
     ):
         """
         Crear múltiples apartados desde el carrito.
         Soporta:
-        1. Lotes Físicos (selected_lots) -> Crea stock.lot.hold y líneas con lot_id
+        1. Lotes Físicos (selected_lots) -> Crea stock.lot.hold y líneas con lot_ids
         2. Material por Pedido (backorder_items) -> Crea líneas SIN lot_id (solo financiero)
         3. Servicios (services) -> Crea líneas tipo servicio
         """
@@ -164,20 +172,29 @@ class StockQuant(models.Model):
         if not currency:
             currency = self.env.company.currency_id
 
-        # ✅ VERIFICAR AUTORIZACIÓN (Solo para lotes físicos, que son los que tienen precio medio definido)
+        # VERIFICAR AUTORIZACIÓN (Solo para lotes físicos)
         if has_lots and not self.env.context.get('skip_authorization_check'):
             auth_check = self.env['product.template'].check_price_authorization_needed(product_prices, currency_code)
             if auth_check.get('needs_authorization'):
-                # (Lógica de autorización igual al original...)
                 product_groups = {}
                 for quant_id in selected_lots:
                     quant = self.browse(quant_id)
-                    if not quant.exists() or not quant.lot_id: continue
+                    if not quant.exists() or not quant.lot_id:
+                        continue
                     pid = quant.product_id.id
-                    if pid not in product_groups: product_groups[pid] = {'name': quant.product_id.display_name, 'lots': [], 'total_quantity': 0}
-                    product_groups[pid]['lots'].append({'id': quant_id, 'lot_name': quant.lot_id.name, 'quantity': quant.quantity})
+                    if pid not in product_groups:
+                        product_groups[pid] = {
+                            'name': quant.product_id.display_name,
+                            'lots': [],
+                            'total_quantity': 0,
+                        }
+                    product_groups[pid]['lots'].append({
+                        'id': quant_id,
+                        'lot_name': quant.lot_id.name,
+                        'quantity': quant.quantity,
+                    })
                     product_groups[pid]['total_quantity'] += quant.quantity
-                
+
                 result = self.create_price_authorization(
                     operation_type='hold',
                     partner_id=partner_id,
@@ -190,9 +207,16 @@ class StockQuant(models.Model):
                     architect_id=architect_id,
                 )
                 if result.get('success'):
-                    return { 'success': False, 'needs_authorization': True, 'authorization_id': result['authorization_id'], 'authorization_name': result['authorization_name'], 'message': f'Solicitud {result["authorization_name"]} creada.' }
+                    return {
+                        'success': False,
+                        'needs_authorization': True,
+                        'authorization_id': result['authorization_id'],
+                        'authorization_name': result['authorization_name'],
+                        'message': f'Solicitud {result["authorization_name"]} creada.',
+                    }
 
         full_notes = notes or ''
+        normalized_prices = {}
         if product_prices and isinstance(product_prices, dict):
             normalized_prices = {str(k): float(v) for k, v in product_prices.items()}
             # Agregar precios de lotes a notas
@@ -200,10 +224,14 @@ class StockQuant(models.Model):
             if has_lots:
                 for quant_id in selected_lots:
                     quant = self.browse(quant_id)
-                    if not quant.exists(): continue
+                    if not quant.exists():
+                        continue
                     pid = quant.product_id.id
                     if str(pid) in normalized_prices and pid not in price_by_product:
-                        price_by_product[pid] = { 'name': quant.product_id.display_name, 'price': normalized_prices[str(pid)] }
+                        price_by_product[pid] = {
+                            'name': quant.product_id.display_name,
+                            'price': normalized_prices[str(pid)],
+                        }
             if price_by_product:
                 full_notes += '\n\n=== PRECIOS LOTES EXISTENTES ({}) ===\n'.format(currency_code)
                 for data in price_by_product.values():
@@ -214,10 +242,11 @@ class StockQuant(models.Model):
         dias_agregados = 0
         while dias_agregados < 5:
             fecha_expiracion += timedelta(days=1)
-            if fecha_expiracion.weekday() < 5: dias_agregados += 1
+            if fecha_expiracion.weekday() < 5:
+                dias_agregados += 1
 
         partner = self.env['res.partner'].browse(partner_id)
-        
+
         hold_order_vals = {
             'partner_id': partner_id,
             'user_id': self.env.context.get('force_seller_id', self.env.user.id),
@@ -232,41 +261,71 @@ class StockQuant(models.Model):
         }
         order = self.env['stock.lot.hold.order'].create(hold_order_vals)
 
-        normalized_prices = {}
-        if product_prices and isinstance(product_prices, dict):
-            normalized_prices = {str(k): float(v) for k, v in product_prices.items()}
-
         success_count = 0
         error_count = 0
         failed_lots = []
 
-        # 1. LOTES FÍSICOS (Con Hold)
+        # ================================================================
+        # 1. LOTES FÍSICOS — Agrupar por producto, 1 línea = N lotes
+        # ================================================================
         if has_lots:
+            # Agrupar quants por producto
+            product_quants = {}
             for quant_id in selected_lots:
                 try:
                     quant = self.browse(quant_id)
-                    if not quant.exists() or not quant.lot_id: continue
+                    if not quant.exists() or not quant.lot_id:
+                        continue
                     if hasattr(quant, 'x_tiene_hold') and quant.x_tiene_hold:
                         error_count += 1
-                        failed_lots.append({'lot_name': quant.lot_id.name, 'error': 'Ya tiene apartado'})
+                        failed_lots.append({
+                            'lot_name': quant.lot_id.name,
+                            'error': 'Ya tiene apartado',
+                        })
                         continue
 
-                    product_id = quant.product_id.id
-                    precio_unitario = normalized_prices.get(str(product_id), 0.0)
+                    pid = quant.product_id.id
+                    if pid not in product_quants:
+                        product_quants[pid] = {
+                            'product_id': pid,
+                            'quants': [],
+                            'lot_ids': [],
+                        }
+                    product_quants[pid]['quants'].append(quant)
+                    product_quants[pid]['lot_ids'].append(quant.lot_id.id)
+                except Exception as e:
+                    error_count += 1
+                    failed_lots.append({
+                        'lot_name': f'Quant {quant_id}',
+                        'error': str(e),
+                    })
+
+            # Crear 1 línea por producto con lot_ids Many2many
+            for pid, group in product_quants.items():
+                try:
+                    precio_unitario = normalized_prices.get(str(pid), 0.0)
+                    first_quant = group['quants'][0]
 
                     self.env['stock.lot.hold.order.line'].create({
                         'order_id': order.id,
-                        'quant_id': quant.id,
-                        'lot_id': quant.lot_id.id,
-                        'product_id': product_id,
+                        'product_id': pid,
+                        'lot_ids': [(6, 0, group['lot_ids'])],
+                        # Legacy fields para compatibilidad
+                        'lot_id': group['lot_ids'][0],
+                        'quant_id': first_quant.id,
                         'precio_unitario': precio_unitario,
                     })
-                    success_count += 1
+                    success_count += len(group['lot_ids'])
                 except Exception as e:
-                    error_count += 1
-                    failed_lots.append({'lot_name': f'Quant {quant_id}', 'error': str(e)})
+                    error_count += len(group['lot_ids'])
+                    failed_lots.append({
+                        'lot_name': f'Producto {pid}',
+                        'error': str(e),
+                    })
 
-        # 2. BACKORDERS (NUEVO - Sin lote, solo cantidad financiera)
+        # ================================================================
+        # 2. BACKORDERS (Sin lote, solo cantidad financiera)
+        # ================================================================
         if has_backorders:
             for item in backorder_items:
                 try:
@@ -280,9 +339,14 @@ class StockQuant(models.Model):
                     })
                 except Exception as e:
                     error_count += 1
-                    failed_lots.append({'lot_name': f"Pedido ID {item.get('product_id')}", 'error': str(e)})
+                    failed_lots.append({
+                        'lot_name': f"Pedido ID {item.get('product_id')}",
+                        'error': str(e),
+                    })
 
+        # ================================================================
         # 3. SERVICIOS
+        # ================================================================
         if has_services:
             for service in services:
                 try:
@@ -296,16 +360,24 @@ class StockQuant(models.Model):
                     })
                 except Exception as e:
                     error_count += 1
-                    failed_lots.append({'lot_name': f"Servicio ID {service.get('product_id')}", 'error': str(e)})
+                    failed_lots.append({
+                        'lot_name': f"Servicio ID {service.get('product_id')}",
+                        'error': str(e),
+                    })
 
         has_content = success_count > 0 or has_backorders or has_services
         if has_content:
             try:
                 order.action_confirm()
             except Exception as e:
-                return {'success': 0, 'errors': 1, 'failed': [{'error': f'Error confirmando: {str(e)}'}]}
+                return {
+                    'success': 0,
+                    'errors': 1,
+                    'failed': [{'error': f'Error confirmando: {str(e)}'}],
+                }
         else:
-            if order: order.unlink()
+            if order:
+                order.unlink()
 
         return {
             'success': success_count,
@@ -316,7 +388,9 @@ class StockQuant(models.Model):
         }
 
     @api.model
-    def create_price_authorization(self, operation_type, partner_id, project_id, selected_lots, currency_code, product_prices, product_groups, notes=None, architect_id=None):
+    def create_price_authorization(self, operation_type, partner_id, project_id,
+                                   selected_lots, currency_code, product_prices,
+                                   product_groups, notes=None, architect_id=None):
         """Crea solicitud de autorización de precio"""
         if isinstance(product_prices, dict):
             product_prices = {str(k): v for k, v in product_prices.items()}
@@ -359,4 +433,8 @@ class StockQuant(models.Model):
                 'minimum_price': minimum_price,
             })
 
-        return {'success': True, 'authorization_id': auth.id, 'authorization_name': auth.name}
+        return {
+            'success': True,
+            'authorization_id': auth.id,
+            'authorization_name': auth.name,
+        }
