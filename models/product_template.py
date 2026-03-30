@@ -254,35 +254,28 @@ class ProductTemplate(models.Model):
             company_currency = self.env.company.currency_id
             banorte_rate = usd_currency._convert(1.0, company_currency, self.env.company, fields.Date.today())
 
+        def _price_from_utility(base, utility_pct):
+            """Precio = Base / (1 - %Utilidad). Redondeo ceil."""
+            divisor = (1 - (utility_pct / 100.0))
+            if divisor <= 0:
+                divisor = 0.01
+            return math.ceil(base / divisor)
+
         for record in self:
             mxn_1 = 0
             mxn_2 = 0
             mxn_3 = 0
 
+            # Determinar la base según el modo
             if record.x_pricing_mode == 'fixed' and record.x_fixed_price > 0:
-                # === MODO PRECIO FIJO ===
-                # Nivel 1 = Precio fijo tal cual
-                mxn_1 = math.ceil(record.x_fixed_price)
-                
-                # Nivel 2 y 3: se interpretan las utilidades como % de descuento desde el precio fijo
-                pct_media = record.x_utilidad_media if record.x_utilidad_media >= 0 else 0.0
-                pct_minima = record.x_utilidad_minima if record.x_utilidad_minima >= 0 else 0.0
-                
-                mxn_2 = math.ceil(record.x_fixed_price * (1 - pct_media / 100.0))
-                mxn_3 = math.ceil(record.x_fixed_price * (1 - pct_minima / 100.0))
+                base = record.x_fixed_price
+            else:
+                base = record.x_costo_mayor
 
-            elif record.x_costo_mayor > 0:
-                # === MODO CALCULADO ===
-                # Cada nivel se calcula independientemente desde el costo
-                def _price_from_utility(cost, utility_pct):
-                    divisor = (1 - (utility_pct / 100.0))
-                    if divisor <= 0:
-                        divisor = 0.01
-                    return math.ceil(cost / divisor)
-                
-                mxn_1 = _price_from_utility(record.x_costo_mayor, record.x_utilidad)
-                mxn_2 = _price_from_utility(record.x_costo_mayor, record.x_utilidad_media)
-                mxn_3 = _price_from_utility(record.x_costo_mayor, record.x_utilidad_minima)
+            if base > 0:
+                mxn_1 = _price_from_utility(base, record.x_utilidad)
+                mxn_2 = _price_from_utility(base, record.x_utilidad_media)
+                mxn_3 = _price_from_utility(base, record.x_utilidad_minima)
 
             # Convertir a USD y redondear hacia arriba
             usd_1 = math.ceil(mxn_1 / banorte_rate) if banorte_rate > 0 else 0
