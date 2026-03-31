@@ -46,8 +46,8 @@
                         t-att-title="detail.tiene_hold ? 'Lote con apartado activo' : (detail.en_orden_venta ? 'Lote en orden de venta confirmada' : '')"
                     />
 
-                    <!-- Input adicional SOLO si es Formato Y no está bloqueado -->
-                    <t t-if="detail.tipo and (detail.tipo === 'formato' or detail.tipo === 'Formato') and !detail.tiene_hold and !detail.en_orden_venta">
+                    <!-- Input adicional para Formato y Pieza (permite parcialidades), NO para Placa -->
+                    <t t-if="detail.tipo and (detail.tipo === 'formato' or detail.tipo === 'Formato' or detail.tipo === 'pieza' or detail.tipo === 'Pieza') and !detail.tiene_hold and !detail.en_orden_venta">
                         <div class="d-flex align-items-center gap-1">
                             <input 
                                 type="number"
