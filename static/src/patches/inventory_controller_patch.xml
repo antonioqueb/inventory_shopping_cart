@@ -59,7 +59,10 @@
                                 min="0"
                                 t-att-max="detail.quantity"
                             />
-                            <span style="font-size: 9px; font-weight: bold; color: #666;">m²</span>
+                            <span style="font-size: 9px; font-weight: bold; color: #666;">
+                                <t t-if="detail.tipo === 'pieza' or detail.tipo === 'Pieza'">pzas</t>
+                                <t t-else="">m²</t>
+                            </span>
                         </div>
                     </t>
                 </div>
