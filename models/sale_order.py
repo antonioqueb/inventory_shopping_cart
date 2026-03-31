@@ -199,15 +199,36 @@ class SaleOrder(models.Model):
         self._check_seller_low_price_block("enviar")
         return super().action_quotation_send()
 
+    def _sync_lot_ids_from_selected_lots(self):
+        """
+        Sincroniza lot_ids (Many2many stock.lot) desde x_selected_lots (Many2many stock.quant)
+        para que sale_stone_selection detecte los lotes correctamente al confirmar.
+        """
+        for order in self:
+            for line in order.order_line:
+                if line.x_selected_lots and not line.lot_ids:
+                    lot_ids = line.x_selected_lots.mapped('lot_id')
+                    if lot_ids:
+                        _logger.info(
+                            "[CART→STONE] Sincronizando lot_ids para línea %s: %s lotes desde x_selected_lots",
+                            line.id, len(lot_ids)
+                        )
+                        line.lot_ids = [(6, 0, lot_ids.ids)]
+
     def action_confirm(self):
         """
         Override de action_confirm para:
         1. Validar precios bajos (bloqueo si no autorizado)
-        2. Delegar backup/copia/renombrado a sale_stone_selection (NO duplicar aquí)
-        3. Asignar lotes específicos del carrito después de confirmar
+        2. Sincronizar lot_ids desde x_selected_lots para sale_stone_selection
+        3. Delegar backup/copia/renombrado a sale_stone_selection (NO duplicar aquí)
+        4. Asignar lotes específicos del carrito después de confirmar
         """
         if not self.env.context.get('skip_auth_check'):
             self._check_seller_low_price_block("confirmar")
+
+        # CRÍTICO: Poblar lot_ids desde x_selected_lots ANTES de que
+        # sale_stone_selection revise line.lot_ids para decidir el flujo
+        self._sync_lot_ids_from_selected_lots()
 
         # NOTA: La lógica de backup de cotización (copy + renombrar a V/)
         # se maneja en sale_stone_selection.action_confirm() que está más
@@ -471,6 +492,9 @@ class SaleOrder(models.Model):
                     'company_id': company_id,
                     'x_price_selector': 'custom',
                 })
+
+            # Sincronizar lot_ids desde x_selected_lots ANTES de confirmar
+            sale_order._sync_lot_ids_from_selected_lots()
 
             sale_order.invalidate_recordset()
             sale_order.with_context(skip_auth_check=True).action_confirm()
