@@ -200,26 +200,22 @@ class SaleOrder(models.Model):
         return super().action_quotation_send()
 
     def action_confirm(self):
+        """
+        Override de action_confirm para:
+        1. Validar precios bajos (bloqueo si no autorizado)
+        2. Delegar backup/copia/renombrado a sale_stone_selection (NO duplicar aquí)
+        3. Asignar lotes específicos del carrito después de confirmar
+        """
         if not self.env.context.get('skip_auth_check'):
             self._check_seller_low_price_block("confirmar")
 
-        for order in self:
-            if order.state in ['draft', 'sent'] and not order.x_is_quote_backup:
-                new_ov_name = self.env['ir.sequence'].next_by_code('sale.order.confirmed') or "OV/NEW"
-                current_cot_name = order.name
-                order.copy(default={
-                    'name': current_cot_name,
-                    'state': 'draft',
-                    'origin': f"Convertido a {new_ov_name}",
-                    'x_is_quote_backup': True,
-                    'date_order': fields.Datetime.now()
-                })
-                order.name = new_ov_name
-                order.origin = current_cot_name
+        # NOTA: La lógica de backup de cotización (copy + renombrar a V/)
+        # se maneja en sale_stone_selection.action_confirm() que está más
+        # arriba en el MRO. NO duplicar aquí para evitar doble copia.
 
         res = super().action_confirm()
-        self._clear_auto_assigned_lots()
 
+        # Asignar lotes específicos del carrito (x_selected_lots) a los pickings
         for order in self:
             for line in order.order_line:
                 if line.display_type or not line.product_id or line.product_id.type not in ['product', 'consu']:
