@@ -38,8 +38,6 @@ class PriceAuthorization(models.Model):
     
     temp_data = fields.Json(string='Datos Temporales')
     sale_order_id = fields.Many2one('sale.order', string='Orden de Venta Generada', readonly=True)
-    # En la clase PriceAuthorizationLine, agregar este campo:
-
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -263,8 +261,12 @@ class PriceAuthorization(models.Model):
                     if hold_partner.id != self.partner_id.id:
                         raise UserError(f"El lote {quant.lot_id.name} está apartado para {hold_partner.name}")
         
+        # FIX: Incluir partner_invoice_id y partner_shipping_id para que Odoo
+        # resuelva correctamente el warehouse y las rutas de reabastecimiento
         sale_order = self.env['sale.order'].with_company(company_id).sudo().create({
             'partner_id': self.partner_id.id,
+            'partner_invoice_id': self.partner_id.id,
+            'partner_shipping_id': self.partner_id.id,
             'user_id': self.seller_id.id,
             'note': notes,
             'pricelist_id': pricelist.id,
@@ -309,6 +311,9 @@ class PriceAuthorization(models.Model):
                     'company_id': company_id,
                 })
         
+        # Sincronizar lot_ids desde x_selected_lots ANTES de confirmar
+        sale_order._sync_lot_ids_from_selected_lots()
+
         sale_order.with_company(company_id).with_context(skip_auth_check=True).sudo().action_confirm()
         
         for line in sale_order.order_line:

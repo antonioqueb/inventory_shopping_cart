@@ -450,6 +450,8 @@ class SaleOrder(models.Model):
             company_id = self.env.company.id
             sale_order = self.with_context(skip_auth_check=True).create({
                 'partner_id': partner_id,
+                'partner_invoice_id': partner_id,
+                'partner_shipping_id': partner_id,
                 'pricelist_id': pricelist_id,
                 'note': notes,
                 'x_project_id': project_id,
