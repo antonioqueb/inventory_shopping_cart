@@ -511,6 +511,13 @@ class SaleOrder(models.Model):
             raise UserError(f"Error al procesar la orden: {str(e)}")
 
     def _assign_specific_lots(self, pickings, product, selected_quants, breakdown=None):
+        """
+        Asigna lotes específicos a los move lines del picking.
+        
+        LÓGICA DE CANTIDAD:
+        - Placa: Se asigna el lote COMPLETO (quant.quantity)
+        - Formato/Pieza: Se asigna solo la cantidad del breakdown (parcialidad del carrito)
+        """
         sale_order = pickings.mapped('sale_id')
         cart_owner_id = sale_order.user_id.id if sale_order else self.env.user.id
 
@@ -536,8 +543,13 @@ class SaleOrder(models.Model):
                 for quant in selected_quants:
                     if quant.product_id.id != product.id or remaining <= 0:
                         continue
-                    tipo = (str(quant.lot_id.x_tipo) if quant.lot_id.x_tipo else 'placa').lower()
-                    if 'formato' in tipo:
+
+                    # Detectar tipo del lote
+                    tipo = (str(quant.lot_id.x_tipo) if quant.lot_id and hasattr(quant.lot_id, 'x_tipo') and quant.lot_id.x_tipo else 'placa').lower()
+
+                    # Formato y Pieza: usar cantidad parcial del breakdown/carrito
+                    # Placa: usar lote completo
+                    if 'formato' in tipo or 'pieza' in tipo:
                         qty = breakdown.get(quant.id, 0) if breakdown and quant.id in breakdown else (
                             self.env['shopping.cart'].search([
                                 ('user_id', '=', cart_owner_id),
@@ -545,7 +557,9 @@ class SaleOrder(models.Model):
                             ], limit=1).quantity or quant.quantity
                         )
                     else:
+                        # Placa: lote completo siempre
                         qty = quant.quantity
+
                     reserve = min(qty, remaining)
                     if reserve <= 0.001:
                         continue
