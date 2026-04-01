@@ -217,10 +217,6 @@ class SaleOrder(models.Model):
         # sale_stone_selection revise line.lot_ids para decidir el flujo
         self._sync_lot_ids_from_selected_lots()
 
-        # NOTA: La lógica de backup de cotización (copy + renombrar a V/)
-        # se maneja en sale_stone_selection.action_confirm() que está más
-        # arriba en el MRO. NO duplicar aquí para evitar doble copia.
-
         res = super().action_confirm()
 
         # Asignar lotes específicos del carrito (x_selected_lots) a los pickings
@@ -503,26 +499,43 @@ class SaleOrder(models.Model):
     def _assign_specific_lots(self, pickings, product, selected_quants, breakdown=None):
         """
         Asigna lotes específicos a los move lines del picking.
-        
-        LÓGICA DE CANTIDAD:
-        - Placa: Se asigna el lote COMPLETO (quant.quantity)
-        - Formato/Pieza: Se asigna solo la cantidad del breakdown (parcialidad del carrito)
+
+        CORRECCIONES PRINCIPALES (v2):
+
+        1. UBICACIÓN: Usa quant.location_id (ubicación REAL donde está el material)
+           en lugar de move.location_id (ubicación padre genérica del picking type).
+           Ejemplo: Si el quant está en WH/Stock/Bodega1/Bin2/Rack3,
+           el move line apuntará a esa ubicación exacta, NO a WH/Stock.
+
+        2. CANTIDAD para Formato/Pieza: Usa SOLO la cantidad seleccionada del
+           breakdown (parcialidad). Si de un lote de 100 pzas seleccionaste 20,
+           el move line tendrá quantity=20, NO 100.
+
+        3. CANTIDAD para Placa: Sigue usando el lote completo (quant.quantity).
         """
         sale_order = pickings.mapped('sale_id')
         cart_owner_id = sale_order.user_id.id if sale_order else self.env.user.id
 
+        # Recuperar breakdown desde la sale order line si no fue pasado
         if not breakdown:
-            sample_move = pickings.mapped('move_ids').filtered(lambda m: m.product_id.id == product.id)[:1]
+            sample_move = pickings.mapped('move_ids').filtered(
+                lambda m: m.product_id.id == product.id
+            )[:1]
             if sample_move and sample_move.sale_line_id and sample_move.sale_line_id.x_lot_breakdown_json:
                 try:
-                    breakdown = {int(k): float(v) for k, v in sample_move.sale_line_id.x_lot_breakdown_json.items()}
+                    breakdown = {
+                        int(k): float(v)
+                        for k, v in sample_move.sale_line_id.x_lot_breakdown_json.items()
+                    }
                 except Exception:
                     pass
 
         for picking in pickings:
             if picking.state in ['done', 'cancel']:
                 continue
+
             for move in picking.move_ids.filtered(lambda m: m.product_id.id == product.id):
+                # Limpiar move lines auto-generados por Odoo
                 try:
                     if move.move_line_ids:
                         move.move_line_ids.unlink()
@@ -530,29 +543,51 @@ class SaleOrder(models.Model):
                     pass
 
                 remaining = move.product_uom_qty
+
                 for quant in selected_quants:
                     if quant.product_id.id != product.id or remaining <= 0:
                         continue
 
-                    # Detectar tipo del lote
-                    tipo = (str(quant.lot_id.x_tipo) if quant.lot_id and hasattr(quant.lot_id, 'x_tipo') and quant.lot_id.x_tipo else 'placa').lower()
+                    # ── Detectar tipo del lote ──
+                    tipo = 'placa'
+                    if quant.lot_id and hasattr(quant.lot_id, 'x_tipo') and quant.lot_id.x_tipo:
+                        tipo = str(quant.lot_id.x_tipo).lower()
 
-                    # Formato y Pieza: usar cantidad parcial del breakdown/carrito
-                    # Placa: usar lote completo
+                    # ── Determinar cantidad a reservar ──
                     if 'formato' in tipo or 'pieza' in tipo:
-                        qty = breakdown.get(quant.id, 0) if breakdown and quant.id in breakdown else (
-                            self.env['shopping.cart'].search([
+                        # FORMATO/PIEZA: Usar cantidad parcial del breakdown
+                        if breakdown and quant.id in breakdown:
+                            qty = breakdown[quant.id]
+                        else:
+                            # Fallback: buscar en carrito persistente
+                            cart_item = self.env['shopping.cart'].search([
                                 ('user_id', '=', cart_owner_id),
                                 ('quant_id', '=', quant.id)
-                            ], limit=1).quantity or quant.quantity
-                        )
+                            ], limit=1)
+                            qty = cart_item.quantity if cart_item else quant.quantity
                     else:
-                        # Placa: lote completo siempre
+                        # PLACA: lote completo siempre
                         qty = quant.quantity
 
                     reserve = min(qty, remaining)
                     if reserve <= 0.001:
                         continue
+
+                    # ══════════════════════════════════════════════════════
+                    # FIX CRÍTICO: Usar la ubicación REAL del quant
+                    # ══════════════════════════════════════════════════════
+                    # quant.location_id = ubicación exacta donde está el
+                    #   material (ej: WH/Stock/Bodega1/Bin2/Rack3)
+                    # move.location_id  = ubicación padre genérica del
+                    #   picking type (ej: WH/Stock)
+                    #
+                    # Odoo requiere que location_id del move line sea hija
+                    # (o igual) a location_id del move para que la reserva
+                    # sea válida. Como quant.location_id siempre es hija de
+                    # la ubicación del almacén, esto funciona correctamente.
+                    # ══════════════════════════════════════════════════════
+                    source_location_id = quant.location_id.id
+
                     try:
                         self.env['stock.move.line'].create({
                             'move_id': move.id,
@@ -560,13 +595,26 @@ class SaleOrder(models.Model):
                             'product_id': product.id,
                             'lot_id': quant.lot_id.id,
                             'quantity': reserve,
-                            'location_id': move.location_id.id,
+                            'location_id': source_location_id,
                             'location_dest_id': move.location_dest_id.id,
                             'product_uom_id': product.uom_id.id,
                         })
                         remaining -= reserve
+                        _logger.info(
+                            "[ASSIGN_LOTS] Lote %s: %s %s desde %s (tipo=%s)",
+                            quant.lot_id.name,
+                            reserve,
+                            product.uom_id.name,
+                            quant.location_id.complete_name,
+                            tipo,
+                        )
                     except Exception as e:
-                        _logger.error(f"Error reservando lote {quant.lot_id.name}: {e}")
+                        _logger.error(
+                            "Error reservando lote %s desde %s: %s",
+                            quant.lot_id.name,
+                            quant.location_id.complete_name,
+                            e,
+                        )
 
     def _clear_auto_assigned_lots(self):
         if PickingLotCleaner:

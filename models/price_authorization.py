@@ -261,12 +261,15 @@ class PriceAuthorization(models.Model):
                     if hold_partner.id != self.partner_id.id:
                         raise UserError(f"El lote {quant.lot_id.name} está apartado para {hold_partner.name}")
         
-        # FIX: Incluir partner_invoice_id y partner_shipping_id para que Odoo
-        # resuelva correctamente el warehouse y las rutas de reabastecimiento
+        # FIX: Resolver direcciones correctamente via address_get
+        addr = self.partner_id.address_get(['delivery', 'invoice'])
+        invoice_id = addr.get('invoice', self.partner_id.id)
+        shipping_id = addr.get('delivery', self.partner_id.id)
+
         sale_order = self.env['sale.order'].with_company(company_id).sudo().create({
             'partner_id': self.partner_id.id,
-            'partner_invoice_id': self.partner_id.id,
-            'partner_shipping_id': self.partner_id.id,
+            'partner_invoice_id': invoice_id,
+            'partner_shipping_id': shipping_id,
             'user_id': self.seller_id.id,
             'note': notes,
             'pricelist_id': pricelist.id,
@@ -316,6 +319,7 @@ class PriceAuthorization(models.Model):
 
         sale_order.with_company(company_id).with_context(skip_auth_check=True).sudo().action_confirm()
         
+        # _assign_specific_lots ahora usa quant.location_id (ubicación real)
         for line in sale_order.order_line:
             if line.x_selected_lots:
                 picking = line.move_ids.mapped('picking_id')
