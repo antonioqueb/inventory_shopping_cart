@@ -105,19 +105,6 @@ class SaleOrder(models.Model):
 
     x_is_usd = fields.Boolean(string='Es USD', compute='_compute_is_usd', store=True)
 
-    @api.onchange('partner_id')
-    def _onchange_partner_id_keep_addresses_empty(self):
-        """
-        Mantiene vacíos los campos de dirección de factura y entrega
-        al seleccionar el cliente, evitando que Odoo rellene ambos con
-        el mismo partner cuando no existen direcciones hijas específicas.
-        """
-        res = super()._onchange_partner_id()
-        for order in self:
-            order.partner_invoice_id = False
-            order.partner_shipping_id = False
-        return res
-
     @api.depends('pricelist_id', 'pricelist_id.currency_id')
     def _compute_is_usd(self):
         for order in self:
@@ -264,12 +251,6 @@ class SaleOrder(models.Model):
         for vals in vals_list:
             if vals.get('name', 'New') == 'New':
                 vals['name'] = self.env['ir.sequence'].next_by_code('sale.quotation') or 'New'
-
-            # Forzar que nazcan vacíos si no fueron enviados explícitamente
-            if 'partner_invoice_id' not in vals:
-                vals['partner_invoice_id'] = False
-            if 'partner_shipping_id' not in vals:
-                vals['partner_shipping_id'] = False
 
         return super().create(vals_list)
 
@@ -424,6 +405,13 @@ class SaleOrder(models.Model):
             }
         raise UserError("No se pudieron agregar los items.")
 
+    @staticmethod
+    def _resolve_partner_addresses(env, partner_id):
+        """Resuelve las direcciones de facturación y entrega del partner."""
+        partner = env['res.partner'].browse(partner_id)
+        addr = partner.address_get(['delivery', 'invoice'])
+        return addr.get('invoice', partner_id), addr.get('delivery', partner_id)
+
     @api.model
     def create_from_shopping_cart(self, partner_id=None, products=None, services=None, notes=None, pricelist_id=None, apply_tax=True, project_id=None, architect_id=None):
         if not partner_id:
@@ -448,10 +436,12 @@ class SaleOrder(models.Model):
                     }
 
             company_id = self.env.company.id
+            invoice_id, shipping_id = self._resolve_partner_addresses(self.env, partner_id)
+
             sale_order = self.with_context(skip_auth_check=True).create({
                 'partner_id': partner_id,
-                'partner_invoice_id': partner_id,
-                'partner_shipping_id': partner_id,
+                'partner_invoice_id': invoice_id,
+                'partner_shipping_id': shipping_id,
                 'pricelist_id': pricelist_id,
                 'note': notes,
                 'x_project_id': project_id,
