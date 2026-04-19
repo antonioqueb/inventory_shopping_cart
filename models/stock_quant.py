@@ -122,13 +122,13 @@ class StockQuant(models.Model):
         Offset X entre columnas: 176 dots.
 
         Coordenadas EXACTAS (columna 1, x base = 0):
-        - ( SOM )          FO 26,20   A0N,43,38  FB160,1,0,C    marca/origen
-        - Prefijo lote     FO 18,75   A0N,35,37  FB160,1,0,C    lot.name ANTES del '-'
-        - Sufijo lote      FO 28,130  A0N,78,78  FB160,1,0,C    lot.name DESPUÉS del '-'
-        - Descripción      FO 140,256 A0R,32,34  (rotada)        product.name
-        - Dimensiones      FO 95,256  A0R,32,32  (rotada)        alto x ancho = area M2
-        - Lote origen      FO 45,256  A0R,32,32  (rotada)        x_lote_origen / bloque
-        - Barcode vertical FO 12,984  BY3,2,154  BCB,154,N,N,N   lot.name COMPLETO
+        - ( SOM )          FO 26,20    A0N,43,38  FB160,1,0,C    marca/origen
+        - Prefijo lote     FO 18,75    A0N,35,37  FB160,1,0,C    lot.name ANTES del '-'
+        - Sufijo lote      FO 28,130   A0N,78,78  FB160,1,0,C    lot.name DESPUÉS del '-'
+        - Descripción      FO 133,232  A0R,32,32  (rotada)        product.name
+        - Dimensiones      FO 88,232   A0R,32,32  (rotada)        alto x ancho = area M2
+        - Lote origen      FO 38,232   A0R,32,32  (rotada)        x_lote_origen / bloque
+        - Barcode vertical FO 12,1054  BY3,2,154  BCB,154,N,N,N   lot.name COMPLETO
         """
         zpl = ""
         col_offset = 176
@@ -147,15 +147,12 @@ class StockQuant(models.Model):
 
                 # ── Split en el guion: prefijo (arriba) + sufijo (abajo grande) ──
                 # Usa rsplit('-', 1): toma el ÚLTIMO guion como separador.
-                #   "10954-58"     -> prefijo="10954",    sufijo="58"
-                #   "ABC-DEF-123"  -> prefijo="ABC-DEF",  sufijo="123"
-                #   "SINGUION"     -> prefijo="SINGUION", sufijo=""
                 if '-' in lot_name:
                     lot_prefix, lot_suffix = lot_name.rsplit('-', 1)
                 else:
                     lot_prefix, lot_suffix = lot_name, ''
 
-                # ── Descripción del producto (ej: "BLACK PATAGONIA CEPILLADO PLACA 2 CM") ──
+                # ── Descripción del producto ──
                 product_name = (product.name or '').strip()
 
                 # ── Dimensiones en metros. Si viene en cm (>10) convertir. ──
@@ -185,17 +182,17 @@ class StockQuant(models.Model):
                 #   ( SOM ):   26    -> 26, 202, 378, 554
                 #   prefijo:   18    -> 18, 194, 370, 546
                 #   sufijo:    28    -> 28, 204, 380, 556
-                #   rotados:   140/95/45  (+176 por columna)
-                #   barcode:   12    -> 12, 188, 364, 540
-                # Fonts actualizadas: SOM A0N,43,38 | prefijo A0N,35,37 | desc A0R,32,34
-                # Barcode: BY3,2,154 + BCB,154 en Y=984
+                #   desc:     133    -> 133, 309, 485, 661  (rotado en Y=232)
+                #   dim:       88    -> 88, 264, 440, 616   (rotado en Y=232)
+                #   origen:    38    -> 38, 214, 390, 566   (rotado en Y=232)
+                #   barcode:   12    -> 12, 188, 364, 540   (Y=1054, BY3,2,154 + BCB,154)
                 zpl += f"^FO{26 + x},20^A0N,43,38^FB160,1,0,C^FD{origen}^FS\n"
                 zpl += f"^FO{18 + x},75^A0N,35,37^FB160,1,0,C^FD{lot_prefix}^FS\n"
                 zpl += f"^FO{28 + x},130^A0N,78,78^FB160,1,0,C^FD{lot_suffix}^FS\n"
-                zpl += f"^FO{140 + x},256^A0R,32,32^FD{product_name}^FS\n"
-                zpl += f"^FO{95 + x},256^A0R,32,32^FD{dim_line}^FS\n"
-                zpl += f"^FO{45 + x},256^A0R,32,32^FD{lote_origen}^FS\n"
-                zpl += f"^FO{12 + x},984^BY3,2,154^BCB,154,N,N,N^FD{lot_name}^FS\n"
+                zpl += f"^FO{133 + x},232^A0R,32,32^FD{product_name}^FS\n"
+                zpl += f"^FO{88 + x},232^A0R,32,32^FD{dim_line}^FS\n"
+                zpl += f"^FO{38 + x},232^A0R,32,32^FD{lote_origen}^FS\n"
+                zpl += f"^FO{12 + x},1054^BY3,2,154^BCB,154,N,N,N^FD{lot_name}^FS\n"
 
             zpl += "^XZ\n"
 
