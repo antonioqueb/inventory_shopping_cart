@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="inventory_shopping_cart.PriceLevelSelectorField">
+        <div class="o_price_level_selector">
+            <span t-if="props.readonly" class="o_price_level_selector__label" t-esc="displayLabel"/>
+            <select t-else=""
+                    class="o_input o_price_level_selector__select"
+                    t-on-change.stop="onChange"
+                    t-att-required="props.required"
+                    t-att-disabled="props.readonly">
+                <option t-foreach="options" t-as="opt" t-key="opt[0]"
+                        t-att-value="opt[0]"
+                        t-att-selected="opt[0] === value">
+                    <t t-esc="opt[1]"/>
+                </option>
+            </select>
+        </div>
+    </t>
+
+</templates>

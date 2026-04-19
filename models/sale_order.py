@@ -26,6 +26,44 @@ class SaleOrderLine(models.Model):
     ], string='Nivel de Precio', default='high',
        help="Seleccione el nivel de precio.")
 
+    x_price_1_value = fields.Float(
+        string='Monto Precio 1',
+        compute='_compute_price_level_values',
+        digits='Product Price',
+    )
+    x_price_2_value = fields.Float(
+        string='Monto Precio 2',
+        compute='_compute_price_level_values',
+        digits='Product Price',
+    )
+    x_price_level_currency = fields.Char(
+        string='Moneda Nivel Precio',
+        compute='_compute_price_level_values',
+    )
+
+    @api.depends('product_id', 'order_id.pricelist_id', 'order_id.pricelist_id.currency_id')
+    def _compute_price_level_values(self):
+        for line in self:
+            currency_name = 'USD'
+            if line.order_id.pricelist_id and line.order_id.pricelist_id.currency_id:
+                currency_name = line.order_id.pricelist_id.currency_id.name
+            elif line.env.context.get('default_pricelist_id'):
+                pricelist = line.env['product.pricelist'].browse(line.env.context['default_pricelist_id'])
+                if pricelist.exists() and pricelist.currency_id:
+                    currency_name = pricelist.currency_id.name
+
+            tmpl = line.product_id.product_tmpl_id if line.product_id else False
+            if tmpl and currency_name == 'MXN':
+                line.x_price_1_value = tmpl.x_price_mxn_1
+                line.x_price_2_value = tmpl.x_price_mxn_2
+            elif tmpl:
+                line.x_price_1_value = tmpl.x_price_usd_1
+                line.x_price_2_value = tmpl.x_price_usd_2
+            else:
+                line.x_price_1_value = 0.0
+                line.x_price_2_value = 0.0
+            line.x_price_level_currency = currency_name
+
     @api.onchange('product_id')
     def _onchange_product_id_custom_price(self):
         if not self.product_id:

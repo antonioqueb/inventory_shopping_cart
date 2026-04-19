@@ -26,7 +26,9 @@
             'inventory_shopping_cart/static/src/components/dialogs/hold_wizard/hold_wizard.scss',
             'inventory_shopping_cart/static/src/components/dialogs/sale_order_wizard/sale_order_wizard.scss',
             'inventory_shopping_cart/static/src/components/dialogs/transfer_wizard/transfer_wizard.scss',
-            
+            'inventory_shopping_cart/static/src/components/price_level_selector/price_level_selector.scss',
+
+            'inventory_shopping_cart/static/src/components/price_level_selector/price_level_selector.js',
             'inventory_shopping_cart/static/src/components/cart_mixin/cart_mixin.js',
             'inventory_shopping_cart/static/src/components/floating_bar/floating_bar.js',
             'inventory_shopping_cart/static/src/components/dialogs/cart_dialog/cart_dialog.js',
@@ -43,7 +45,8 @@
             'inventory_shopping_cart/static/src/components/dialogs/label_wizard/label_wizard.scss',
             'inventory_shopping_cart/static/src/components/dialogs/label_wizard/label_wizard.js',
             'inventory_shopping_cart/static/src/components/dialogs/label_wizard/label_wizard.xml',
-            
+            'inventory_shopping_cart/static/src/components/price_level_selector/price_level_selector.xml',
+
         ],
     },
     'installable': True,

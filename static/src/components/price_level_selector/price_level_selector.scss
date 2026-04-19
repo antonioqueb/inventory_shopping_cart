@@ -1,0 +1,14 @@
+.o_price_level_selector {
+    width: 100%;
+
+    &__select {
+        width: 100%;
+        min-width: 180px;
+        padding: 2px 6px;
+    }
+
+    &__label {
+        display: inline-block;
+        white-space: nowrap;
+    }
+}

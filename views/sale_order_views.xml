@@ -149,9 +149,13 @@
 
             <!-- ===================== ORDER LINES: PRICE SELECTOR ===================== -->
             <xpath expr="//field[@name='order_line']/list//field[@name='price_unit']" position="before">
+                <field name="x_price_1_value" column_invisible="1"/>
+                <field name="x_price_2_value" column_invisible="1"/>
+                <field name="x_price_level_currency" column_invisible="1"/>
                 <field name="x_price_selector"
+                       widget="price_level_selector"
                        optional="show"
-                       style="width: 140px;"
+                       style="width: 220px;"
                        required="1"/>
             </xpath>
 
