@@ -128,7 +128,7 @@ class StockQuant(models.Model):
         - Descripción      FO 133,232  A0R,32,32  (rotada)        product.name
         - Dimensiones      FO 88,232   A0R,32,32  (rotada)        alto x ancho = area M2
         - Lote origen      FO 38,232   A0R,32,32  (rotada)        x_lote_origen / bloque
-        - Barcode vertical FO 12,1054  BY3,2,154  BCB,154,N,N,N   lot.name COMPLETO
+        - Barcode vertical FO 12,1017  BY3,2,154  BCB,154,N,N,N   lot.name COMPLETO
         """
         zpl = ""
         col_offset = 176
@@ -194,14 +194,14 @@ class StockQuant(models.Model):
                 #   desc:     133    -> 133, 309, 485, 661  (rotado en Y=232)
                 #   dim:       88    -> 88, 264, 440, 616   (rotado en Y=232)
                 #   origen:    38    -> 38, 214, 390, 566   (rotado en Y=232)
-                #   barcode:   12    -> 12, 188, 364, 540   (Y=1054, BY3,2,154 + BCB,154)
+                #   barcode:   12    -> 12, 188, 364, 540   (Y=1017, BY3,2,154 + BCB,154)
                 zpl += f"^FO{26 + x},20^A0N,43,38^FB160,1,0,C^FD{origen}^FS\n"
                 zpl += f"^FO{18 + x},75^A0N,35,37^FB160,1,0,C^FD{lot_prefix}^FS\n"
                 zpl += f"^FO{28 + x},130^A0N,78,78^FB160,1,0,C^FD{lot_suffix}^FS\n"
                 zpl += f"^FO{133 + x},232^A0R,32,32^FD{product_name}^FS\n"
                 zpl += f"^FO{88 + x},232^A0R,32,32^FD{dim_line}^FS\n"
                 zpl += f"^FO{38 + x},232^A0R,32,32^FD{lote_origen}^FS\n"
-                zpl += f"^FO{12 + x},1054^BY3,2,154^BCB,154,N,N,N^FD{lot_name}^FS\n"
+                zpl += f"^FO{12 + x},1017^BY3,2,154^BCB,154,N,N,N^FD{lot_name}^FS\n"
 
             zpl += "^XZ\n"
 
