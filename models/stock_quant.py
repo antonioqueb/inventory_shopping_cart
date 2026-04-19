@@ -64,7 +64,7 @@ class StockQuant(models.Model):
 
         return {'success': True}
 
-    # === NUEVA FUNCIONALIDAD: GENERADOR ZPL ===
+    # === GENERADOR ZPL ===
     @api.model
     def generate_zpl_labels(self, selected_lots, label_format):
         """
@@ -72,48 +72,125 @@ class StockQuant(models.Model):
         """
         if not selected_lots:
             return {'success': False, 'message': 'No hay lotes seleccionados'}
-        
+
         quants = self.browse(selected_lots)
         zpl_code = ""
-        
-        for quant in quants:
-            lot = quant.lot_id
-            product_name = quant.product_id.name[:40] if quant.product_id.name else ''
-            lot_name = lot.name or ''
-            
-            dim_str = ""
-            if hasattr(lot, 'x_alto') and hasattr(lot, 'x_ancho'):
-                dim_str = f"{lot.x_alto}x{lot.x_ancho} cm"
-            
-            zpl_code += "^XA^CI28"
-            
-            if label_format == '10x5':
-                zpl_code += "^FO20,30^A0N,40,40^FD" + product_name + "^FS"
-                zpl_code += "^FO20,80^A0N,35,35^FDLote: " + lot_name + "^FS"
-                zpl_code += "^FO20,120^A0N,30,30^FD" + dim_str + "^FS"
-                zpl_code += "^FO40,180^BY2,2,100^BCN,100,Y,N,N^FD" + lot_name + "^FS"
-                
-            elif label_format == '17.5x1':
-                text_line = f"{lot_name} - {product_name} {dim_str}"
-                zpl_code += "^FO20,20^A0N,30,30^FD" + text_line + "^FS"
-                
-            elif label_format == '20x10':
-                zpl_code += "^FO50,50^A0N,70,70^FD" + product_name + "^FS"
-                zpl_code += "^FO50,150^A0N,50,50^FDLote: " + lot_name + "^FS"
-                zpl_code += "^FO50,220^A0N,50,50^FDDimensiones: " + dim_str + "^FS"
-                if hasattr(lot, 'x_grosor'):
-                    zpl_code += f"^FO50,290^A0N,50,50^FDGrosor: {lot.x_grosor} cm^FS"
-                zpl_code += f"^FO800,150^A0N,50,50^FDArea: {quant.quantity} m2^FS"
-                zpl_code += "^FO100,400^BY4,3,200^BCN,200,Y,N,N^FD" + lot_name + "^FS"
-                zpl_code += "^FO20,20^GB1550,760,4^FS"
 
-            zpl_code += "^XZ"
-            
+        # ── Canto/Lomo 17.5x1: 4 etiquetas por página, formato especial ──
+        if label_format == '17.5x1':
+            zpl_code = self._generate_canto_lomo_zpl(quants)
+        else:
+            for quant in quants:
+                lot = quant.lot_id
+                product_name = quant.product_id.name[:40] if quant.product_id.name else ''
+                lot_name = lot.name or ''
+
+                dim_str = ""
+                if hasattr(lot, 'x_alto') and hasattr(lot, 'x_ancho'):
+                    dim_str = f"{lot.x_alto}x{lot.x_ancho} cm"
+
+                zpl_code += "^XA^CI28"
+
+                if label_format == '10x5':
+                    zpl_code += "^FO20,30^A0N,40,40^FD" + product_name + "^FS"
+                    zpl_code += "^FO20,80^A0N,35,35^FDLote: " + lot_name + "^FS"
+                    zpl_code += "^FO20,120^A0N,30,30^FD" + dim_str + "^FS"
+                    zpl_code += "^FO40,180^BY2,2,100^BCN,100,Y,N,N^FD" + lot_name + "^FS"
+
+                elif label_format == '20x10':
+                    zpl_code += "^FO50,50^A0N,70,70^FD" + product_name + "^FS"
+                    zpl_code += "^FO50,150^A0N,50,50^FDLote: " + lot_name + "^FS"
+                    zpl_code += "^FO50,220^A0N,50,50^FDDimensiones: " + dim_str + "^FS"
+                    if hasattr(lot, 'x_grosor'):
+                        zpl_code += f"^FO50,290^A0N,50,50^FDGrosor: {lot.x_grosor} cm^FS"
+                    zpl_code += f"^FO800,150^A0N,50,50^FDArea: {quant.quantity} m2^FS"
+                    zpl_code += "^FO100,400^BY4,3,200^BCN,200,Y,N,N^FD" + lot_name + "^FS"
+                    zpl_code += "^FO20,20^GB1550,760,4^FS"
+
+                zpl_code += "^XZ"
+
         return {
             'success': True,
             'zpl_data': zpl_code,
             'filename': f'etiquetas_{label_format}_{fields.Date.today()}.zpl'
         }
+
+    def _generate_canto_lomo_zpl(self, quants):
+        """
+        Genera etiquetas formato 17.5x1 cm (canto/lomo).
+        4 etiquetas por página ^XA..^XZ, dispuestas en 4 columnas verticales.
+        Offset X entre columnas: 176 dots.
+
+        Por cada etiqueta (ejemplo col 1, X base = 0):
+        - (SOM)               @ FO 16,20   font 43x27   marca/origen
+        - Código producto     @ FO 16,75   font 35x35   default_code
+        - Secuencial grande   @ FO 18,130  font 78x78   sufijo del lot.name
+        - Descripción rotada  @ FO 140,256 font 32 rot  product.name
+        - Dimensiones rotadas @ FO 95,256  font 32 rot  alto x ancho = area M2
+        - Lote origen rotado  @ FO 45,256  font 32 rot  x_lote_origen / bloque
+        - Barcode vertical    @ FO 4,801   BY3,2,134    lot.name completo
+        """
+        zpl = ""
+        col_offset = 176
+
+        for i in range(0, len(quants), 4):
+            batch = quants[i:i + 4]
+            zpl += "^XA^PW720^LL1200^CI28"
+
+            for idx, quant in enumerate(batch):
+                x = idx * col_offset
+                lot = quant.lot_id
+                product = quant.product_id
+
+                # Código producto (ej: 20102)
+                product_code = (product.default_code or '').strip()
+
+                # Nombre completo del lote (ej: 20102-75) -> usado en barcode
+                lot_name = (lot.name or '').strip()
+
+                # Secuencial grande (ej: 75) = último segmento tras '-' del lot.name
+                if '-' in lot_name:
+                    seq_number = lot_name.split('-')[-1]
+                else:
+                    seq_number = lot_name
+
+                # Descripción del producto (ej: SANTO TOMAS BUSARDEADO PLACA 2 CM)
+                product_name = (product.name or '').strip()
+
+                # Dimensiones en metros. Si el campo está en cm (>10), convertir.
+                alto_raw = getattr(lot, 'x_alto', 0) or 0
+                ancho_raw = getattr(lot, 'x_ancho', 0) or 0
+                alto_m = alto_raw / 100.0 if alto_raw > 10 else alto_raw
+                ancho_m = ancho_raw / 100.0 if ancho_raw > 10 else ancho_raw
+                area = quant.quantity or 0
+                dim_line = f"{alto_m:.2f} x {ancho_m:.2f} = {area:.2f} M2"
+
+                # Lote origen / bloque (ej: B270326-4). Fallbacks por si cambia el nombre del campo.
+                lote_origen = (
+                    getattr(lot, 'x_lote_origen', None)
+                    or getattr(lot, 'x_bloque', None)
+                    or getattr(lot, 'x_origen', None)
+                    or lot_name
+                )
+                if hasattr(lote_origen, 'name'):
+                    lote_origen = lote_origen.name
+                lote_origen = str(lote_origen or '').strip()
+
+                # Marca / origen
+                origen = '( SOM )'
+
+                # Ensamble ZPL con offset de columna aplicado
+                zpl += f"^FO{16 + x},20^A0N,43,38^FB160,1,0,C^FD{origen}^FS"
+                zpl += f"^FO{16 + x},75^A0N,35,35^FB160,1,0,C^FD{product_code}^FS"
+                zpl += f"^FO{18 + x},130^A0N,78,78^FB160,1,0,C^FD{seq_number}^FS"
+                zpl += f"^FO{140 + x},256^A0R,32,34^FD{product_name}^FS"
+                zpl += f"^FO{95 + x},256^A0R,32,32^FD{dim_line}^FS"
+                zpl += f"^FO{45 + x},256^A0R,32,32^FD{lote_origen}^FS"
+                zpl += f"^FO{4 + x},801^BY3,2,134^BCB,134,N,N,N^FD{lot_name}^FS"
+
+            zpl += "^XZ"
+
+        return zpl
 
     def _get_partner_delivery_address(self, partner):
         """Construir dirección de entrega del cliente"""
