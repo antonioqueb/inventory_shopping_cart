@@ -121,33 +121,33 @@ class StockQuant(models.Model):
         4 etiquetas por página ^XA..^XZ, dispuestas en 4 columnas verticales.
         Offset X entre columnas: 176 dots.
 
-        Distribución EXACTA según plantilla original:
-        - (SOM)            FO 16,20   A0N,43,27  FB160,1,0,C    marca/origen
+        Coordenadas EXACTAS (columna 1, x base = 0):
+        - (SOM)            FO 26,20   A0N,43,27  FB160,1,0,C    marca/origen
         - Prefijo lote     FO 16,75   A0N,35,35  FB160,1,0,C    lot.name ANTES del '-'
-        - Sufijo lote      FO 18,130  A0N,78,78  FB160,1,0,C    lot.name DESPUÉS del '-'
+        - Sufijo lote      FO 28,130  A0N,78,78  FB160,1,0,C    lot.name DESPUÉS del '-'
         - Descripción      FO 140,256 A0R,32,32  (rotada)        product.name
         - Dimensiones      FO 95,256  A0R,32,32  (rotada)        alto x ancho = area M2
         - Lote origen      FO 45,256  A0R,32,32  (rotada)        x_lote_origen / bloque
-        - Barcode vertical FO 4,801   BY3,2,134  BCB,134,N,N,N   lot.name COMPLETO
+        - Barcode vertical FO 12,801  BY3,2,154  BCB,154,N,N,N   lot.name COMPLETO
         """
         zpl = ""
         col_offset = 176
 
         for i in range(0, len(quants), 4):
             batch = quants[i:i + 4]
-            zpl += "^XA^PW720^LL1200^CI28"
+            zpl += "^XA\n^PW720\n^LL1200\n^CI28\n"
 
             for idx, quant in enumerate(batch):
                 x = idx * col_offset
                 lot = quant.lot_id
                 product = quant.product_id
 
-                # ── Nombre completo del lote (ej: "20102-75") ──
+                # ── Nombre completo del lote (ej: "17152-21") ──
                 lot_name = (lot.name or '').strip()
 
-                # ── Split en el guion: prefijo (arriba) + sufijo (abajo) ──
-                # Se usa rsplit('-', 1) para tomar el ÚLTIMO guion como separador.
-                #   "20102-75"     -> prefijo="20102",    sufijo="75"
+                # ── Split en el guion: prefijo (arriba) + sufijo (abajo grande) ──
+                # Usa rsplit('-', 1): toma el ÚLTIMO guion como separador.
+                #   "17152-21"     -> prefijo="17152",    sufijo="21"
                 #   "ABC-DEF-123"  -> prefijo="ABC-DEF",  sufijo="123"
                 #   "SINGUION"     -> prefijo="SINGUION", sufijo=""
                 if '-' in lot_name:
@@ -155,7 +155,7 @@ class StockQuant(models.Model):
                 else:
                     lot_prefix, lot_suffix = lot_name, ''
 
-                # ── Descripción del producto (ej: "SANTO TOMAS BUSARDEADO PLACA 2 CM") ──
+                # ── Descripción del producto (ej: "ADMIRAL BLUE PULIDO PLACA 2 CM") ──
                 product_name = (product.name or '').strip()
 
                 # ── Dimensiones en metros. Si viene en cm (>10) convertir. ──
@@ -166,7 +166,7 @@ class StockQuant(models.Model):
                 area = quant.quantity or 0
                 dim_line = f"{alto_m:.2f} x {ancho_m:.2f} = {area:.2f} M2"
 
-                # ── Lote origen / bloque (ej: "B270326-4"). Fallbacks seguros. ──
+                # ── Lote origen / bloque (ej: "035030"). Fallbacks seguros. ──
                 lote_origen = (
                     getattr(lot, 'x_lote_origen', None)
                     or getattr(lot, 'x_bloque', None)
@@ -181,17 +181,22 @@ class StockQuant(models.Model):
                 origen = '(SOM)'
 
                 # ── Ensamble ZPL con offset de columna aplicado ──
-                # IMPORTANTE: mantener BY3,2,134 y BCB,134,N,N,N SIN modificación
-                # para que el barcode conserve el ancho/alto exacto del original.
-                zpl += f"^FO{16 + x},20^A0N,43,27^FB160,1,0,C^FD{origen}^FS"
-                zpl += f"^FO{16 + x},75^A0N,35,35^FB160,1,0,C^FD{lot_prefix}^FS"
-                zpl += f"^FO{18 + x},130^A0N,78,78^FB160,1,0,C^FD{lot_suffix}^FS"
-                zpl += f"^FO{140 + x},256^A0R,32,32^FD{product_name}^FS"
-                zpl += f"^FO{95 + x},256^A0R,32,32^FD{dim_line}^FS"
-                zpl += f"^FO{45 + x},256^A0R,32,32^FD{lote_origen}^FS"
-                zpl += f"^FO{4 + x},801^BY3,2,134^BCB,134,N,N,N^FD{lot_name}^FS"
+                # Coordenadas X base por elemento (antes del offset de columna):
+                #   (SOM):     26     -> 26, 202, 378, 554
+                #   prefijo:   16     -> 16, 192, 368, 544
+                #   sufijo:    28     -> 28, 204, 380, 556
+                #   rotados:   140/95/45 -> + 176 por columna
+                #   barcode:   12     -> 12, 188, 364, 540
+                # Barcode height: BY3,2,154 + BCB,154 (antes era 134, ahora 154).
+                zpl += f"^FO{26 + x},20^A0N,43,27^FB160,1,0,C^FD{origen}^FS\n"
+                zpl += f"^FO{16 + x},75^A0N,35,35^FB160,1,0,C^FD{lot_prefix}^FS\n"
+                zpl += f"^FO{28 + x},130^A0N,78,78^FB160,1,0,C^FD{lot_suffix}^FS\n"
+                zpl += f"^FO{140 + x},256^A0R,32,32^FD{product_name}^FS\n"
+                zpl += f"^FO{95 + x},256^A0R,32,32^FD{dim_line}^FS\n"
+                zpl += f"^FO{45 + x},256^A0R,32,32^FD{lote_origen}^FS\n"
+                zpl += f"^FO{12 + x},801^BY3,2,154^BCB,154,N,N,N^FD{lot_name}^FS\n"
 
-            zpl += "^XZ"
+            zpl += "^XZ\n"
 
         return zpl
 
