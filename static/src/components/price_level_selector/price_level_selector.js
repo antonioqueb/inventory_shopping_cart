@@ -1,12 +1,25 @@
 /** @odoo-module **/
 
-import { Component } from "@odoo/owl";
+import { Component, useEffect, useRef } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 
 export class PriceLevelSelectorField extends Component {
     static template = "inventory_shopping_cart.PriceLevelSelectorField";
     static props = { ...standardFieldProps };
+
+    setup() {
+        this.selectRef = useRef("select");
+        // Forzar sincronización del value del <select> cuando cambia el valor del record
+        useEffect(
+            () => {
+                if (this.selectRef.el) {
+                    this.selectRef.el.value = this.value;
+                }
+            },
+            () => [this.value, this.props.record.data.x_price_1_value, this.props.record.data.x_price_2_value]
+        );
+    }
 
     get value() {
         return this.props.record.data[this.props.name] || "";
@@ -23,11 +36,11 @@ export class PriceLevelSelectorField extends Component {
 
     formatPrice(value) {
         const num = Number(value) || 0;
-        const formatted = num.toLocaleString(undefined, {
+        const formatted = num.toLocaleString('es-MX', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
         });
-        return `${formatted} ${this.currency}`;
+        return `$${formatted} ${this.currency}`;
     }
 
     get options() {
