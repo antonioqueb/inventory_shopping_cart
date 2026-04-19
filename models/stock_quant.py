@@ -152,8 +152,17 @@ class StockQuant(models.Model):
                 else:
                     lot_prefix, lot_suffix = lot_name, ''
 
-                # ── Descripción del producto ──
+                # ── Descripción del producto (máx. 50 chars + "..." = 53 total) ──
+                # - <=50 chars: se deja tal cual
+                # - >50 chars y NO parte palabra (char siguiente es espacio o corte
+                #   cayó sobre espacio): corte limpio a 50, sin puntos
+                # - >50 chars y SÍ parte palabra: 50 chars + "..." = 53 chars total
                 product_name = (product.name or '').strip()
+                if len(product_name) > 50:
+                    if product_name[50] == ' ' or product_name[:50].endswith(' '):
+                        product_name = product_name[:50].rstrip()
+                    else:
+                        product_name = product_name[:50] + '...'
 
                 # ── Dimensiones en metros. Si viene en cm (>10) convertir. ──
                 alto_raw = getattr(lot, 'x_alto', 0) or 0
