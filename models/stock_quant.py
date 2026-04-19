@@ -178,7 +178,7 @@ class StockQuant(models.Model):
                 lote_origen = str(lote_origen or '').strip()
 
                 # ── Marca / origen ──
-                origen = '(SOM)'
+                origen = '( SOM )'
 
                 # ── Ensamble ZPL con offset de columna aplicado ──
                 # Coordenadas X base por elemento (antes del offset de columna):
@@ -188,10 +188,10 @@ class StockQuant(models.Model):
                 #   rotados:   140/95/45 -> + 176 por columna
                 #   barcode:   12     -> 12, 188, 364, 540
                 # Barcode height: BY3,2,154 + BCB,154 (antes era 134, ahora 154).
-                zpl += f"^FO{26 + x},20^A0N,43,27^FB160,1,0,C^FD{origen}^FS\n"
-                zpl += f"^FO{16 + x},75^A0N,35,35^FB160,1,0,C^FD{lot_prefix}^FS\n"
+                zpl += f"^FO{26 + x},20^A0N,43,38^FB160,1,0,C^FD{origen}^FS\n"
+                zpl += f"^FO{16 + x},75^A0N,35,37^FB160,1,0,C^FD{lot_prefix}^FS\n"
                 zpl += f"^FO{28 + x},130^A0N,78,78^FB160,1,0,C^FD{lot_suffix}^FS\n"
-                zpl += f"^FO{140 + x},256^A0R,32,32^FD{product_name}^FS\n"
+                zpl += f"^FO{140 + x},256^A0R,32,34^FD{product_name}^FS\n"
                 zpl += f"^FO{95 + x},256^A0R,32,32^FD{dim_line}^FS\n"
                 zpl += f"^FO{45 + x},256^A0R,32,32^FD{lote_origen}^FS\n"
                 zpl += f"^FO{12 + x},801^BY3,2,154^BCB,154,N,N,N^FD{lot_name}^FS\n"
