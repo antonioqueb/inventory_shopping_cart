@@ -16,6 +16,9 @@ except ImportError:
 
 _logger = logging.getLogger(__name__)
 
+# ÚNICA URL usada por el módulo para Banorte
+BANORTE_API_URL = "http://banorte_scraper:8000/"
+
 
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
@@ -25,14 +28,14 @@ class ProductTemplate(models.Model):
     x_origin_country_id = fields.Many2one('res.country', string='País de Origen')
     
     x_pol_id = fields.Many2one(
-        'res.partner', 
+        'res.partner',
         string='Puerto de Carga (POL)',
         domain="[('category_id.name', '=', 'POL')]",
         help="Puerto donde se embarca la mercancía."
     )
     
     x_pod_id = fields.Many2one(
-        'res.partner', 
+        'res.partner',
         string='Puerto de Destino (POD)',
         domain="[('category_id.name', '=', 'POD')]",
         help="Puerto donde se descarga la mercancía."
@@ -52,7 +55,11 @@ class ProductTemplate(models.Model):
 
     # === CAMPOS DE RASTREO DE COSTOS ===
 
-    x_has_purchases = fields.Boolean(string='Tiene Compras Confirmadas', compute='_compute_costo_all_in', store=True)
+    x_has_purchases = fields.Boolean(
+        string='Tiene Compras Confirmadas',
+        compute='_compute_costo_all_in',
+        store=True
+    )
     
     x_max_avg_cost_mxn = fields.Float(
         string='Costo Bruto Histórico (MaxAvg)',
@@ -95,18 +102,21 @@ class ProductTemplate(models.Model):
 
     # === ESTRATEGIA DE PRECIOS: UTILIDADES DIRECTAS ===
     
-    x_utilidad = fields.Float(string='% Utilidad Alta', default=40.0,
-                              help="Margen de utilidad para el Precio Alto (Nivel 1). Precio = Costo / (1 - %).")
+    x_utilidad = fields.Float(
+        string='% Utilidad Alta',
+        default=40.0,
+        help="Margen de utilidad para el Precio Alto (Nivel 1). Precio = Costo / (1 - %)."
+    )
     
     x_utilidad_media = fields.Float(
-        string='% Utilidad Media', 
-        default=35.0, 
+        string='% Utilidad Media',
+        default=35.0,
         help="Margen de utilidad para el Precio Medio (Nivel 2). Precio = Costo / (1 - %)."
     )
     
     x_utilidad_minima = fields.Float(
-        string='% Utilidad Mínima', 
-        default=30.0, 
+        string='% Utilidad Mínima',
+        default=30.0,
         help="Margen de utilidad para el Precio Mínimo (Nivel 3). Precio = Costo / (1 - %)."
     )
 
@@ -121,19 +131,23 @@ class ProductTemplate(models.Model):
     x_price_mxn_3 = fields.Float(string='Precio MXN 3', digits='Product Price', default=0.0, company_dependent=True)
     
     x_costo_mayor = fields.Float(
-        string='Costo ALL-IN (MXN)', 
-        digits='Product Price', 
-        default=0.0, 
+        string='Costo ALL-IN (MXN)',
+        digits='Product Price',
+        default=0.0,
         company_dependent=True,
         readonly=True,
         help="Costo Total Calculado: Base + Logística + Aranceles (Solo si hay compras confirmadas)."
     )
     
-    x_name_sps = fields.Char(string='Nombre SPS', help='Nombre del producto en el sistema SPS', default='')
+    x_name_sps = fields.Char(
+        string='Nombre SPS',
+        help='Nombre del producto en el sistema SPS',
+        default=''
+    )
 
     def action_update_costs(self):
         """Acción manual para recalcular costos"""
-        _logger.info(f"COSTOS: Iniciando actualización manual para {self.name}")
+        _logger.info("COSTOS: Iniciando actualización manual para %s", self.name)
         self._compute_costo_all_in()
         self._calculate_escalera_precios()
 
@@ -146,11 +160,11 @@ class ProductTemplate(models.Model):
         company_currency = company.currency_id
         
         for record in self:
-            _logger.info(f"COSTOS: Calculando para producto {record.display_name} (ID: {record.id})")
+            _logger.info("COSTOS: Calculando para producto %s (ID: %s)", record.display_name, record.id)
             
             purchase_lines = self.env['purchase.order.line'].search([
                 ('product_id.product_tmpl_id', '=', record.id),
-                ('state', 'in', ['purchase', 'done']) 
+                ('state', 'in', ['purchase', 'done'])
             ], order='date_order asc, id asc')
 
             has_purchases = bool(purchase_lines)
@@ -160,7 +174,7 @@ class ProductTemplate(models.Model):
             
             if not has_purchases:
                 all_in_cost = record.standard_price
-                _logger.info(f"COSTOS: Sin compras. Usando Costo Estándar: {all_in_cost}")
+                _logger.info("COSTOS: Sin compras. Usando Costo Estándar: %s", all_in_cost)
                 
                 record.x_max_avg_cost_mxn = 0.0
                 record.x_logistics_cost_mxn = 0.0
@@ -181,9 +195,9 @@ class ProductTemplate(models.Model):
                     price_unit_mxn = line.price_unit
                     if line_currency != company_currency:
                         price_unit_mxn = line_currency._convert(
-                            line.price_unit, 
-                            company_currency, 
-                            line.company_id, 
+                            line.price_unit,
+                            company_currency,
+                            line.company_id,
                             rate_date
                         )
                     
@@ -282,9 +296,9 @@ class ProductTemplate(models.Model):
     def write(self, vals):
         res = super(ProductTemplate, self).write(vals)
         triggers = [
-            'standard_price', 
-            'x_origin_country_id', 'x_pol_id', 'x_pod_id', 
-            'x_container_capacity', 'x_arancel_pct'
+            'standard_price',
+            'x_origin_country_id', 'x_pol_id', 'x_pod_id',
+            'x_container_capacity', 'x_arancel_pct',
         ]
         
         price_triggers = [
@@ -393,27 +407,29 @@ class ProductTemplate(models.Model):
     def cron_update_banorte_rates(self):
         """
         Consulta API Banorte, actualiza tipos de cambio y reprograma el cron.
+        ÚNICO parámetro manual requerido en Odoo: API_KEY
         """
         icp = self.env['ir.config_parameter'].sudo()
         api_key = icp.get_param('API_KEY')
 
-        # NO uses 127.0.0.1 si Odoo está en contenedor distinto al scraper.
-        # Usa el nombre del servicio docker, por ejemplo:
-        # http://banorte_scraper:8000/
-        url = icp.get_param('BANORTE_API_URL', 'http://banorte_scraper:8000/')
-
         if not api_key:
             _logger.warning("BANORTE SYNC: API_KEY no configurada")
-            self._reschedule_banorte_cron_sql()
+            try:
+                self._reschedule_banorte_cron_sql()
+                self.env.cr.commit()
+            except Exception:
+                self.env.cr.rollback()
+                _logger.exception("BANORTE SYNC: error reprogramando cron sin API_KEY")
             return False
 
         headers = {"x-api-key": api_key}
 
         try:
-            response = requests.get(url, headers=headers, timeout=90)
+            response = requests.get(BANORTE_API_URL, headers=headers, timeout=90)
             response.raise_for_status()
 
             data = response.json()
+            _logger.warning("BANORTE RAW RESPONSE: %s", data)
 
             buy_raw = data.get("tipo-cambio-compra-banorte")
             sell_raw = data.get("tipo-cambio-venta-banorte")
@@ -424,28 +440,75 @@ class ProductTemplate(models.Model):
             if rate_sell <= 0:
                 raise ValueError(f"Tipo de cambio venta inválido: {sell_raw}")
 
+            # Guardar tipo de cambio primero
             icp.set_param('banorte.last_rate', rate_sell)
             icp.set_param('banorte.last_rate_buy', rate_buy)
             icp.set_param('banorte.last_rate_sell', rate_sell)
             icp.set_param('banorte.last_payload', str(data))
             icp.set_param('banorte.last_sync_at', fields.Datetime.now())
 
+            # Histórico si existe el modelo
+            if 'banorte.rate.log' in self.env:
+                self.env['banorte.rate.log'].sudo().create({
+                    'requested_at': fields.Datetime.now(),
+                    'rate_buy': rate_buy,
+                    'rate_sell': rate_sell,
+                    'raw_response': str(data),
+                    'source_url': BANORTE_API_URL,
+                    'success': True,
+                })
+
+            # COMMIT inmediato para que el TC quede persistido
+            self.env.cr.commit()
+
+            # Recalcular productos
             products = self.search([('active', '=', True)])
             products._calculate_escalera_precios()
 
+            # Recalcular órdenes abiertas
+            if 'sale.order' in self.env:
+                orders = self.env['sale.order'].search([('state', 'in', ['draft', 'sent'])])
+                orders._compute_exchange_rate()
+            else:
+                orders = self.env['sale.order']
+
+            self.env.cr.commit()
+
             _logger.info(
-                "BANORTE SYNC OK | compra=%s venta=%s | productos recalculados=%s",
-                rate_buy, rate_sell, len(products)
+                "BANORTE SYNC OK | compra=%s venta=%s | productos recalculados=%s | ordenes recalculadas=%s",
+                rate_buy, rate_sell, len(products), len(orders)
             )
 
             return True
 
         except Exception as e:
+            self.env.cr.rollback()
+
+            if 'banorte.rate.log' in self.env:
+                try:
+                    self.env['banorte.rate.log'].sudo().create({
+                        'requested_at': fields.Datetime.now(),
+                        'rate_buy': 0.0,
+                        'rate_sell': 0.0,
+                        'raw_response': '',
+                        'source_url': BANORTE_API_URL,
+                        'success': False,
+                        'error_message': str(e),
+                    })
+                    self.env.cr.commit()
+                except Exception:
+                    self.env.cr.rollback()
+
             _logger.exception("BANORTE SYNC Error: %s", e)
             return False
 
         finally:
-            self._reschedule_banorte_cron_sql()
+            try:
+                self._reschedule_banorte_cron_sql()
+                self.env.cr.commit()
+            except Exception:
+                self.env.cr.rollback()
+                _logger.exception("BANORTE SYNC: error reprogramando cron")
 
     @api.model
     def get_custom_prices(self, product_id, currency_code):
@@ -498,7 +561,7 @@ class ProductTemplate(models.Model):
                     'product_name': product.display_name,
                     'requested_price': requested_price,
                     'medium_price': medium,
-                    'minimum_price': product.x_price_mxn_3 if currency_code == 'MXN' else product.x_price_usd_3
+                    'minimum_price': product.x_price_mxn_3 if currency_code == 'MXN' else product.x_price_usd_3,
                 })
         return {'needs_authorization': len(needs_auth) > 0, 'products': needs_auth}
 
