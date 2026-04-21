@@ -233,18 +233,6 @@ class ProductTemplate(models.Model):
     def _calculate_escalera_precios(self):
         """
         Calcula la escalera de precios.
-        
-        MODO CALCULADO (calculated):
-            Nivel 1 = Costo / (1 - %Utilidad Alta)
-            Nivel 2 = Costo / (1 - %Utilidad Media)
-            Nivel 3 = Costo / (1 - %Utilidad Mínima)
-        
-        MODO FIJO (fixed):
-            Nivel 1 = Precio Fijo Base
-            Nivel 2 = Precio Fijo * (1 - %Utilidad Media / 100)
-            Nivel 3 = Precio Fijo * (1 - %Utilidad Mínima / 100)
-            
-        Todos los precios se redondean hacia arriba (math.ceil).
         """
         rate_param = self.env['ir.config_parameter'].sudo().get_param('banorte.last_rate', '0')
         try:
@@ -322,13 +310,6 @@ class ProductTemplate(models.Model):
 
     @api.model
     def _parse_money_to_float(self, value):
-        """
-        Convierte strings como:
-        '$ 17.65'
-        '$17.65'
-        '17.65'
-        a float.
-        """
         if value is None:
             return 0.0
         if isinstance(value, (int, float)):
@@ -343,9 +324,9 @@ class ProductTemplate(models.Model):
     @api.model
     def _get_next_banorte_run_utc(self, now_utc=None):
         """
-        Calcula el siguiente disparo en UTC naive para Odoo,
-        usando una ventana local de 08:00 a 20:00 hora Monterrey
-        y saltos variables de 45, 60, 75 o 90 min.
+        Ventana local: 08:00 a 20:00 (Monterrey)
+        Saltos variables: 45, 60, 75, 90 min
+        Devuelve datetime UTC naive para guardar en ir_cron.nextcall
         """
         tz = self._banorte_local_tz()
         now_utc = now_utc or datetime.utcnow()
@@ -359,28 +340,23 @@ class ProductTemplate(models.Model):
         start_day = time(8, 0)
         end_day = time(20, 0)
 
-        # Si se está ejecutando antes de 8am -> programar hoy 8:00 + variación
         if now_local.time() < start_day:
             candidate_local = now_local.replace(hour=8, minute=0, second=0, microsecond=0)
             candidate_local += timedelta(minutes=random.choice(intervals))
-        # Si ya pasó de 8pm -> programar mañana 8:00 + variación
-        elif now_local.time() > end_day:
+        elif now_local.time() >= end_day:
             next_day = now_local.date() + timedelta(days=1)
             candidate_local = datetime.combine(next_day, time(8, 0))
             if tz:
                 candidate_local = candidate_local.replace(tzinfo=tz)
             candidate_local += timedelta(minutes=random.choice(intervals))
         else:
-            # Dentro de ventana -> sumar intervalo aleatorio
             candidate_local = now_local + timedelta(minutes=random.choice(intervals))
-
-            # Si se pasa de las 20:00, mover al siguiente día 8:00 + variación
-            if candidate_local.time() > end_day:
+            if candidate_local.time() >= end_day:
                 next_day = candidate_local.date() + timedelta(days=1)
                 candidate_local = datetime.combine(next_day, time(8, 0))
                 if tz:
                     candidate_local = candidate_local.replace(tzinfo=tz)
-                candidate_local += timedelta(minutes(random.choice(intervals)))
+                candidate_local += timedelta(minutes=random.choice(intervals))
 
         if tz:
             candidate_utc = candidate_local.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
@@ -390,32 +366,45 @@ class ProductTemplate(models.Model):
         return candidate_utc
 
     @api.model
-    def _reschedule_banorte_cron(self):
+    def _reschedule_banorte_cron_sql(self):
+        """
+        Odoo 19 no permite write() al mismo cron mientras está ejecutándose.
+        Por eso aquí se actualiza nextcall vía SQL.
+        """
         cron = self.env.ref('inventory_shopping_cart.ir_cron_update_banorte_prices', raise_if_not_found=False)
         if not cron:
             _logger.warning("BANORTE SYNC: No se encontró el cron inventory_shopping_cart.ir_cron_update_banorte_prices")
             return
 
         next_run_utc = self._get_next_banorte_run_utc()
-        cron.sudo().write({
-            'nextcall': fields.Datetime.to_string(next_run_utc),
-        })
+        nextcall_str = fields.Datetime.to_string(next_run_utc)
 
-        _logger.info("BANORTE SYNC: siguiente ejecución programada en %s UTC", next_run_utc)
+        self.env.cr.execute("""
+            UPDATE ir_cron
+               SET nextcall = %s,
+                   write_date = NOW(),
+                   write_uid = %s
+             WHERE id = %s
+        """, (nextcall_str, self.env.user.id or 1, cron.id))
+
+        _logger.info("BANORTE SYNC: siguiente ejecución programada en %s UTC", nextcall_str)
 
     @api.model
     def cron_update_banorte_rates(self):
         """
-        Consulta API Banorte, guarda último tipo de cambio y reprograma el cron.
-        Debe ejecutar inmediatamente cuando se invoque manualmente.
+        Consulta API Banorte, actualiza tipos de cambio y reprograma el cron.
         """
         icp = self.env['ir.config_parameter'].sudo()
         api_key = icp.get_param('API_KEY')
-        url = icp.get_param('BANORTE_API_URL', 'http://127.0.0.1:8000/')
+
+        # NO uses 127.0.0.1 si Odoo está en contenedor distinto al scraper.
+        # Usa el nombre del servicio docker, por ejemplo:
+        # http://banorte_scraper:8000/
+        url = icp.get_param('BANORTE_API_URL', 'http://banorte_scraper:8000/')
 
         if not api_key:
             _logger.warning("BANORTE SYNC: API_KEY no configurada")
-            self._reschedule_banorte_cron()
+            self._reschedule_banorte_cron_sql()
             return False
 
         headers = {"x-api-key": api_key}
@@ -435,10 +424,7 @@ class ProductTemplate(models.Model):
             if rate_sell <= 0:
                 raise ValueError(f"Tipo de cambio venta inválido: {sell_raw}")
 
-            # Mantener compatibilidad con tu lógica actual
             icp.set_param('banorte.last_rate', rate_sell)
-
-            # Nuevos parámetros útiles
             icp.set_param('banorte.last_rate_buy', rate_buy)
             icp.set_param('banorte.last_rate_sell', rate_sell)
             icp.set_param('banorte.last_payload', str(data))
@@ -459,7 +445,7 @@ class ProductTemplate(models.Model):
             return False
 
         finally:
-            self._reschedule_banorte_cron()
+            self._reschedule_banorte_cron_sql()
 
     @api.model
     def get_custom_prices(self, product_id, currency_code):
@@ -481,7 +467,6 @@ class ProductTemplate(models.Model):
 
     @api.model
     def get_price_tooltip_data(self, product_id):
-        """Retorna precios alto y medio en ambas monedas para el tooltip"""
         product = self.env['product.product'].browse(product_id)
         if not product.exists():
             return {}
@@ -495,10 +480,6 @@ class ProductTemplate(models.Model):
 
     @api.model
     def check_price_authorization_needed(self, product_prices, currency_code):
-        """
-        Verifica si se necesita autorización de precio.
-        Si el usuario es autorizador (group_price_authorizer), NUNCA requiere autorización.
-        """
         is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
         if is_authorizer:
             return {'needs_authorization': False, 'products': [], 'is_authorizer': True}
