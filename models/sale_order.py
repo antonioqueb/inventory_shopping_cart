@@ -136,24 +136,40 @@ class SaleOrder(models.Model):
         ('official', 'Diario Oficial (SAT)'),
     ], string='Fuente Tipo de Cambio', default='banorte', tracking=True)
 
+    # IMPORTANTE:
+    # Ya NO se guarda para que siempre lea el último banorte.last_rate actual.
     x_exchange_rate = fields.Float(
-        string='Tipo de Cambio', digits=(12, 4),
-        compute='_compute_exchange_rate', store=True, tracking=True,
+        string='Tipo de Cambio',
+        digits=(12, 4),
+        compute='_compute_exchange_rate',
     )
 
-    x_is_usd = fields.Boolean(string='Es USD', compute='_compute_is_usd', store=True)
+    # Ya NO se guarda para que responda al vuelo al cambiar la lista de precios.
+    x_is_usd = fields.Boolean(
+        string='Es USD',
+        compute='_compute_is_usd',
+    )
 
     @api.depends('pricelist_id', 'pricelist_id.currency_id')
     def _compute_is_usd(self):
         for order in self:
-            order.x_is_usd = bool(order.pricelist_id and order.pricelist_id.currency_id and order.pricelist_id.currency_id.name == 'USD')
+            order.x_is_usd = bool(
+                order.pricelist_id and
+                order.pricelist_id.currency_id and
+                order.pricelist_id.currency_id.name == 'USD'
+            )
 
-    @api.depends('x_exchange_rate_source')
+    @api.depends('x_exchange_rate_source', 'pricelist_id', 'pricelist_id.currency_id')
     def _compute_exchange_rate(self):
-        banorte_rate = self._get_banorte_rate()
-        official_rate = self._get_official_rate()
         for order in self:
+            banorte_rate = order._get_banorte_rate()
+            official_rate = order._get_official_rate()
             order.x_exchange_rate = official_rate if order.x_exchange_rate_source == 'official' else banorte_rate
+
+    @api.onchange('x_exchange_rate_source', 'pricelist_id')
+    def _onchange_exchange_rate_fields(self):
+        self._compute_is_usd()
+        self._compute_exchange_rate()
 
     def _get_banorte_rate(self):
         try:
@@ -292,6 +308,10 @@ class SaleOrder(models.Model):
     def _onchange_pricelist_id_custom_prices(self):
         if not self.pricelist_id:
             return
+
+        self._compute_is_usd()
+        self._compute_exchange_rate()
+
         currency_name = self.pricelist_id.currency_id.name or 'USD'
         for line in self.order_line:
             if not line.product_id or line.x_price_selector == 'custom':
@@ -613,16 +633,6 @@ class SaleOrder(models.Model):
 
                     # ══════════════════════════════════════════════════════
                     # FIX CRÍTICO: Usar la ubicación REAL del quant
-                    # ══════════════════════════════════════════════════════
-                    # quant.location_id = ubicación exacta donde está el
-                    #   material (ej: WH/Stock/Bodega1/Bin2/Rack3)
-                    # move.location_id  = ubicación padre genérica del
-                    #   picking type (ej: WH/Stock)
-                    #
-                    # Odoo requiere que location_id del move line sea hija
-                    # (o igual) a location_id del move para que la reserva
-                    # sea válida. Como quant.location_id siempre es hija de
-                    # la ubicación del almacén, esto funciona correctamente.
                     # ══════════════════════════════════════════════════════
                     source_location_id = quant.location_id.id
 
