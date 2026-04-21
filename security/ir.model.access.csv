@@ -11,3 +11,4 @@ access_shopping_cart_inventory_user,shopping.cart.inventory.user,model_shopping_
 access_stock_location_inventory_user,stock.location.inventory.user,stock.model_stock_location,stock.group_stock_user,1,0,0,0
 access_product_category_pricing_admin,product.category.pricing.admin,model_product_category_pricing,base.group_system,1,1,1,1
 access_product_category_pricing_authorizer,product.category.pricing.authorizer,model_product_category_pricing,inventory_shopping_cart.group_price_authorizer,1,1,0,0
+access_banorte_rate_log_user,access.banorte.rate.log.user,model_banorte_rate_log,base.group_system,1,1,1,0

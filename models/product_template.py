@@ -3,9 +3,19 @@
 import math
 import requests
 import logging
+import random
+import re
+from datetime import datetime, timedelta, time
+
 from odoo import models, fields, api
 
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
+
 _logger = logging.getLogger(__name__)
+
 
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
@@ -138,7 +148,6 @@ class ProductTemplate(models.Model):
         for record in self:
             _logger.info(f"COSTOS: Calculando para producto {record.display_name} (ID: {record.id})")
             
-            # 1. Búsqueda de compras (Detectar confirmadas sin recibir)
             purchase_lines = self.env['purchase.order.line'].search([
                 ('product_id.product_tmpl_id', '=', record.id),
                 ('state', 'in', ['purchase', 'done']) 
@@ -149,7 +158,6 @@ class ProductTemplate(models.Model):
             
             all_in_cost = 0.0
             
-            # === ESCENARIO A: SIN COMPRAS CONFIRMADAS ===
             if not has_purchases:
                 all_in_cost = record.standard_price
                 _logger.info(f"COSTOS: Sin compras. Usando Costo Estándar: {all_in_cost}")
@@ -158,9 +166,7 @@ class ProductTemplate(models.Model):
                 record.x_logistics_cost_mxn = 0.0
                 record.x_duty_cost_mxn = 0.0
             
-            # === ESCENARIO B: CON COMPRAS CONFIRMADAS ===
             else:
-                # 1. Calcular MaxAvg
                 total_qty = 0.0
                 total_val_mxn = 0.0
                 max_avg = 0.0
@@ -192,7 +198,6 @@ class ProductTemplate(models.Model):
                 base_gross_cost = max_avg
                 record.x_max_avg_cost_mxn = max_avg
 
-                # 2. Calcular Logística (Tarifario USD -> MXN)
                 logistics_cost_mxn = 0.0
                 
                 if record.x_origin_country_id and record.x_pol_id and record.x_pod_id and record.x_container_capacity > 0:
@@ -214,14 +219,12 @@ class ProductTemplate(models.Model):
                 
                 record.x_logistics_cost_mxn = logistics_cost_mxn
 
-                # 3. Calcular Arancel
                 duty_cost_mxn = 0.0
                 if record.x_arancel_pct > 0:
                     duty_cost_mxn = base_gross_cost * (record.x_arancel_pct / 100.0)
                 
                 record.x_duty_cost_mxn = duty_cost_mxn
 
-                # 4. Suma Final
                 all_in_cost = base_gross_cost + logistics_cost_mxn + duty_cost_mxn
             
             if all_in_cost != record.x_costo_mayor:
@@ -246,7 +249,7 @@ class ProductTemplate(models.Model):
         rate_param = self.env['ir.config_parameter'].sudo().get_param('banorte.last_rate', '0')
         try:
             banorte_rate = float(rate_param)
-        except:
+        except Exception:
             banorte_rate = 0.0
             
         if banorte_rate <= 0:
@@ -255,7 +258,6 @@ class ProductTemplate(models.Model):
             banorte_rate = usd_currency._convert(1.0, company_currency, self.env.company, fields.Date.today())
 
         def _price_from_utility(base, utility_pct):
-            """Precio = Base / (1 - %Utilidad). Redondeo ceil."""
             divisor = (1 - (utility_pct / 100.0))
             if divisor <= 0:
                 divisor = 0.01
@@ -266,7 +268,6 @@ class ProductTemplate(models.Model):
             mxn_2 = 0
             mxn_3 = 0
 
-            # Determinar la base según el modo
             if record.x_pricing_mode == 'fixed' and record.x_fixed_price > 0:
                 base = record.x_fixed_price
             else:
@@ -277,7 +278,6 @@ class ProductTemplate(models.Model):
                 mxn_2 = _price_from_utility(base, record.x_utilidad_media)
                 mxn_3 = _price_from_utility(base, record.x_utilidad_minima)
 
-            # Convertir a USD y redondear hacia arriba
             usd_1 = math.ceil(mxn_1 / banorte_rate) if banorte_rate > 0 else 0
             usd_2 = math.ceil(mxn_2 / banorte_rate) if banorte_rate > 0 else 0
             usd_3 = math.ceil(mxn_3 / banorte_rate) if banorte_rate > 0 else 0
@@ -312,28 +312,154 @@ class ProductTemplate(models.Model):
             
         return res
 
+    # ============================================================
+    # BANORTE SYNC
+    # ============================================================
+
     @api.model
-    def cron_update_banorte_rates(self):
-        api_key = self.env['ir.config_parameter'].sudo().get_param('API_KEY')
-        if not api_key:
+    def _banorte_local_tz(self):
+        return ZoneInfo("America/Monterrey") if ZoneInfo else None
+
+    @api.model
+    def _parse_money_to_float(self, value):
+        """
+        Convierte strings como:
+        '$ 17.65'
+        '$17.65'
+        '17.65'
+        a float.
+        """
+        if value is None:
+            return 0.0
+        if isinstance(value, (int, float)):
+            return float(value)
+
+        cleaned = str(value).strip()
+        cleaned = cleaned.replace('$', '').replace(',', '').strip()
+        cleaned = re.sub(r'[^0-9.\-]', '', cleaned)
+
+        return float(cleaned or 0.0)
+
+    @api.model
+    def _get_next_banorte_run_utc(self, now_utc=None):
+        """
+        Calcula el siguiente disparo en UTC naive para Odoo,
+        usando una ventana local de 08:00 a 20:00 hora Monterrey
+        y saltos variables de 45, 60, 75 o 90 min.
+        """
+        tz = self._banorte_local_tz()
+        now_utc = now_utc or datetime.utcnow()
+
+        if tz:
+            now_local = now_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz)
+        else:
+            now_local = now_utc
+
+        intervals = [45, 60, 75, 90]
+        start_day = time(8, 0)
+        end_day = time(20, 0)
+
+        # Si se está ejecutando antes de 8am -> programar hoy 8:00 + variación
+        if now_local.time() < start_day:
+            candidate_local = now_local.replace(hour=8, minute=0, second=0, microsecond=0)
+            candidate_local += timedelta(minutes=random.choice(intervals))
+        # Si ya pasó de 8pm -> programar mañana 8:00 + variación
+        elif now_local.time() > end_day:
+            next_day = now_local.date() + timedelta(days=1)
+            candidate_local = datetime.combine(next_day, time(8, 0))
+            if tz:
+                candidate_local = candidate_local.replace(tzinfo=tz)
+            candidate_local += timedelta(minutes=random.choice(intervals))
+        else:
+            # Dentro de ventana -> sumar intervalo aleatorio
+            candidate_local = now_local + timedelta(minutes=random.choice(intervals))
+
+            # Si se pasa de las 20:00, mover al siguiente día 8:00 + variación
+            if candidate_local.time() > end_day:
+                next_day = candidate_local.date() + timedelta(days=1)
+                candidate_local = datetime.combine(next_day, time(8, 0))
+                if tz:
+                    candidate_local = candidate_local.replace(tzinfo=tz)
+                candidate_local += timedelta(minutes(random.choice(intervals)))
+
+        if tz:
+            candidate_utc = candidate_local.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+        else:
+            candidate_utc = candidate_local
+
+        return candidate_utc
+
+    @api.model
+    def _reschedule_banorte_cron(self):
+        cron = self.env.ref('inventory_shopping_cart.ir_cron_update_banorte_prices', raise_if_not_found=False)
+        if not cron:
+            _logger.warning("BANORTE SYNC: No se encontró el cron inventory_shopping_cart.ir_cron_update_banorte_prices")
             return
 
-        url = "https://api-banorte.recubrimientos.app/"
+        next_run_utc = self._get_next_banorte_run_utc()
+        cron.sudo().write({
+            'nextcall': fields.Datetime.to_string(next_run_utc),
+        })
+
+        _logger.info("BANORTE SYNC: siguiente ejecución programada en %s UTC", next_run_utc)
+
+    @api.model
+    def cron_update_banorte_rates(self):
+        """
+        Consulta API Banorte, guarda último tipo de cambio y reprograma el cron.
+        Debe ejecutar inmediatamente cuando se invoque manualmente.
+        """
+        icp = self.env['ir.config_parameter'].sudo()
+        api_key = icp.get_param('API_KEY')
+        url = icp.get_param('BANORTE_API_URL', 'http://127.0.0.1:8000/')
+
+        if not api_key:
+            _logger.warning("BANORTE SYNC: API_KEY no configurada")
+            self._reschedule_banorte_cron()
+            return False
+
         headers = {"x-api-key": api_key}
 
         try:
-            response = requests.get(url, headers=headers, timeout=30)
-            if response.status_code == 200:
-                data = response.json()
-                rate_str = data.get("tipo-cambio-venta-banorte", "0").replace('$', '').strip()
-                rate = float(rate_str)
-                
-                if rate > 0:
-                    self.env['ir.config_parameter'].sudo().set_param('banorte.last_rate', rate)
-                    products = self.search([('active', '=', True)])
-                    products._calculate_escalera_precios()
+            response = requests.get(url, headers=headers, timeout=90)
+            response.raise_for_status()
+
+            data = response.json()
+
+            buy_raw = data.get("tipo-cambio-compra-banorte")
+            sell_raw = data.get("tipo-cambio-venta-banorte")
+
+            rate_buy = self._parse_money_to_float(buy_raw)
+            rate_sell = self._parse_money_to_float(sell_raw)
+
+            if rate_sell <= 0:
+                raise ValueError(f"Tipo de cambio venta inválido: {sell_raw}")
+
+            # Mantener compatibilidad con tu lógica actual
+            icp.set_param('banorte.last_rate', rate_sell)
+
+            # Nuevos parámetros útiles
+            icp.set_param('banorte.last_rate_buy', rate_buy)
+            icp.set_param('banorte.last_rate_sell', rate_sell)
+            icp.set_param('banorte.last_payload', str(data))
+            icp.set_param('banorte.last_sync_at', fields.Datetime.now())
+
+            products = self.search([('active', '=', True)])
+            products._calculate_escalera_precios()
+
+            _logger.info(
+                "BANORTE SYNC OK | compra=%s venta=%s | productos recalculados=%s",
+                rate_buy, rate_sell, len(products)
+            )
+
+            return True
+
         except Exception as e:
-            _logger.error(f"BANORTE SYNC Error: {e}")
+            _logger.exception("BANORTE SYNC Error: %s", e)
+            return False
+
+        finally:
+            self._reschedule_banorte_cron()
 
     @api.model
     def get_custom_prices(self, product_id, currency_code):

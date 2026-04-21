@@ -7,14 +7,27 @@
             <field name="state">code</field>
             <field name="code">model.cron_update_banorte_rates()</field>
             <field name="user_id" ref="base.user_root"/>
+
+            <!--
+                La frecuencia real ya no debe depender de interval_number/interval_type,
+                porque el propio método cron_update_banorte_rates() va a recalcular
+                y reescribir nextcall dinámicamente después de cada ejecución.
+
+                Estos campos se dejan en 1 día solo como valor técnico/base.
+            -->
             <field name="interval_number">1</field>
             <field name="interval_type">days</field>
-            <!-- 
-                CDMX es UTC-6. 
-                5:00 AM CDMX + 6 horas = 11:00 AM UTC (Hora servidor)
-                numbercall fue eliminado en Odoo 19.
+
+            <!--
+                IMPORTANTE:
+                Se deja disponible para ejecución inmediata.
+                Cuando le des "Ejecutar ahora", correrá enseguida.
+                Después, el método Python debe actualizar nextcall con la siguiente
+                hora variable dentro de la ventana 08:00-20:00.
             -->
-            <field name="nextcall" eval="(DateTime.now().replace(hour=11, minute=0, second=0)).strftime('%Y-%m-%d %H:%M:%S')" />
+            <field name="nextcall" eval="DateTime.now().strftime('%Y-%m-%d %H:%M:%S')"/>
+
+            <field name="active">True</field>
         </record>
     </data>
 </odoo>
