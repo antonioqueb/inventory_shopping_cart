@@ -181,11 +181,44 @@ class SaleOrder(models.Model):
         return self._get_official_rate()
 
     def _get_official_rate(self):
+        """
+        Retorna cuántos MXN equivale 1 USD (tipo de cambio MXN/USD).
+        Robusto ante configuración invertida de res.currency.rate:
+        lee directamente las tasas y si el resultado sale < 1, lo invierte.
+        """
         usd = self.env.ref('base.USD', raise_if_not_found=False)
-        cc = self.env.company.currency_id
-        if usd and cc and usd != cc:
-            return usd._convert(1.0, cc, self.env.company, fields.Date.today())
-        return 1.0
+        mxn = self.env.ref('base.MXN', raise_if_not_found=False)
+        if not usd or not mxn:
+            return 1.0
+
+        today = fields.Date.today()
+        company = self.env.company
+
+        rate_rec_usd = self.env['res.currency.rate'].sudo().search([
+            ('currency_id', '=', usd.id),
+            ('name', '<=', today),
+            '|', ('company_id', '=', company.id), ('company_id', '=', False),
+        ], order='name desc, company_id', limit=1)
+
+        rate_rec_mxn = self.env['res.currency.rate'].sudo().search([
+            ('currency_id', '=', mxn.id),
+            ('name', '<=', today),
+            '|', ('company_id', '=', company.id), ('company_id', '=', False),
+        ], order='name desc, company_id', limit=1)
+
+        usd_rate = rate_rec_usd.rate if rate_rec_usd else 1.0
+        mxn_rate = rate_rec_mxn.rate if rate_rec_mxn else 1.0
+
+        if usd_rate > 0:
+            rate = mxn_rate / usd_rate
+        else:
+            rate = 0.0
+
+        # Defensa: si la tasa sale < 1, está invertida (dato mal cargado en Odoo).
+        if 0 < rate < 1:
+            rate = 1.0 / rate
+
+        return rate if rate > 0 else 1.0
 
     @api.depends('order_line.price_unit', 'order_line.product_id', 'pricelist_id', 'x_price_authorization_id', 'x_price_authorization_id.state')
     def _compute_has_low_prices(self):
