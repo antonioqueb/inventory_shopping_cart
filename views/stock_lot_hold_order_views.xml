@@ -18,8 +18,8 @@
                 <field name="x_hold_business_days" string="Días hábiles"/>
                 <field name="x_days_to_expiration" string="Días restantes"/>
                 <field name="currency_id"/>
-                <field name="total_m2" string="m²"/>
-                <field name="amount_total" string="Total" widget="monetary"/>
+                <field name="x_total_m2" string="m²"/>
+                <field name="x_amount_total" string="Total" widget="monetary"/>
                 <field name="state" widget="badge"/>
             </list>
         </field>
@@ -75,11 +75,11 @@
                                    readonly="1"
                                    force_save="1"/>
 
-                            <field name="total_m2"
+                            <field name="x_total_m2"
                                    string="Total m²"
                                    readonly="1"/>
 
-                            <field name="amount_total"
+                            <field name="x_amount_total"
                                    string="Total General"
                                    widget="monetary"
                                    readonly="1"/>
@@ -136,7 +136,7 @@
                                            readonly="x_price_selector != 'custom' or not x_can_use_custom_price"
                                            force_save="1"/>
 
-                                    <field name="precio_total"
+                                    <field name="x_subtotal"
                                            string="Total"
                                            widget="monetary"
                                            readonly="1"/>
@@ -170,7 +170,7 @@
                                                    readonly="x_price_selector != 'custom' or not x_can_use_custom_price"
                                                    force_save="1"/>
 
-                                            <field name="precio_total"
+                                            <field name="x_subtotal"
                                                    string="Total"
                                                    widget="monetary"
                                                    readonly="1"/>
@@ -180,11 +180,11 @@
                             </field>
 
                             <group class="oe_subtotal_footer">
-                                <field name="total_m2"
+                                <field name="x_total_m2"
                                        readonly="1"
                                        string="Total m²"/>
 
-                                <field name="amount_total"
+                                <field name="x_amount_total"
                                        readonly="1"
                                        widget="monetary"
                                        string="Total Apartado"/>
