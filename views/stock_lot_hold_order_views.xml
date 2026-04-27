@@ -1,9 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- ============================================================
-         LISTA: Apartados / Reservaciones
-         ============================================================ -->
     <record id="view_stock_lot_hold_order_tree_manual_pricing" model="ir.ui.view">
         <field name="name">stock.lot.hold.order.list.manual.pricing</field>
         <field name="model">stock.lot.hold.order</field>
@@ -21,16 +18,13 @@
                 <field name="x_hold_business_days" string="Días hábiles"/>
                 <field name="x_days_to_expiration" string="Días restantes"/>
                 <field name="currency_id"/>
-                <field name="x_total_m2" string="m²"/>
-                <field name="x_amount_total" string="Total" widget="monetary"/>
+                <field name="total_m2" string="m²"/>
+                <field name="amount_total" string="Total" widget="monetary"/>
                 <field name="state" widget="badge"/>
             </list>
         </field>
     </record>
 
-    <!-- ============================================================
-         FORMULARIO: Apartado / Reservación
-         ============================================================ -->
     <record id="view_stock_lot_hold_order_form_manual_pricing" model="ir.ui.view">
         <field name="name">stock.lot.hold.order.form.manual.pricing</field>
         <field name="model">stock.lot.hold.order</field>
@@ -81,18 +75,18 @@
                                    readonly="1"
                                    force_save="1"/>
 
-                            <field name="x_total_m2"
+                            <field name="total_m2"
                                    string="Total m²"
                                    readonly="1"/>
 
-                            <field name="x_amount_total"
+                            <field name="amount_total"
                                    string="Total General"
                                    widget="monetary"
                                    readonly="1"/>
                         </group>
                     </group>
 
-                    <div class="alert alert-info" role="alert">
+                    <div class="alert alert-info" role="status">
                         <strong>Regla comercial:</strong>
                         el apartado manual usa la escalera comercial del producto.
                         Los vendedores ven <strong>Precio 1</strong> y <strong>Precio 2</strong>.
@@ -100,14 +94,10 @@
                     </div>
 
                     <notebook>
-                        <!-- ====================================================
-                             PESTAÑA: Placas Reservadas
-                             ==================================================== -->
                         <page string="Placas Reservadas">
                             <field name="line_ids"
                                    context="{'default_order_id': id, 'default_currency_id': currency_id}">
                                 <list editable="bottom">
-                                    <!-- Campos auxiliares para el widget de nivel de precio -->
                                     <field name="currency_id" column_invisible="1"/>
                                     <field name="x_price_1_value" column_invisible="1"/>
                                     <field name="x_price_2_value" column_invisible="1"/>
@@ -115,7 +105,6 @@
                                     <field name="x_price_level_currency" column_invisible="1"/>
                                     <field name="x_can_use_custom_price" column_invisible="1"/>
 
-                                    <!-- Material -->
                                     <field name="product_id"
                                            string="Producto"
                                            required="1"/>
@@ -133,31 +122,24 @@
                                            string="Quant"
                                            optional="hide"/>
 
-                                    <!-- Cantidad -->
                                     <field name="cantidad_m2"
                                            string="m²"
                                            force_save="1"/>
 
-                                    <!-- Selector comercial -->
                                     <field name="x_price_selector"
                                            string="Nivel de Precio"
                                            widget="price_level_selector"
                                            required="1"/>
 
-                                    <!-- Precio resultante -->
                                     <field name="precio_unitario"
                                            string="Precio/m²"
                                            readonly="x_price_selector != 'custom' or not x_can_use_custom_price"
                                            force_save="1"/>
 
-                                    <!-- Total -->
-                                    <field name="x_subtotal"
+                                    <field name="precio_total"
                                            string="Total"
                                            widget="monetary"
                                            readonly="1"/>
-
-                                    <!-- Mantener campos existentes ocultos/compatibles -->
-                                    <field name="id" column_invisible="1"/>
                                 </list>
 
                                 <form>
@@ -188,7 +170,7 @@
                                                    readonly="x_price_selector != 'custom' or not x_can_use_custom_price"
                                                    force_save="1"/>
 
-                                            <field name="x_subtotal"
+                                            <field name="precio_total"
                                                    string="Total"
                                                    widget="monetary"
                                                    readonly="1"/>
@@ -198,20 +180,17 @@
                             </field>
 
                             <group class="oe_subtotal_footer">
-                                <field name="x_total_m2"
+                                <field name="total_m2"
                                        readonly="1"
                                        string="Total m²"/>
 
-                                <field name="x_amount_total"
+                                <field name="amount_total"
                                        readonly="1"
                                        widget="monetary"
                                        string="Total Apartado"/>
                             </group>
                         </page>
 
-                        <!-- ====================================================
-                             PESTAÑA: Notas
-                             ==================================================== -->
                         <page string="Notas">
                             <field name="notas" placeholder="Observaciones del apartado..."/>
                         </page>
@@ -223,9 +202,6 @@
         </field>
     </record>
 
-    <!-- ============================================================
-         ACCIÓN
-         ============================================================ -->
     <record id="action_stock_lot_hold_order_manual_pricing" model="ir.actions.act_window">
         <field name="name">Apartados / Reservaciones</field>
         <field name="res_model">stock.lot.hold.order</field>
@@ -237,9 +213,6 @@
         <field name="context">{'default_currency_id': ref('base.USD'), 'default_x_hold_business_days': 5}</field>
     </record>
 
-    <!-- ============================================================
-         MENÚ
-         ============================================================ -->
     <menuitem id="menu_stock_lot_hold_order_manual_pricing"
               name="Apartados / Reservaciones"
               parent="sale.sale_menu_root"
