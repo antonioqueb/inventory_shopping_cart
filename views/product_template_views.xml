@@ -8,15 +8,15 @@
             <xpath expr="//field[@name='categ_id']" position="before">
                 <field name="x_name_sps"/>
             </xpath>
-                        
+
             <xpath expr="//page[@name='sales']" position="after">
-                <page string="Precios y Costos All-In" name="custom_prices" 
+                <page string="Precios y Costos All-In" name="custom_prices"
                       groups="inventory_shopping_cart.group_price_authorizer,inventory_shopping_cart.group_seller">
-                    
+
                     <!-- ============================================================
                          SECCIÓN SOLO AUTORIZADORES: Logística, Costos, Estrategia
                          ============================================================ -->
-                    
+
                     <!-- PANEL DE CONFIGURACIÓN LOGÍSTICA -->
                     <group string="Configuración Logística y Arancelaria"
                            groups="inventory_shopping_cart.group_price_authorizer">
@@ -28,37 +28,117 @@
                         <group>
                             <field name="x_container_capacity"/>
                             <field name="x_arancel_pct"/>
-                            <button name="action_update_costs" string="Recalcular Costos Ahora" type="object" class="btn-link" icon="fa-refresh"/>
+                            <button name="action_update_costs"
+                                    string="Recalcular Costos Ahora"
+                                    type="object"
+                                    class="btn-link"
+                                    icon="fa-refresh"/>
                         </group>
                     </group>
 
-                    <!-- DESGLOSE DE COSTOS -->
+                    <!-- TIPO DE CAMBIO USADO -->
+                    <group string="Tipo de Cambio Usado para Costeo"
+                           groups="inventory_shopping_cart.group_price_authorizer">
+                        <group>
+                            <field name="x_cost_exchange_rate"
+                                   string="TC usado USD → MXN"
+                                   readonly="1"/>
+                            <field name="x_cost_exchange_rate_source"
+                                   string="Fuente"
+                                   readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="x_cost_exchange_rate_last_sync"
+                                   string="Última sincronización"
+                                   readonly="1"/>
+                            <field name="x_freight_tariff_all_in_usd"
+                                   string="Tarifa All-In Contenedor USD"
+                                   readonly="1"/>
+                        </group>
+                    </group>
+
+                    <!-- DESGLOSE DE COSTOS EN AMBAS DIVISAS -->
                     <group groups="inventory_shopping_cart.group_price_authorizer">
+
+                        <!-- MXN -->
                         <group string="Desglose del Costo (MXN)">
                             <field name="x_has_purchases" invisible="1"/>
-                            
-                            <label for="x_max_avg_cost_mxn" string="1. Costo Base"/>
+
+                            <label for="x_cost_base_mxn" string="1. Costo Base Usado"/>
                             <div class="o_row">
-                                <field name="x_max_avg_cost_mxn"/>
+                                <field name="x_cost_base_mxn" readonly="1"/>
                                 <span class="text-muted" invisible="x_has_purchases">(Costo Estándar)</span>
                                 <span class="text-success fw-bold" invisible="not x_has_purchases">(MaxAvg Histórico)</span>
                             </div>
-                            
-                            <field name="x_logistics_cost_mxn" string="2. + Logística (x m²)"/>
-                            <field name="x_duty_cost_mxn" string="3. + Arancel"/>
-                            
+
+                            <field name="x_max_avg_cost_mxn"
+                                   string="MaxAvg Histórico MXN"
+                                   readonly="1"
+                                   invisible="not x_has_purchases"/>
+
+                            <field name="x_logistics_cost_mxn"
+                                   string="2. + Logística MXN x m²"
+                                   readonly="1"/>
+
+                            <field name="x_duty_cost_mxn"
+                                   string="3. + Arancel MXN"
+                                   readonly="1"/>
+
                             <div class="oe_subtotal_footer_separator oe_inline o_td_label">
                                 <label for="x_costo_mayor"/>
                             </div>
-                            <field name="x_costo_mayor" nolabel="1" class="oe_subtotal_footer_separator" widget="monetary"/>
+                            <field name="x_costo_mayor"
+                                   nolabel="1"
+                                   readonly="1"
+                                   class="oe_subtotal_footer_separator"
+                                   widget="monetary"/>
                         </group>
-                        
+
+                        <!-- USD -->
+                        <group string="Desglose del Costo (USD)">
+                            <field name="x_cost_base_usd"
+                                   string="1. Costo Base USD"
+                                   readonly="1"/>
+
+                            <field name="x_logistics_cost_usd"
+                                   string="2. + Logística USD x m²"
+                                   readonly="1"/>
+
+                            <field name="x_duty_cost_usd"
+                                   string="3. + Arancel USD"
+                                   readonly="1"/>
+
+                            <div class="oe_subtotal_footer_separator oe_inline o_td_label">
+                                <label for="x_costo_mayor_usd"/>
+                            </div>
+                            <field name="x_costo_mayor_usd"
+                                   nolabel="1"
+                                   readonly="1"
+                                   class="oe_subtotal_footer_separator"/>
+                        </group>
+                    </group>
+
+                    <!-- RESUMEN DE CÁLCULO -->
+                    <group string="Detalle del Cálculo"
+                           groups="inventory_shopping_cart.group_price_authorizer">
+                        <group>
+                            <field name="x_logistics_calc_summary"
+                                   string="Fórmula Logística"
+                                   readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="x_cost_calc_summary"
+                                   string="Resumen ALL-IN"
+                                   readonly="1"/>
+                        </group>
+                    </group>
+
+                    <!-- ESTRATEGIA DE PRECIOS -->
+                    <group groups="inventory_shopping_cart.group_price_authorizer">
                         <group string="Estrategia de Precios">
-                            <!-- Modo de precio -->
                             <field name="x_pricing_mode" widget="radio"/>
-                            
-                            <!-- Precio fijo (solo visible en modo fijo) -->
-                            <field name="x_fixed_price" 
+
+                            <field name="x_fixed_price"
                                    invisible="x_pricing_mode != 'fixed'"
                                    widget="monetary"/>
 
@@ -81,11 +161,21 @@
                                 <field name="x_utilidad_minima"/>
                                 <span class="text-muted">%</span>
                             </div>
-                            
+
                             <div class="alert alert-info mt-2" role="alert" colspan="2">
                                 <small>
                                     <strong>Modo Calculado:</strong> Precio = Costo / (1 - %Utilidad)<br/>
                                     <strong>Modo Fijo:</strong> Nivel 1 = Precio Fijo. Niveles 2 y 3 = Precio Fijo × (1 - %Utilidad)
+                                </small>
+                            </div>
+                        </group>
+
+                        <group string="Notas de Costeo">
+                            <div class="alert alert-warning" role="alert" colspan="2">
+                                <small>
+                                    <strong>Logística:</strong> Tarifa All-In USD / Capacidad del contenedor = USD x m².<br/>
+                                    <strong>Conversión:</strong> USD x m² × TC Banorte venta = MXN x m².<br/>
+                                    <strong>ALL-IN:</strong> Costo Base + Logística + Arancel.
                                 </small>
                             </div>
                         </group>
@@ -98,15 +188,34 @@
                          ============================================================ -->
                     <group>
                         <group string="Escalera MXN">
-                            <field name="x_price_mxn_1" readonly="1" force_save="1" string="1. Precio Alto"/>
-                            <field name="x_price_mxn_2" readonly="1" force_save="1" string="2. Precio Medio"/>
-                            <field name="x_price_mxn_3" readonly="1" force_save="1" string="3. Precio Mínimo" 
+                            <field name="x_price_mxn_1"
+                                   readonly="1"
+                                   force_save="1"
+                                   string="1. Precio Alto"/>
+                            <field name="x_price_mxn_2"
+                                   readonly="1"
+                                   force_save="1"
+                                   string="2. Precio Medio"/>
+                            <field name="x_price_mxn_3"
+                                   readonly="1"
+                                   force_save="1"
+                                   string="3. Precio Mínimo"
                                    groups="inventory_shopping_cart.group_price_authorizer"/>
                         </group>
+
                         <group string="Escalera USD">
-                            <field name="x_price_usd_1" readonly="1" force_save="1" string="1. Precio Alto"/>
-                            <field name="x_price_usd_2" readonly="1" force_save="1" string="2. Precio Medio"/>
-                            <field name="x_price_usd_3" readonly="1" force_save="1" string="3. Precio Mínimo" 
+                            <field name="x_price_usd_1"
+                                   readonly="1"
+                                   force_save="1"
+                                   string="1. Precio Alto"/>
+                            <field name="x_price_usd_2"
+                                   readonly="1"
+                                   force_save="1"
+                                   string="2. Precio Medio"/>
+                            <field name="x_price_usd_3"
+                                   readonly="1"
+                                   force_save="1"
+                                   string="3. Precio Mínimo"
                                    groups="inventory_shopping_cart.group_price_authorizer"/>
                         </group>
                     </group>
