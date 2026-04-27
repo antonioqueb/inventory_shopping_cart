@@ -10,14 +10,21 @@ export class PriceLevelSelectorField extends Component {
 
     setup() {
         this.selectRef = useRef("select");
-        // Forzar sincronización del value del <select> cuando cambia el valor del record
+
         useEffect(
             () => {
                 if (this.selectRef.el) {
                     this.selectRef.el.value = this.value;
                 }
             },
-            () => [this.value, this.props.record.data.x_price_1_value, this.props.record.data.x_price_2_value]
+            () => [
+                this.value,
+                this.props.record.data.x_price_1_value,
+                this.props.record.data.x_price_2_value,
+                this.props.record.data.x_price_3_value,
+                this.props.record.data.x_price_level_currency,
+                this.props.record.data.x_can_use_custom_price,
+            ]
         );
     }
 
@@ -34,9 +41,21 @@ export class PriceLevelSelectorField extends Component {
         return this.props.record.data.x_price_level_currency || "USD";
     }
 
+    get canUseRestrictedPrices() {
+        /*
+         * En sale.order.line este campo puede no existir.
+         * En stock.lot.hold.order.line sí existe y representa autorizador.
+         *
+         * Regla:
+         * - false / inexistente: solo Precio 1 y Precio 2.
+         * - true: Precio 1, Precio 2, Precio 3 y Personalizado.
+         */
+        return Boolean(this.props.record.data.x_can_use_custom_price);
+    }
+
     formatPrice(value) {
         const num = Number(value) || 0;
-        const formatted = num.toLocaleString('es-MX', {
+        const formatted = num.toLocaleString("es-MX", {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
         });
@@ -46,15 +65,30 @@ export class PriceLevelSelectorField extends Component {
     get options() {
         const price1 = this.props.record.data.x_price_1_value || 0;
         const price2 = this.props.record.data.x_price_2_value || 0;
-        return this.rawSelection.map(([val, label]) => {
-            if (val === "high") {
-                return [val, `${label} — ${this.formatPrice(price1)}`];
-            }
-            if (val === "medium") {
-                return [val, `${label} — ${this.formatPrice(price2)}`];
-            }
-            return [val, label];
-        });
+        const price3 = this.props.record.data.x_price_3_value || 0;
+
+        return this.rawSelection
+            .filter(([val]) => {
+                if ((val === "minimum" || val === "custom") && !this.canUseRestrictedPrices) {
+                    return false;
+                }
+                return true;
+            })
+            .map(([val, label]) => {
+                if (val === "high") {
+                    return [val, `${label} — ${this.formatPrice(price1)}`];
+                }
+
+                if (val === "medium") {
+                    return [val, `${label} — ${this.formatPrice(price2)}`];
+                }
+
+                if (val === "minimum") {
+                    return [val, `${label} — ${this.formatPrice(price3)}`];
+                }
+
+                return [val, label];
+            });
     }
 
     get displayLabel() {
@@ -63,7 +97,8 @@ export class PriceLevelSelectorField extends Component {
     }
 
     onChange(ev) {
-        this.props.record.update({ [this.props.name]: ev.target.value });
+        const value = ev.target.value;
+        this.props.record.update({ [this.props.name]: value });
     }
 }
 
@@ -71,11 +106,12 @@ export const priceLevelSelectorField = {
     component: PriceLevelSelectorField,
     displayName: "Nivel de Precio con Monto",
     supportedTypes: ["selection"],
-    fieldDependencies: [
-        { name: "x_price_1_value", type: "float" },
-        { name: "x_price_2_value", type: "float" },
-        { name: "x_price_level_currency", type: "char" },
-    ],
+
+    /*
+     * No declarar fieldDependencies aquí.
+     * Este widget se usa en varios modelos.
+     * Los campos auxiliares se cargan desde la vista como invisibles.
+     */
 };
 
 registry.category("fields").add("price_level_selector", priceLevelSelectorField);

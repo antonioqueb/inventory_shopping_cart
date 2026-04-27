@@ -10,11 +10,8 @@ class StockLotHoldOrder(models.Model):
     _inherit = 'stock.lot.hold.order'
 
     # -------------------------------------------------------------------------
-    # ALIAS EXPLÍCITO DE LÍNEAS
+    # Líneas del apartado
     # -------------------------------------------------------------------------
-    # El modelo original tiene líneas con order_id, pero no necesariamente
-    # expone el One2many como line_ids. Lo declaramos para que compute,
-    # vista y totales funcionen de forma estable.
     line_ids = fields.One2many(
         'stock.lot.hold.order.line',
         'order_id',
@@ -30,6 +27,20 @@ class StockLotHoldOrder(models.Model):
     fecha_expiracion = fields.Datetime(
         string='Fecha de Expiración',
         default=lambda self: self._get_default_fecha_expiracion(),
+    )
+
+    x_hold_business_days = fields.Integer(
+        string='Días hábiles del apartado',
+        default=5,
+        required=True,
+        readonly=True,
+        help='Cantidad de días hábiles que tendrá vigencia el apartado.',
+    )
+
+    x_days_to_expiration = fields.Integer(
+        string='Días restantes',
+        compute='_compute_x_days_to_expiration',
+        store=False,
     )
 
     currency_id = fields.Many2one(
@@ -68,20 +79,45 @@ class StockLotHoldOrder(models.Model):
         return fields.Datetime.from_string(value)
 
     @api.model
-    def _get_default_fecha_expiracion(self, fecha_orden=None):
+    def _get_default_fecha_expiracion(self, fecha_orden=None, business_days=5):
         """
-        Calcula vigencia de apartado: 5 días hábiles desde fecha_orden.
+        Calcula vigencia de apartado en días hábiles.
+        Por defecto: 5 días hábiles desde fecha_orden.
         Conserva la hora de creación.
         """
         current = self._coerce_datetime(fecha_orden)
-        business_days = 0
+        business_days = int(business_days or 5)
 
-        while business_days < 5:
+        if business_days <= 0:
+            business_days = 5
+
+        added = 0
+        while added < business_days:
             current += timedelta(days=1)
             if current.weekday() < 5:
-                business_days += 1
+                added += 1
 
         return current
+
+    def _count_business_days_between(self, start_dt, end_dt):
+        if not start_dt or not end_dt:
+            return 0
+
+        start_dt = self._coerce_datetime(start_dt)
+        end_dt = self._coerce_datetime(end_dt)
+
+        if end_dt <= start_dt:
+            return 0
+
+        current = start_dt
+        count = 0
+
+        while current.date() < end_dt.date():
+            current += timedelta(days=1)
+            if current.weekday() < 5:
+                count += 1
+
+        return count
 
     @api.depends(
         'line_ids',
@@ -101,11 +137,23 @@ class StockLotHoldOrder(models.Model):
             order.x_total_m2 = total_m2
             order.x_amount_total = amount_total
 
-    @api.onchange('fecha_orden')
+    def _compute_x_days_to_expiration(self):
+        now = fields.Datetime.now()
+
+        for order in self:
+            order.x_days_to_expiration = order._count_business_days_between(
+                now,
+                order.fecha_expiracion,
+            )
+
+    @api.onchange('fecha_orden', 'x_hold_business_days')
     def _onchange_fecha_orden_set_expiration(self):
         for order in self:
             if order.fecha_orden:
-                order.fecha_expiracion = order._get_default_fecha_expiracion(order.fecha_orden)
+                order.fecha_expiracion = order._get_default_fecha_expiracion(
+                    order.fecha_orden,
+                    order.x_hold_business_days or 5,
+                )
 
     @api.onchange('currency_id')
     def _onchange_currency_id_sync_line_prices(self):
@@ -122,26 +170,46 @@ class StockLotHoldOrder(models.Model):
             if not vals.get('fecha_orden'):
                 vals['fecha_orden'] = fields.Datetime.now()
 
+            if not vals.get('x_hold_business_days') or vals.get('x_hold_business_days') <= 0:
+                vals['x_hold_business_days'] = 5
+
             if not vals.get('fecha_expiracion'):
-                vals['fecha_expiracion'] = self._get_default_fecha_expiracion(vals.get('fecha_orden'))
+                vals['fecha_expiracion'] = self._get_default_fecha_expiracion(
+                    vals.get('fecha_orden'),
+                    vals.get('x_hold_business_days') or 5,
+                )
 
         records = super().create(vals_list)
-
-        # En creación manual, esto normaliza vigencia, precios y cantidades.
-        # En flujo de carrito todavía no hay líneas al crear la cabecera,
-        # por lo que no afecta cantidades parciales.
         records._sync_manual_defaults_and_lines()
 
         return records
 
     def write(self, vals):
+        if vals.get('x_hold_business_days') is not None:
+            try:
+                if int(vals.get('x_hold_business_days') or 0) <= 0:
+                    vals['x_hold_business_days'] = 5
+            except Exception:
+                vals['x_hold_business_days'] = 5
+
         if vals.get('fecha_orden') and not vals.get('fecha_expiracion'):
-            vals['fecha_expiracion'] = self._get_default_fecha_expiracion(vals.get('fecha_orden'))
+            vals['fecha_expiracion'] = self._get_default_fecha_expiracion(
+                vals.get('fecha_orden'),
+                vals.get('x_hold_business_days') or 5,
+            )
+
+        if vals.get('x_hold_business_days') and not vals.get('fecha_expiracion'):
+            for order in self:
+                vals['fecha_expiracion'] = order._get_default_fecha_expiracion(
+                    vals.get('fecha_orden') or order.fecha_orden or fields.Datetime.now(),
+                    vals.get('x_hold_business_days') or 5,
+                )
+                break
 
         res = super().write(vals)
 
         if not self.env.context.get('skip_hold_order_sync'):
-            if any(field in vals for field in ['fecha_orden', 'currency_id']):
+            if any(field in vals for field in ['fecha_orden', 'currency_id', 'x_hold_business_days']):
                 self._sync_manual_defaults_and_lines()
 
         return res
@@ -153,9 +221,13 @@ class StockLotHoldOrder(models.Model):
             if not order.fecha_orden:
                 vals['fecha_orden'] = fields.Datetime.now()
 
+            if not order.x_hold_business_days or order.x_hold_business_days <= 0:
+                vals['x_hold_business_days'] = 5
+
             if not order.fecha_expiracion:
                 vals['fecha_expiracion'] = order._get_default_fecha_expiracion(
-                    vals.get('fecha_orden') or order.fecha_orden
+                    vals.get('fecha_orden') or order.fecha_orden,
+                    vals.get('x_hold_business_days') or order.x_hold_business_days or 5,
                 )
 
             if vals:
@@ -166,15 +238,16 @@ class StockLotHoldOrder(models.Model):
 
     def _check_manual_price_policy(self):
         """
-        Misma regla comercial de ventas:
-        - Autorizadores pueden usar precio personalizado.
-        - Vendedores no pueden confirmar apartados con precio personalizado manual.
-        - Vendedores no pueden confirmar por debajo de precio medio.
+        Regla comercial:
+        - Vendedor normal: Precio 1 y Precio 2.
+        - Autorizador: Precio 1, Precio 2, Precio 3 y personalizado.
         """
         if self.env.context.get('skip_authorization_check'):
             return
 
-        if self.env.user.has_group('inventory_shopping_cart.group_price_authorizer'):
+        is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
+
+        if is_authorizer:
             return
 
         for order in self:
@@ -187,13 +260,19 @@ class StockLotHoldOrder(models.Model):
                 if line.product_id.type == 'service':
                     continue
 
-                medium_price = line.x_price_2_value or 0.0
+                if line.x_price_selector == 'minimum':
+                    violating.append(
+                        f"{line.product_id.display_name}: Precio 3 requiere autorización"
+                    )
+                    continue
 
                 if line.x_price_selector == 'custom':
                     violating.append(
-                        f"{line.product_id.display_name}: precio personalizado no autorizado"
+                        f"{line.product_id.display_name}: precio personalizado requiere autorización"
                     )
                     continue
+
+                medium_price = line.x_price_2_value or 0.0
 
                 if medium_price > 0 and line.precio_unitario < (medium_price - 0.01):
                     violating.append(
@@ -204,9 +283,9 @@ class StockLotHoldOrder(models.Model):
             if violating:
                 raise UserError(
                     "🚫 APARTADO BLOQUEADO POR PRECIO\n\n"
-                    "No puede confirmar este apartado porque contiene precios no autorizados:\n"
+                    "No puede confirmar este apartado porque contiene precios que requieren autorización:\n"
                     f"• {chr(10).join(violating)}\n\n"
-                    "Use Precio 1 o Precio 2, o genere el apartado desde el carrito con autorización."
+                    "Use Precio 1 o Precio 2, o confirme con un usuario autorizador."
                 )
 
     def action_recompute_hold_lines(self):
@@ -217,7 +296,7 @@ class StockLotHoldOrder(models.Model):
             'tag': 'display_notification',
             'params': {
                 'title': 'Apartado recalculado',
-                'message': 'Se recalcularon m², precios y totales de las líneas.',
+                'message': 'Se recalcularon m², precios, vigencia y totales.',
                 'type': 'success',
                 'sticky': False,
             },
@@ -235,6 +314,7 @@ class StockLotHoldOrderLine(models.Model):
     x_price_selector = fields.Selection([
         ('high', 'Precio 1'),
         ('medium', 'Precio 2'),
+        ('minimum', 'Precio 3'),
         ('custom', 'Precio Personalizado'),
     ], string='Nivel de Precio', default='high')
 
@@ -246,6 +326,12 @@ class StockLotHoldOrderLine(models.Model):
 
     x_price_2_value = fields.Float(
         string='Monto Precio 2',
+        compute='_compute_price_level_values',
+        digits='Product Price',
+    )
+
+    x_price_3_value = fields.Float(
+        string='Monto Precio 3',
         compute='_compute_price_level_values',
         digits='Product Price',
     )
@@ -317,12 +403,15 @@ class StockLotHoldOrderLine(models.Model):
             if tmpl and currency_code == 'MXN':
                 line.x_price_1_value = tmpl.x_price_mxn_1
                 line.x_price_2_value = tmpl.x_price_mxn_2
+                line.x_price_3_value = tmpl.x_price_mxn_3
             elif tmpl:
                 line.x_price_1_value = tmpl.x_price_usd_1
                 line.x_price_2_value = tmpl.x_price_usd_2
+                line.x_price_3_value = tmpl.x_price_usd_3
             else:
                 line.x_price_1_value = 0.0
                 line.x_price_2_value = 0.0
+                line.x_price_3_value = 0.0
 
             line.x_price_level_currency = currency_code
 
@@ -342,9 +431,11 @@ class StockLotHoldOrderLine(models.Model):
         if currency_code == 'MXN':
             high = tmpl.x_price_mxn_1 or 0.0
             medium = tmpl.x_price_mxn_2 or 0.0
+            minimum = tmpl.x_price_mxn_3 or 0.0
         else:
             high = tmpl.x_price_usd_1 or 0.0
             medium = tmpl.x_price_usd_2 or 0.0
+            minimum = tmpl.x_price_usd_3 or 0.0
 
         price = float(price or 0.0)
 
@@ -353,6 +444,9 @@ class StockLotHoldOrderLine(models.Model):
 
         if medium and abs(price - medium) <= 0.01:
             return 'medium'
+
+        if minimum and abs(price - minimum) <= 0.01:
+            return 'minimum'
 
         return 'custom'
 
@@ -368,15 +462,20 @@ class StockLotHoldOrderLine(models.Model):
         if currency_code == 'MXN':
             price_high = tmpl.x_price_mxn_1 or 0.0
             price_medium = tmpl.x_price_mxn_2 or 0.0
+            price_minimum = tmpl.x_price_mxn_3 or 0.0
         else:
             price_high = tmpl.x_price_usd_1 or 0.0
             price_medium = tmpl.x_price_usd_2 or 0.0
+            price_minimum = tmpl.x_price_usd_3 or 0.0
 
         if self.x_price_selector == 'high':
             return price_high
 
         if self.x_price_selector == 'medium':
             return price_medium
+
+        if self.x_price_selector == 'minimum':
+            return price_minimum
 
         return self.precio_unitario or 0.0
 

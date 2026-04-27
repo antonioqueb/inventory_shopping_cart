@@ -5,7 +5,9 @@
         <field name="name">stock.lot.hold.order.list.manual.pricing</field>
         <field name="model">stock.lot.hold.order</field>
         <field name="arch" type="xml">
-            <list decoration-info="state == 'draft'" decoration-success="state == 'confirmed'" decoration-muted="state == 'cancel'">
+            <list decoration-info="state == 'draft'"
+                  decoration-success="state == 'confirmed'"
+                  decoration-muted="state == 'cancel'">
                 <field name="name"/>
                 <field name="partner_id"/>
                 <field name="project_id"/>
@@ -13,6 +15,8 @@
                 <field name="user_id"/>
                 <field name="fecha_orden"/>
                 <field name="fecha_expiracion"/>
+                <field name="x_hold_business_days" string="Días hábiles"/>
+                <field name="x_days_to_expiration" string="Días restantes"/>
                 <field name="currency_id"/>
                 <field name="x_total_m2" string="m²"/>
                 <field name="x_amount_total" string="Total" widget="monetary"/>
@@ -49,6 +53,13 @@
                         </h1>
                     </div>
 
+                    <div class="alert alert-info" role="alert">
+                        <strong>Regla comercial:</strong>
+                        el apartado manual usa la escalera comercial del producto.
+                        Los vendedores ven <strong>Precio 1</strong> y <strong>Precio 2</strong>.
+                        Los autorizadores pueden ver <strong>Precio 3</strong> y usar precio personalizado.
+                    </div>
+
                     <group>
                         <group string="Cliente y Proyecto">
                             <field name="partner_id" required="1"/>
@@ -60,7 +71,12 @@
                         <group string="Vigencia y Moneda">
                             <field name="currency_id" required="1"/>
                             <field name="fecha_orden" readonly="1" force_save="1"/>
+                            <field name="x_hold_business_days"
+                                   readonly="1"
+                                   force_save="1"
+                                   string="Días hábiles"/>
                             <field name="fecha_expiracion" readonly="1" force_save="1"/>
+                            <field name="x_days_to_expiration" readonly="1" string="Días restantes"/>
                         </group>
                     </group>
 
@@ -76,6 +92,7 @@
                                     <field name="currency_id" column_invisible="1"/>
                                     <field name="x_price_1_value" column_invisible="1"/>
                                     <field name="x_price_2_value" column_invisible="1"/>
+                                    <field name="x_price_3_value" column_invisible="1"/>
                                     <field name="x_price_level_currency" column_invisible="1"/>
                                     <field name="x_can_use_custom_price" column_invisible="1"/>
 
@@ -118,6 +135,7 @@
                                             <field name="currency_id" invisible="1"/>
                                             <field name="x_price_1_value" invisible="1"/>
                                             <field name="x_price_2_value" invisible="1"/>
+                                            <field name="x_price_3_value" invisible="1"/>
                                             <field name="x_price_level_currency" invisible="1"/>
                                             <field name="x_can_use_custom_price" invisible="1"/>
 
@@ -164,7 +182,7 @@
             (ref('inventory_shopping_cart.view_stock_lot_hold_order_tree_manual_pricing'), 'list'),
             (ref('inventory_shopping_cart.view_stock_lot_hold_order_form_manual_pricing'), 'form')
         ]"/>
-        <field name="context">{'default_currency_id': ref('base.USD')}</field>
+        <field name="context">{'default_currency_id': ref('base.USD'), 'default_x_hold_business_days': 5}</field>
     </record>
 
     <menuitem id="menu_stock_lot_hold_order_manual_pricing"
