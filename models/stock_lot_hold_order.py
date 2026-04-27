@@ -9,6 +9,19 @@ from odoo.exceptions import UserError
 class StockLotHoldOrder(models.Model):
     _inherit = 'stock.lot.hold.order'
 
+    # -------------------------------------------------------------------------
+    # ALIAS EXPLÍCITO DE LÍNEAS
+    # -------------------------------------------------------------------------
+    # El modelo original tiene líneas con order_id, pero no necesariamente
+    # expone el One2many como line_ids. Lo declaramos para que compute,
+    # vista y totales funcionen de forma estable.
+    line_ids = fields.One2many(
+        'stock.lot.hold.order.line',
+        'order_id',
+        string='Líneas del Apartado',
+        copy=True,
+    )
+
     fecha_orden = fields.Datetime(
         string='Fecha de Orden',
         default=fields.Datetime.now,
@@ -48,8 +61,10 @@ class StockLotHoldOrder(models.Model):
     def _coerce_datetime(self, value=None):
         if not value:
             return fields.Datetime.now()
+
         if isinstance(value, datetime):
             return value
+
         return fields.Datetime.from_string(value)
 
     @api.model
@@ -68,7 +83,12 @@ class StockLotHoldOrder(models.Model):
 
         return current
 
-    @api.depends('line_ids.cantidad_m2', 'line_ids.precio_unitario', 'line_ids.x_subtotal')
+    @api.depends(
+        'line_ids',
+        'line_ids.cantidad_m2',
+        'line_ids.precio_unitario',
+        'line_ids.x_subtotal',
+    )
     def _compute_hold_totals(self):
         for order in self:
             total_m2 = 0.0
@@ -106,7 +126,12 @@ class StockLotHoldOrder(models.Model):
                 vals['fecha_expiracion'] = self._get_default_fecha_expiracion(vals.get('fecha_orden'))
 
         records = super().create(vals_list)
+
+        # En creación manual, esto normaliza vigencia, precios y cantidades.
+        # En flujo de carrito todavía no hay líneas al crear la cabecera,
+        # por lo que no afecta cantidades parciales.
         records._sync_manual_defaults_and_lines()
+
         return records
 
     def write(self, vals):
@@ -115,8 +140,9 @@ class StockLotHoldOrder(models.Model):
 
         res = super().write(vals)
 
-        if any(field in vals for field in ['fecha_orden', 'currency_id']):
-            self._sync_manual_defaults_and_lines()
+        if not self.env.context.get('skip_hold_order_sync'):
+            if any(field in vals for field in ['fecha_orden', 'currency_id']):
+                self._sync_manual_defaults_and_lines()
 
         return res
 
@@ -264,6 +290,7 @@ class StockLotHoldOrderLine(models.Model):
     @api.depends_context('uid')
     def _compute_x_can_use_custom_price(self):
         can_use = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
+
         for line in self:
             line.x_can_use_custom_price = can_use
 
@@ -435,8 +462,10 @@ class StockLotHoldOrderLine(models.Model):
             if line.quant_id:
                 line.product_id = line.quant_id.product_id
                 line.lot_id = line.quant_id.lot_id
+
                 if line.quant_id.lot_id and not line.lot_ids:
                     line.lot_ids = [(6, 0, [line.quant_id.lot_id.id])]
+
                 line.cantidad_m2 = line.quant_id.quantity or 0.0
                 line._update_price_from_selector()
 
@@ -481,6 +510,7 @@ class StockLotHoldOrderLine(models.Model):
         records = super().create(vals_list)
         records._sync_quantity_from_lots()
         records._sync_price_from_selector()
+
         return records
 
     def write(self, vals):
