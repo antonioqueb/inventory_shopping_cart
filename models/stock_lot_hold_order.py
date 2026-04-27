@@ -346,37 +346,9 @@ class StockLotHoldOrderLine(models.Model):
         compute='_compute_x_can_use_custom_price',
     )
 
-    cantidad_m2 = fields.Float(
-        string='Cantidad m²',
-        digits='Product Unit of Measure',
-        default=0.0,
-    )
-
-    precio_unitario = fields.Float(
-        string='Precio/m²',
-        digits='Product Price',
-        default=0.0,
-    )
-
-    currency_id = fields.Many2one(
-        'res.currency',
-        string='Moneda',
-        related='order_id.currency_id',
-        store=True,
-        readonly=True,
-    )
-
-    x_subtotal = fields.Monetary(
-        string='Total',
-        compute='_compute_x_subtotal',
-        store=True,
-        currency_field='currency_id',
-    )
-
     @api.depends_context('uid')
     def _compute_x_can_use_custom_price(self):
         can_use = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
-
         for line in self:
             line.x_can_use_custom_price = can_use
 
@@ -414,41 +386,6 @@ class StockLotHoldOrderLine(models.Model):
                 line.x_price_3_value = 0.0
 
             line.x_price_level_currency = currency_code
-
-    @api.depends('cantidad_m2', 'precio_unitario')
-    def _compute_x_subtotal(self):
-        for line in self:
-            line.x_subtotal = (line.cantidad_m2 or 0.0) * (line.precio_unitario or 0.0)
-
-    @api.model
-    def _selector_from_price(self, product_id, currency_code, price):
-        product = self.env['product.product'].browse(int(product_id))
-        if not product.exists():
-            return 'custom'
-
-        tmpl = product.product_tmpl_id
-
-        if currency_code == 'MXN':
-            high = tmpl.x_price_mxn_1 or 0.0
-            medium = tmpl.x_price_mxn_2 or 0.0
-            minimum = tmpl.x_price_mxn_3 or 0.0
-        else:
-            high = tmpl.x_price_usd_1 or 0.0
-            medium = tmpl.x_price_usd_2 or 0.0
-            minimum = tmpl.x_price_usd_3 or 0.0
-
-        price = float(price or 0.0)
-
-        if high and abs(price - high) <= 0.01:
-            return 'high'
-
-        if medium and abs(price - medium) <= 0.01:
-            return 'medium'
-
-        if minimum and abs(price - minimum) <= 0.01:
-            return 'minimum'
-
-        return 'custom'
 
     def _get_price_from_selector(self):
         self.ensure_one()
@@ -489,84 +426,8 @@ class StockLotHoldOrderLine(models.Model):
 
             price = line._get_price_from_selector()
 
-            if price <= 0 and line.product_id.type == 'service':
-                price = getattr(line.product_id, 'lst_price', 0.0) or getattr(line.product_id, 'list_price', 0.0)
-
             if price > 0:
                 line.precio_unitario = math.ceil(price)
-
-    def _sync_price_from_selector(self):
-        if self.env.context.get('skip_hold_line_price_sync'):
-            return
-
-        for line in self:
-            if not line.product_id:
-                continue
-
-            if line.x_price_selector == 'custom':
-                continue
-
-            price = line._get_price_from_selector()
-
-            if price <= 0 and line.product_id.type == 'service':
-                price = getattr(line.product_id, 'lst_price', 0.0) or getattr(line.product_id, 'list_price', 0.0)
-
-            if price > 0:
-                price = math.ceil(price)
-                if abs((line.precio_unitario or 0.0) - price) > 0.01:
-                    line.with_context(skip_hold_line_price_sync=True).write({
-                        'precio_unitario': price,
-                    })
-
-    def _get_quantity_from_lots(self):
-        self.ensure_one()
-
-        if self.quant_id:
-            return self.quant_id.quantity or 0.0
-
-        lots = self.env['stock.lot']
-
-        if self.lot_ids:
-            lots |= self.lot_ids
-
-        if self.lot_id:
-            lots |= self.lot_id
-
-        if not lots:
-            return 0.0
-
-        domain = [
-            ('lot_id', 'in', lots.ids),
-            ('location_id.usage', '=', 'internal'),
-            ('quantity', '>', 0),
-        ]
-
-        if self.product_id:
-            domain.append(('product_id', '=', self.product_id.id))
-
-        quants = self.env['stock.quant'].search(domain)
-
-        if quants:
-            return sum(quants.mapped('quantity'))
-
-        fallback_qty = 0.0
-        for lot in lots:
-            fallback_qty += getattr(lot, 'product_qty', 0.0) or 0.0
-
-        return fallback_qty
-
-    @api.onchange('quant_id')
-    def _onchange_quant_id_set_lot_product_quantity(self):
-        for line in self:
-            if line.quant_id:
-                line.product_id = line.quant_id.product_id
-                line.lot_id = line.quant_id.lot_id
-
-                if line.quant_id.lot_id and not line.lot_ids:
-                    line.lot_ids = [(6, 0, [line.quant_id.lot_id.id])]
-
-                line.cantidad_m2 = line.quant_id.quantity or 0.0
-                line._update_price_from_selector()
 
     @api.onchange('product_id')
     def _onchange_product_id_set_price(self):
@@ -582,62 +443,3 @@ class StockLotHoldOrderLine(models.Model):
     @api.onchange('x_price_selector')
     def _onchange_x_price_selector(self):
         self._update_price_from_selector()
-
-    @api.onchange('lot_ids', 'lot_id', 'product_id')
-    def _onchange_lots_set_quantity(self):
-        for line in self:
-            if not line.product_id and line.lot_ids:
-                first_lot = line.lot_ids[:1]
-                if getattr(first_lot, 'product_id', False):
-                    line.product_id = first_lot.product_id
-
-            qty = line._get_quantity_from_lots()
-            if qty:
-                line.cantidad_m2 = qty
-
-            line._update_price_from_selector()
-
-    @api.model_create_multi
-    def create(self, vals_list):
-        for vals in vals_list:
-            if 'precio_unitario' in vals:
-                vals['precio_unitario'] = math.ceil(float(vals.get('precio_unitario') or 0.0))
-
-            if not vals.get('x_price_selector'):
-                vals['x_price_selector'] = 'high'
-
-        records = super().create(vals_list)
-        records._sync_quantity_from_lots()
-        records._sync_price_from_selector()
-
-        return records
-
-    def write(self, vals):
-        if 'precio_unitario' in vals:
-            vals['precio_unitario'] = math.ceil(float(vals.get('precio_unitario') or 0.0))
-
-        res = super().write(vals)
-
-        if any(field in vals for field in ['quant_id', 'lot_id', 'lot_ids', 'product_id']):
-            self._sync_quantity_from_lots()
-
-        if any(field in vals for field in ['product_id', 'x_price_selector', 'order_id']):
-            self._sync_price_from_selector()
-
-        return res
-
-    def _sync_quantity_from_lots(self):
-        if self.env.context.get('skip_hold_line_quantity_sync'):
-            return
-
-        for line in self:
-            has_lot_source = bool(line.quant_id or line.lot_id or line.lot_ids)
-            if not has_lot_source:
-                continue
-
-            qty = line._get_quantity_from_lots()
-
-            if abs((line.cantidad_m2 or 0.0) - qty) > 0.0001:
-                line.with_context(skip_hold_line_quantity_sync=True).write({
-                    'cantidad_m2': qty,
-                })

@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
+    <!-- ============================================================
+         LISTA: Apartados / Reservaciones
+         ============================================================ -->
     <record id="view_stock_lot_hold_order_tree_manual_pricing" model="ir.ui.view">
         <field name="name">stock.lot.hold.order.list.manual.pricing</field>
         <field name="model">stock.lot.hold.order</field>
@@ -25,6 +28,9 @@
         </field>
     </record>
 
+    <!-- ============================================================
+         FORMULARIO: Apartado / Reservación
+         ============================================================ -->
     <record id="view_stock_lot_hold_order_form_manual_pricing" model="ir.ui.view">
         <field name="name">stock.lot.hold.order.form.manual.pricing</field>
         <field name="model">stock.lot.hold.order</field>
@@ -53,6 +59,39 @@
                         </h1>
                     </div>
 
+                    <group>
+                        <group string="Cliente">
+                            <field name="partner_id" string="Cliente" required="1"/>
+                            <field name="delivery_address" string="Dirección de Entrega" placeholder="Dirección de entrega..."/>
+                            <field name="project_id" string="Proyecto"/>
+                            <field name="arquitecto_id" string="Arquitecto"/>
+                        </group>
+
+                        <group string="Información">
+                            <field name="user_id" string="Vendedor" readonly="1"/>
+                            <field name="fecha_orden" string="Fecha de Orden" readonly="1" force_save="1"/>
+                            <field name="fecha_expiracion" string="Fecha de Expiración" readonly="1" force_save="1"/>
+                            <field name="x_days_to_expiration" string="Días Restantes" readonly="1"/>
+                            <field name="currency_id" string="Moneda" required="1"/>
+
+                            <separator/>
+
+                            <field name="x_hold_business_days"
+                                   string="Días hábiles"
+                                   readonly="1"
+                                   force_save="1"/>
+
+                            <field name="x_total_m2"
+                                   string="Total m²"
+                                   readonly="1"/>
+
+                            <field name="x_amount_total"
+                                   string="Total General"
+                                   widget="monetary"
+                                   readonly="1"/>
+                        </group>
+                    </group>
+
                     <div class="alert alert-info" role="alert">
                         <strong>Regla comercial:</strong>
                         el apartado manual usa la escalera comercial del producto.
@@ -60,35 +99,15 @@
                         Los autorizadores pueden ver <strong>Precio 3</strong> y usar precio personalizado.
                     </div>
 
-                    <group>
-                        <group string="Cliente y Proyecto">
-                            <field name="partner_id" required="1"/>
-                            <field name="project_id"/>
-                            <field name="arquitecto_id"/>
-                            <field name="user_id" readonly="1"/>
-                        </group>
-
-                        <group string="Vigencia y Moneda">
-                            <field name="currency_id" required="1"/>
-                            <field name="fecha_orden" readonly="1" force_save="1"/>
-                            <field name="x_hold_business_days"
-                                   readonly="1"
-                                   force_save="1"
-                                   string="Días hábiles"/>
-                            <field name="fecha_expiracion" readonly="1" force_save="1"/>
-                            <field name="x_days_to_expiration" readonly="1" string="Días restantes"/>
-                        </group>
-                    </group>
-
-                    <group>
-                        <field name="delivery_address" placeholder="Dirección de entrega..." colspan="2"/>
-                    </group>
-
                     <notebook>
-                        <page string="Materiales">
+                        <!-- ====================================================
+                             PESTAÑA: Placas Reservadas
+                             ==================================================== -->
+                        <page string="Placas Reservadas">
                             <field name="line_ids"
                                    context="{'default_order_id': id, 'default_currency_id': currency_id}">
                                 <list editable="bottom">
+                                    <!-- Campos auxiliares para el widget de nivel de precio -->
                                     <field name="currency_id" column_invisible="1"/>
                                     <field name="x_price_1_value" column_invisible="1"/>
                                     <field name="x_price_2_value" column_invisible="1"/>
@@ -96,29 +115,49 @@
                                     <field name="x_price_level_currency" column_invisible="1"/>
                                     <field name="x_can_use_custom_price" column_invisible="1"/>
 
-                                    <field name="product_id" required="1"/>
-                                    <field name="lot_ids" widget="many2many_tags"/>
-                                    <field name="lot_id" optional="hide"/>
-                                    <field name="quant_id" optional="hide"/>
+                                    <!-- Material -->
+                                    <field name="product_id"
+                                           string="Producto"
+                                           required="1"/>
 
+                                    <field name="lot_ids"
+                                           string="Placas"
+                                           widget="many2many_tags"
+                                           optional="show"/>
+
+                                    <field name="lot_id"
+                                           string="Lote"
+                                           optional="hide"/>
+
+                                    <field name="quant_id"
+                                           string="Quant"
+                                           optional="hide"/>
+
+                                    <!-- Cantidad -->
                                     <field name="cantidad_m2"
                                            string="m²"
                                            force_save="1"/>
 
+                                    <!-- Selector comercial -->
                                     <field name="x_price_selector"
                                            string="Nivel de Precio"
                                            widget="price_level_selector"
                                            required="1"/>
 
+                                    <!-- Precio resultante -->
                                     <field name="precio_unitario"
                                            string="Precio/m²"
                                            readonly="x_price_selector != 'custom' or not x_can_use_custom_price"
                                            force_save="1"/>
 
+                                    <!-- Total -->
                                     <field name="x_subtotal"
                                            string="Total"
                                            widget="monetary"
                                            readonly="1"/>
+
+                                    <!-- Mantener campos existentes ocultos/compatibles -->
+                                    <field name="id" column_invisible="1"/>
                                 </list>
 
                                 <form>
@@ -140,6 +179,7 @@
                                             <field name="x_can_use_custom_price" invisible="1"/>
 
                                             <field name="x_price_selector"
+                                                   string="Nivel de Precio"
                                                    widget="price_level_selector"
                                                    required="1"/>
 
@@ -158,11 +198,20 @@
                             </field>
 
                             <group class="oe_subtotal_footer">
-                                <field name="x_total_m2" readonly="1" string="Total m²"/>
-                                <field name="x_amount_total" readonly="1" widget="monetary" string="Total Apartado"/>
+                                <field name="x_total_m2"
+                                       readonly="1"
+                                       string="Total m²"/>
+
+                                <field name="x_amount_total"
+                                       readonly="1"
+                                       widget="monetary"
+                                       string="Total Apartado"/>
                             </group>
                         </page>
 
+                        <!-- ====================================================
+                             PESTAÑA: Notas
+                             ==================================================== -->
                         <page string="Notas">
                             <field name="notas" placeholder="Observaciones del apartado..."/>
                         </page>
@@ -174,6 +223,9 @@
         </field>
     </record>
 
+    <!-- ============================================================
+         ACCIÓN
+         ============================================================ -->
     <record id="action_stock_lot_hold_order_manual_pricing" model="ir.actions.act_window">
         <field name="name">Apartados / Reservaciones</field>
         <field name="res_model">stock.lot.hold.order</field>
@@ -185,6 +237,9 @@
         <field name="context">{'default_currency_id': ref('base.USD'), 'default_x_hold_business_days': 5}</field>
     </record>
 
+    <!-- ============================================================
+         MENÚ
+         ============================================================ -->
     <menuitem id="menu_stock_lot_hold_order_manual_pricing"
               name="Apartados / Reservaciones"
               parent="sale.sale_menu_root"

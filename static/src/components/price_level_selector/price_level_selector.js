@@ -42,14 +42,6 @@ export class PriceLevelSelectorField extends Component {
     }
 
     get canUseRestrictedPrices() {
-        /*
-         * En sale.order.line este campo puede no existir.
-         * En stock.lot.hold.order.line sí existe y representa autorizador.
-         *
-         * Regla:
-         * - false / inexistente: solo Precio 1 y Precio 2.
-         * - true: Precio 1, Precio 2, Precio 3 y Personalizado.
-         */
         return Boolean(this.props.record.data.x_can_use_custom_price);
     }
 
@@ -97,8 +89,7 @@ export class PriceLevelSelectorField extends Component {
     }
 
     onChange(ev) {
-        const value = ev.target.value;
-        this.props.record.update({ [this.props.name]: value });
+        this.props.record.update({ [this.props.name]: ev.target.value });
     }
 }
 
@@ -106,12 +97,6 @@ export const priceLevelSelectorField = {
     component: PriceLevelSelectorField,
     displayName: "Nivel de Precio con Monto",
     supportedTypes: ["selection"],
-
-    /*
-     * No declarar fieldDependencies aquí.
-     * Este widget se usa en varios modelos.
-     * Los campos auxiliares se cargan desde la vista como invisibles.
-     */
 };
 
 registry.category("fields").add("price_level_selector", priceLevelSelectorField);
