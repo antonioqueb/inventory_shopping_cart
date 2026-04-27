@@ -2,81 +2,153 @@
 <templates xml:space="preserve">
     
     <t t-name="inventory_shopping_cart.CartDialog" owl="1">
-        <Dialog size="'xl'" title="'🛒 Carrito de Compra'">
-            <div class="cart-dialog-content">
-                <div class="alert alert-warning" t-if="hasHolds">
-                    <i class="fa fa-exclamation-triangle me-2"></i>
-                    <strong>Advertencia:</strong> Hay lotes apartados que no podrán venderse
+        <Dialog size="'xl'">
+            <div class="cart-dialog-content isc-modal-surface isc-cart-dialog">
+                <button type="button" class="isc-modal-close" t-on-click="props.close" title="Cerrar">
+                    <i class="fa fa-times"></i>
+                </button>
+
+                <div class="isc-modal-hero">
+                    <div class="isc-hero-row">
+                        <div class="isc-hero-icon">
+                            <i class="fa fa-shopping-cart"></i>
+                        </div>
+                        <div class="isc-hero-copy">
+                            <div class="isc-eyebrow">Selección activa</div>
+                            <h3 class="isc-modal-title">Carrito de Compra</h3>
+                            <p class="isc-modal-subtitle">
+                                Revisa los lotes seleccionados antes de apartar, vender, trasladar o generar etiquetas.
+                            </p>
+                            <div class="isc-hero-metrics">
+                                <span class="isc-chip">
+                                    <i class="fa fa-cubes"></i>
+                                    <strong t-esc="cart.totalLots"></strong>
+                                    lotes
+                                </span>
+                                <span class="isc-chip">
+                                    <i class="fa fa-object-group"></i>
+                                    <strong t-esc="Object.keys(cart.productGroups).length"></strong>
+                                    productos
+                                </span>
+                                <span class="isc-chip">
+                                    <i class="fa fa-area-chart"></i>
+                                    <strong t-esc="formatNumber(cart.totalQuantity)"></strong>
+                                    m²
+                                </span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <t t-foreach="Object.entries(cart.productGroups)" t-as="entry" t-key="entry[0]">
-                    <t t-set="productId" t-value="entry[0]"/>
-                    <t t-set="group" t-value="entry[1]"/>
-                    
-                    <div class="product-group mb-4">
-                        <div class="product-header">
-                            <h5><i class="fa fa-cube me-2"></i><t t-esc="group.name"/></h5>
-                            <span class="badge bg-secondary"><t t-esc="formatNumber(group.total_quantity)"/> m²</span>
-                        </div>
-                        
-                        <table class="table table-sm">
-                            <tbody>
-                                <t t-foreach="group.lots" t-as="lot" t-key="lot.id">
-                                    <tr>
-                                        <td><t t-esc="lot.lot_name"/></td>
-                                        <td><t t-esc="formatNumber(lot.quantity)"/> m²</td>
-                                        <td><t t-esc="lot.location_name"/></td>
-                                        <td>
-                                            <span t-if="lot.tiene_hold" class="badge bg-warning">
-                                                🔒 <t t-esc="lot.seller_name || 'Apartado'"/>
-                                            </span>
-                                        </td>
-                                    </tr>
-                                </t>
-                            </tbody>
-                        </table>
+                <div class="isc-modal-main">
+                    <div class="alert alert-warning" t-if="hasHolds">
+                        <i class="fa fa-exclamation-triangle me-2"></i>
+                        <strong>Advertencia:</strong> hay lotes apartados que no podrán venderse.
                     </div>
-                </t>
 
-                <div class="cart-summary-footer">
-                    <h4>Total: <t t-esc="formatNumber(cart.totalQuantity)"/> m²</h4>
-                    <p><t t-esc="cart.totalLots"/> lotes en <t t-esc="Object.keys(cart.productGroups).length"/> productos</p>
+                    <div class="isc-cart-list">
+                        <t t-foreach="Object.entries(cart.productGroups)" t-as="entry" t-key="entry[0]">
+                            <t t-set="productId" t-value="entry[0]"/>
+                            <t t-set="group" t-value="entry[1]"/>
+                            
+                            <section class="isc-cart-product-card">
+                                <div class="isc-cart-product-head">
+                                    <div class="isc-cart-product-title">
+                                        <i class="fa fa-cube"></i>
+                                        <div>
+                                            <h5><t t-esc="group.name"/></h5>
+                                            <small>
+                                                <t t-esc="group.lots.length"/> lotes seleccionados
+                                            </small>
+                                        </div>
+                                    </div>
+                                    <span class="badge isc-cart-product-total">
+                                        <t t-esc="formatNumber(group.total_quantity)"/> m²
+                                    </span>
+                                </div>
+                                
+                                <div class="isc-cart-table table-responsive">
+                                    <table class="table table-sm">
+                                        <thead>
+                                            <tr>
+                                                <th>Lote</th>
+                                                <th class="text-end">Cantidad</th>
+                                                <th>Ubicación</th>
+                                                <th class="text-center">Estado</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <t t-foreach="group.lots" t-as="lot" t-key="lot.id">
+                                                <tr>
+                                                    <td>
+                                                        <strong t-esc="lot.lot_name"></strong>
+                                                    </td>
+                                                    <td class="text-end">
+                                                        <t t-esc="formatNumber(lot.quantity)"/> m²
+                                                    </td>
+                                                    <td>
+                                                        <span class="text-muted" t-esc="lot.location_name"/>
+                                                    </td>
+                                                    <td class="text-center">
+                                                        <span t-if="lot.tiene_hold" class="badge bg-warning">
+                                                            <i class="fa fa-lock"></i>
+                                                            <t t-esc="lot.seller_name || 'Apartado'"/>
+                                                        </span>
+                                                        <span t-else="" class="badge bg-success">
+                                                            Disponible
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            </t>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </section>
+                        </t>
+                    </div>
+
+                    <div class="isc-summary-panel">
+                        <h4>Total: <t t-esc="formatNumber(cart.totalQuantity)"/> m²</h4>
+                        <p>
+                            <t t-esc="cart.totalLots"/> lotes en
+                            <t t-esc="Object.keys(cart.productGroups).length"/> productos
+                        </p>
+                    </div>
                 </div>
             </div>
 
             <t t-set-slot="footer">
-                <!-- Botón de advertencia (Izquierda) -->
                 <button class="btn btn-warning me-auto" t-if="hasHolds" t-on-click="removeHolds">
-                    <i class="fa fa-times"></i> Eliminar Apartados
+                    <i class="fa fa-times"></i>
+                    Eliminar Apartados
                 </button>
                 
-                <!-- ✅ BOTÓN NUEVO: IMPRIMIR ETIQUETAS (Disponible para todos) -->
-                <button class="btn btn-secondary me-2" t-on-click="printLabels">
-                    <i class="fa fa-print"></i> Etiquetas
+                <button class="btn btn-light" t-on-click="printLabels">
+                    <i class="fa fa-print"></i>
+                    Etiquetas
                 </button>
                 
-                <!-- ✅ BOTONES PARA USUARIOS CON PERMISOS DE VENTAS -->
                 <t t-if="cart.hasSalesPermissions">
-                    <button class="btn btn-info" t-on-click="createHolds">
-                        <i class="fa fa-lock"></i> Apartar Todo
+                    <button class="btn btn-secondary" t-on-click="createHolds">
+                        <i class="fa fa-lock"></i>
+                        Apartar Todo
                     </button>
                     <button class="btn btn-primary" t-on-click="createSaleOrder">
-                        <i class="fa fa-file-text"></i> Crear Orden de Venta
+                        <i class="fa fa-file-text"></i>
+                        Crear Orden de Venta
                     </button>
                 </t>
                 
-                <!-- ✅ BOTÓN TRASLADAR PARA USUARIOS CON PERMISOS DE INVENTARIO -->
                 <t t-if="cart.hasInventoryPermissions">
                     <button class="btn btn-warning" t-on-click="createTransfer">
-                        <i class="fa fa-exchange"></i> Trasladar
+                        <i class="fa fa-exchange"></i>
+                        Trasladar
                     </button>
                 </t>
                 
-                <!-- ✅ MENSAJE PARA USUARIOS SIN NINGÚN PERMISO -->
-                <div t-if="!cart.hasSalesPermissions and !cart.hasInventoryPermissions" 
-                     class="alert alert-info mb-0 ms-3" style="flex: 1;">
+                <div t-if="!cart.hasSalesPermissions and !cart.hasInventoryPermissions" class="alert alert-info mb-0 ms-3" style="flex: 1;">
                     <i class="fa fa-info-circle me-2"></i>
-                    <strong>Permisos requeridos:</strong> Necesita permisos de ventas o inventario para realizar operaciones.
+                    <strong>Permisos requeridos:</strong> necesita permisos de ventas o inventario para realizar operaciones.
                 </div>
             </t>
         </Dialog>

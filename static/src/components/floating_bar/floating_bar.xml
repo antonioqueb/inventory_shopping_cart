@@ -5,20 +5,31 @@
         <div class="shopping-cart-floating-bar" t-if="cart.totalLots > 0">
             <div class="floating-bar-content">
                 <div class="cart-summary">
-                    <i class="fa fa-shopping-cart me-2"></i>
-                    <strong t-esc="Object.keys(cart.productGroups).length"></strong> <t t-if="Object.keys(cart.productGroups).length === 1">Modelo</t><t t-else="">Modelos</t> |
-                    
-                    <!-- ETIQUETA DINÁMICA: Placas / Formatos / Piezas -->
-                    <strong t-esc="cart.totalLots"></strong> <span t-esc="cart.typeLabel"/> |
-                    
-                    <strong t-esc="formatNumber(cart.totalQuantity)"></strong> m²
+                    <i class="fa fa-shopping-cart"></i>
+                    <span>
+                        <strong t-esc="Object.keys(cart.productGroups).length"></strong>
+                        <t t-if="Object.keys(cart.productGroups).length === 1"> Modelo</t>
+                        <t t-else=""> Modelos</t>
+                    </span>
+                    <span>•</span>
+                    <span>
+                        <strong t-esc="cart.totalLots"></strong>
+                        <span t-esc="cart.typeLabel"/>
+                    </span>
+                    <span>•</span>
+                    <span>
+                        <strong t-esc="formatNumber(cart.totalQuantity)"></strong> m²
+                    </span>
                 </div>
+
                 <div class="cart-actions">
-                    <button class="btn btn-sm btn-light me-2" t-on-click="clearCart">
-                        <i class="fa fa-times"></i> Limpiar
+                    <button class="btn btn-sm btn-light" t-on-click="clearCart">
+                        <i class="fa fa-times"></i>
+                        Limpiar
                     </button>
                     <button class="btn btn-sm btn-primary" t-on-click="openCartDialog">
-                        <i class="fa fa-shopping-cart"></i> Ver Carrito
+                        <i class="fa fa-shopping-cart"></i>
+                        Ver Carrito
                     </button>
                 </div>
             </div>
@@ -30,7 +41,7 @@
             <t t-call="inventory_shopping_cart.FloatingBar"/>
         </xpath>
         <xpath expr="//div[hasclass('o_inventory_visual_content')]" position="attributes">
-            <attribute name="style">padding-bottom: 120px;</attribute>
+            <attribute name="style">padding-bottom: 124px;</attribute>
         </xpath>
     </t>
     

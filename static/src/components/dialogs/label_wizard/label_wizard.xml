@@ -1,46 +1,77 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
     <t t-name="inventory_shopping_cart.LabelWizard" owl="1">
-        <Dialog size="'md'" title="'🖨️ Imprimir Etiquetas Zebra'">
-            <div class="label-wizard-content p-3">
-                <div class="alert alert-info mb-4">
-                    Se generará un archivo <strong>.zpl</strong> que puede enviar directamente a su impresora Zebra.
-                    <br/>
-                    <small>Lotes seleccionados: <strong t-esc="props.selectedLots.length"></strong></small>
+        <Dialog size="'md'">
+            <div class="label-wizard-content isc-modal-surface">
+                <button type="button" class="isc-modal-close" t-on-click="props.close" title="Cerrar">
+                    <i class="fa fa-times"></i>
+                </button>
+
+                <div class="isc-modal-hero">
+                    <div class="isc-hero-row">
+                        <div class="isc-hero-icon">
+                            <i class="fa fa-print"></i>
+                        </div>
+                        <div class="isc-hero-copy">
+                            <div class="isc-eyebrow">Etiquetado Zebra</div>
+                            <h3 class="isc-modal-title">Imprimir Etiquetas</h3>
+                            <p class="isc-modal-subtitle">
+                                Genera un archivo ZPL con el formato correcto para los lotes seleccionados.
+                            </p>
+                            <div class="isc-hero-metrics">
+                                <span class="isc-chip">
+                                    <i class="fa fa-tags"></i>
+                                    <strong t-esc="props.selectedLots.length"></strong>
+                                    lotes seleccionados
+                                </span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="row g-3">
-                    <t t-foreach="formats" t-as="format" t-key="format.id">
-                        <div class="col-12">
-                            <div class="format-option card" 
-                                 t-att-class="{ 'selected': state.selectedFormat === format.id }"
-                                 t-on-click="() => this.selectFormat(format.id)">
-                                <div class="card-body d-flex align-items-center">
-                                    <div class="format-icon me-3">
-                                        <i t-att-class="'fa ' + format.icon + ' fa-2x'"></i>
-                                    </div>
-                                    <div class="flex-grow-1">
-                                        <h6 class="mb-1 fw-bold"><t t-esc="format.name"/></h6>
-                                        <small class="text-muted"><t t-esc="format.desc"/></small>
-                                    </div>
-                                    <div class="selection-check" t-if="state.selectedFormat === format.id">
-                                        <i class="fa fa-check-circle fa-2x text-success"></i>
+                <div class="isc-modal-main">
+                    <div class="alert alert-info mb-4">
+                        <i class="fa fa-info-circle me-2"></i>
+                        Se generará un archivo <strong>.zpl</strong> que puede enviarse directamente a la impresora Zebra.
+                    </div>
+
+                    <div class="row g-3">
+                        <t t-foreach="formats" t-as="format" t-key="format.id">
+                            <div class="col-12">
+                                <div class="format-option card" 
+                                     t-att-class="{ 'selected': state.selectedFormat === format.id }"
+                                     t-on-click="() => this.selectFormat(format.id)">
+                                    <div class="card-body d-flex align-items-center">
+                                        <div class="format-icon me-3">
+                                            <i t-att-class="'fa ' + format.icon + ' fa-2x'"></i>
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <h6 class="mb-1 fw-bold"><t t-esc="format.name"/></h6>
+                                            <small class="text-muted"><t t-esc="format.desc"/></small>
+                                        </div>
+                                        <div class="selection-check" t-if="state.selectedFormat === format.id">
+                                            <i class="fa fa-check-circle fa-2x"></i>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    </t>
+                        </t>
+                    </div>
                 </div>
             </div>
 
             <t t-set-slot="footer">
-                <button class="btn btn-light" t-on-click="props.close">Cancelar</button>
+                <button class="btn btn-light" t-on-click="props.close">
+                    Cancelar
+                </button>
                 <button class="btn btn-primary" t-on-click="downloadZpl" t-att-disabled="state.isGenerating">
                     <t t-if="!state.isGenerating">
-                        <i class="fa fa-download me-2"></i> Descargar ZPL
+                        <i class="fa fa-download"></i>
+                        Descargar ZPL
                     </t>
                     <t t-else="">
-                        <i class="fa fa-spinner fa-spin me-2"></i> Generando...
+                        <i class="fa fa-spinner fa-spin"></i>
+                        Generando...
                     </t>
                 </button>
             </t>

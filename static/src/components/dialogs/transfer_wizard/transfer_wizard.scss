@@ -1,88 +1,114 @@
 .transfer-wizard-content {
-  .steps-indicator {
-    padding: 16px 0;
-    
-    .step-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      flex: 1;
-      
-      .step-number {
-        width: 36px;
-        height: 36px;
-        border-radius: 50%;
-        background: #E0E0E0;
-        color: #808080;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 700;
-        font-size: 14px;
-        transition: all 0.3s ease;
-      }
-      
-      .step-label {
-        font-size: 12px;
-        color: #808080;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        transition: all 0.3s ease;
-      }
-      
-      &.active {
-        .step-number {
-          background: #F0AD4E;
-          color: white;
+    .steps-indicator {
+        padding: 0 0 18px;
+
+        .d-flex {
+            gap: 8px;
         }
-        
-        .step-label {
-          color: #F0AD4E;
+
+        .step-item {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 7px;
+
+            .step-number {
+                width: 38px;
+                height: 38px;
+                border-radius: 50%;
+                border: 1px solid rgba(122, 68, 36, 0.18);
+                background: var(--isc-parchment);
+                color: var(--isc-muted);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: 950;
+                font-size: 13px;
+                transition: all 0.18s ease;
+            }
+
+            .step-label {
+                color: var(--isc-muted);
+                font-size: 10px;
+                font-weight: 950;
+                text-align: center;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+            }
+
+            &.active {
+                .step-number {
+                    color: var(--isc-walnut-dark);
+                    border-color: rgba(201, 130, 40, 0.30);
+                    background: linear-gradient(135deg, var(--isc-honey), var(--isc-amber));
+                    box-shadow: 0 10px 20px rgba(201, 130, 40, 0.18);
+                }
+
+                .step-label {
+                    color: var(--isc-amber);
+                }
+            }
+
+            &.completed {
+                .step-number {
+                    color: #fff;
+                    border-color: rgba(97, 114, 76, 0.24);
+                    background: linear-gradient(135deg, var(--isc-sage), var(--isc-sage-dark));
+                }
+
+                .step-label {
+                    color: var(--isc-sage-dark);
+                }
+            }
         }
-      }
-      
-      &.completed {
-        .step-number {
-          background: #5CB85C;
-          color: white;
+
+        .step-line {
+            flex: 0.8;
+            height: 2px;
+            min-width: 24px;
+            margin-top: -22px;
+            border-radius: 999px;
+            background: rgba(122, 68, 36, 0.14);
+
+            &.active {
+                background: linear-gradient(90deg, var(--isc-honey), var(--isc-amber));
+            }
         }
-        
-        .step-label {
-          color: #5CB85C;
-        }
-      }
     }
-    
-    .step-line {
-      flex: 1;
-      height: 2px;
-      background: #E0E0E0;
-      margin: 0 8px;
-      align-self: center;
-      transition: all 0.3s ease;
-      margin-top: -24px;
-      
-      &.active {
-        background: #F0AD4E;
-      }
+
+    .step-content {
+        min-height: 390px;
+        padding: 18px;
+        border: 1px solid rgba(122, 68, 36, 0.12);
+        border-radius: var(--isc-radius-lg);
+        background: rgba(255, 253, 247, 0.72);
+        box-shadow: var(--isc-shadow-card);
+        animation: iscFadeUp 0.22s ease-out;
+
+        h5 {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 16px !important;
+            color: var(--isc-walnut);
+            font-weight: 950;
+        }
     }
-  }
-  
-  .step-content {
-    min-height: 400px;
-    animation: fadeIn 0.3s ease-in;
-  }
+
+    .table-responsive {
+        max-height: 300px;
+    }
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+@keyframes iscFadeUp {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
