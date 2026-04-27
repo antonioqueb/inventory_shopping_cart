@@ -1,6 +1,7 @@
 # ./models/stock_quant.py
 # -*- coding: utf-8 -*-
 from odoo import models, fields, api
+from odoo.exceptions import UserError
 from datetime import datetime, timedelta
 
 
@@ -64,7 +65,59 @@ class StockQuant(models.Model):
 
         return {'success': True}
 
+    # ============================================================
+    # CANTIDADES SELECCIONADAS DESDE CARRITO / AUTORIZACIÓN
+    # ============================================================
+
+    def _resolve_selected_quantities(self, selected_lots=None, selected_quantities=None):
+        """
+        Resuelve la cantidad realmente seleccionada por quant.
+
+        Prioridad:
+        1. selected_quantities guardado en autorización.
+        2. shopping.cart del vendedor actual.
+        3. quantity completo del quant.
+
+        Esto es crítico para formatos/piezas parciales, porque el hold no debe
+        tomar siempre la cantidad completa del quant.
+        """
+        selected_lots = selected_lots or []
+        clean_quant_ids = []
+
+        for quant_id in selected_lots:
+            try:
+                clean_quant_ids.append(int(quant_id))
+            except Exception:
+                continue
+
+        qty_by_quant = {}
+
+        if isinstance(selected_quantities, dict):
+            for key, value in selected_quantities.items():
+                try:
+                    qty_by_quant[int(key)] = float(value or 0.0)
+                except Exception:
+                    continue
+
+        cart_owner_id = self.env.context.get('force_seller_id') or self.env.user.id
+
+        if clean_quant_ids:
+            cart_items = self.env['shopping.cart'].search([
+                ('user_id', '=', cart_owner_id),
+                ('quant_id', 'in', clean_quant_ids),
+            ])
+
+            for item in cart_items:
+                qty_by_quant[item.quant_id.id] = item.quantity or 0.0
+
+        for quant in self.browse(clean_quant_ids):
+            if quant.id not in qty_by_quant:
+                qty_by_quant[quant.id] = quant.quantity or 0.0
+
+        return qty_by_quant
+
     # === GENERADOR ZPL ===
+
     @api.model
     def generate_zpl_labels(self, selected_lots, label_format):
         """
@@ -120,15 +173,6 @@ class StockQuant(models.Model):
         Genera etiquetas formato 17.5x1 cm (canto/lomo).
         4 etiquetas por página ^XA..^XZ, dispuestas en 4 columnas verticales.
         Offset X entre columnas: 176 dots.
-
-        Coordenadas EXACTAS (columna 1, x base = 0):
-        - ( SOM )          FO 26,20    A0N,43,38  FB160,1,0,C    marca/origen
-        - Prefijo lote     FO 18,75    A0N,35,37  FB160,1,0,C    lot.name ANTES del '-'
-        - Sufijo lote      FO 28,130   A0N,78,78  FB160,1,0,C    lot.name DESPUÉS del '-'
-        - Descripción      FO 133,232  A0R,32,32  (rotada)        product.name
-        - Dimensiones      FO 88,232   A0R,32,32  (rotada)        alto x ancho = area M2
-        - Lote origen      FO 38,232   A0R,32,32  (rotada)        x_lote_origen / bloque
-        - Barcode vertical FO 12,1017  BY3,2,154  BCB,154,N,N,N   lot.name COMPLETO
         """
         zpl = ""
         col_offset = 176
@@ -142,21 +186,13 @@ class StockQuant(models.Model):
                 lot = quant.lot_id
                 product = quant.product_id
 
-                # ── Nombre completo del lote (ej: "10954-58") ──
                 lot_name = (lot.name or '').strip()
 
-                # ── Split en el guion: prefijo (arriba) + sufijo (abajo grande) ──
-                # Usa rsplit('-', 1): toma el ÚLTIMO guion como separador.
                 if '-' in lot_name:
                     lot_prefix, lot_suffix = lot_name.rsplit('-', 1)
                 else:
                     lot_prefix, lot_suffix = lot_name, ''
 
-                # ── Descripción del producto (máx. 45 chars + "..." = 48 total) ──
-                # - <=45 chars: se deja tal cual
-                # - >45 chars y NO parte palabra (char siguiente es espacio o corte
-                #   cayó sobre espacio): corte limpio a 45, sin puntos
-                # - >45 chars y SÍ parte palabra: 45 chars + "..." = 48 chars total
                 product_name = (product.name or '').strip()
                 if len(product_name) > 45:
                     if product_name[45] == ' ' or product_name[:45].endswith(' '):
@@ -164,7 +200,6 @@ class StockQuant(models.Model):
                     else:
                         product_name = product_name[:45] + '...'
 
-                # ── Dimensiones en metros. Si viene en cm (>10) convertir. ──
                 alto_raw = getattr(lot, 'x_alto', 0) or 0
                 ancho_raw = getattr(lot, 'x_ancho', 0) or 0
                 alto_m = alto_raw / 100.0 if alto_raw > 10 else alto_raw
@@ -172,7 +207,6 @@ class StockQuant(models.Model):
                 area = quant.quantity or 0
                 dim_line = f"{alto_m:.2f} x {ancho_m:.2f} = {area:.2f} M2"
 
-                # ── Lote origen / bloque. Fallbacks seguros. ──
                 lote_origen = (
                     getattr(lot, 'x_lote_origen', None)
                     or getattr(lot, 'x_bloque', None)
@@ -183,18 +217,8 @@ class StockQuant(models.Model):
                     lote_origen = lote_origen.name
                 lote_origen = str(lote_origen or '').strip()
 
-                # ── Marca / origen (con espacios: "( SOM )") ──
                 origen = '( SOM )'
 
-                # ── Ensamble ZPL con offset de columna aplicado ──
-                # Coordenadas X base por elemento (antes del offset de columna):
-                #   ( SOM ):   26    -> 26, 202, 378, 554
-                #   prefijo:   18    -> 18, 194, 370, 546
-                #   sufijo:    28    -> 28, 204, 380, 556
-                #   desc:     133    -> 133, 309, 485, 661  (rotado en Y=232)
-                #   dim:       88    -> 88, 264, 440, 616   (rotado en Y=232)
-                #   origen:    38    -> 38, 214, 390, 566   (rotado en Y=232)
-                #   barcode:   12    -> 12, 188, 364, 540   (Y=1017, BY3,2,154 + BCB,154)
                 zpl += f"^FO{26 + x},20^A0N,43,38^FB160,1,0,C^FD{origen}^FS\n"
                 zpl += f"^FO{18 + x},75^A0N,35,37^FB160,1,0,C^FD{lot_prefix}^FS\n"
                 zpl += f"^FO{28 + x},130^A0N,78,78^FB160,1,0,C^FD{lot_suffix}^FS\n"
@@ -211,11 +235,14 @@ class StockQuant(models.Model):
         """Construir dirección de entrega del cliente"""
         if not partner:
             return ''
+
         address_parts = []
+
         if partner.street:
             address_parts.append(partner.street)
         if partner.street2:
             address_parts.append(partner.street2)
+
         city_parts = []
         if partner.city:
             city_parts.append(partner.city)
@@ -223,10 +250,13 @@ class StockQuant(models.Model):
             city_parts.append(partner.state_id.name)
         if partner.zip:
             city_parts.append(f"C.P. {partner.zip}")
+
         if city_parts:
             address_parts.append(', '.join(city_parts))
+
         if partner.country_id:
             address_parts.append(partner.country_id.name)
+
         return '\n'.join(address_parts) if address_parts else ''
 
     @api.model
@@ -241,17 +271,27 @@ class StockQuant(models.Model):
         product_prices=None,
         services=None,
         backorder_items=None,
+        selected_quantities=None,
     ):
         """
         Crear múltiples apartados desde el carrito.
+
         Soporta:
-        1. Lotes Físicos (selected_lots) -> Crea stock.lot.hold y líneas con lot_ids
-        2. Material por Pedido (backorder_items) -> Crea líneas SIN lot_id (solo financiero)
-        3. Servicios (services) -> Crea líneas tipo servicio
+        1. Lotes Físicos selected_lots -> crea stock.lot.hold.order y líneas con lot_ids.
+        2. Material por Pedido backorder_items -> crea líneas sin lot_id.
+        3. Servicios services -> crea líneas tipo servicio.
+
+        Correcciones:
+        - Respeta cantidades parciales seleccionadas desde carrito.
+        - Calcula fecha de expiración desde stock.lot.hold.order.
+        - Crea líneas con cantidad_m2, precio_unitario, subtotal y selector de precio.
         """
-        has_lots = selected_lots and len(selected_lots) > 0
-        has_services = services and len(services) > 0
-        has_backorders = backorder_items and len(backorder_items) > 0
+        selected_lots = selected_lots or []
+        product_prices = product_prices or {}
+
+        has_lots = bool(selected_lots)
+        has_services = bool(services)
+        has_backorders = bool(backorder_items)
 
         if not partner_id or (not has_lots and not has_services and not has_backorders):
             return {
@@ -260,32 +300,48 @@ class StockQuant(models.Model):
                 'failed': [{'error': 'Faltan parámetros requeridos o selección de items'}]
             }
 
+        selected_qty_by_quant = self._resolve_selected_quantities(
+            selected_lots=selected_lots,
+            selected_quantities=selected_quantities,
+        )
+
         currency = self.env['res.currency'].search([('name', '=', currency_code)], limit=1)
         if not currency:
             currency = self.env.company.currency_id
 
-        # VERIFICAR AUTORIZACIÓN (Solo para lotes físicos)
+        # ================================================================
+        # VERIFICAR AUTORIZACIÓN — SOLO LOTES FÍSICOS
+        # ================================================================
         if has_lots and not self.env.context.get('skip_authorization_check'):
-            auth_check = self.env['product.template'].check_price_authorization_needed(product_prices, currency_code)
+            auth_check = self.env['product.template'].check_price_authorization_needed(
+                product_prices,
+                currency_code
+            )
+
             if auth_check.get('needs_authorization'):
                 product_groups = {}
+
                 for quant_id in selected_lots:
-                    quant = self.browse(quant_id)
+                    quant = self.browse(int(quant_id))
                     if not quant.exists() or not quant.lot_id:
                         continue
+
                     pid = quant.product_id.id
+                    selected_qty = selected_qty_by_quant.get(quant.id, quant.quantity or 0.0)
+
                     if pid not in product_groups:
                         product_groups[pid] = {
                             'name': quant.product_id.display_name,
                             'lots': [],
-                            'total_quantity': 0,
+                            'total_quantity': 0.0,
                         }
+
                     product_groups[pid]['lots'].append({
-                        'id': quant_id,
+                        'id': quant.id,
                         'lot_name': quant.lot_id.name,
-                        'quantity': quant.quantity,
+                        'quantity': selected_qty,
                     })
-                    product_groups[pid]['total_quantity'] += quant.quantity
+                    product_groups[pid]['total_quantity'] += selected_qty
 
                 result = self.create_price_authorization(
                     operation_type='hold',
@@ -297,7 +353,9 @@ class StockQuant(models.Model):
                     product_groups=product_groups,
                     notes=notes,
                     architect_id=architect_id,
+                    selected_quantities=selected_qty_by_quant,
                 )
+
                 if result.get('success'):
                     return {
                         'success': False,
@@ -307,35 +365,37 @@ class StockQuant(models.Model):
                         'message': f'Solicitud {result["authorization_name"]} creada.',
                     }
 
+        # ================================================================
+        # NOTAS Y PRECIOS NORMALIZADOS
+        # ================================================================
         full_notes = notes or ''
         normalized_prices = {}
+
         if product_prices and isinstance(product_prices, dict):
-            normalized_prices = {str(k): float(v) for k, v in product_prices.items()}
-            # Agregar precios de lotes a notas
+            normalized_prices = {str(k): float(v or 0.0) for k, v in product_prices.items()}
+
             price_by_product = {}
+
             if has_lots:
                 for quant_id in selected_lots:
-                    quant = self.browse(quant_id)
+                    quant = self.browse(int(quant_id))
                     if not quant.exists():
                         continue
+
                     pid = quant.product_id.id
                     if str(pid) in normalized_prices and pid not in price_by_product:
                         price_by_product[pid] = {
                             'name': quant.product_id.display_name,
                             'price': normalized_prices[str(pid)],
                         }
+
             if price_by_product:
                 full_notes += '\n\n=== PRECIOS LOTES EXISTENTES ({}) ===\n'.format(currency_code)
                 for data in price_by_product.values():
                     full_notes += f'• {data["name"]}: {data["price"]:.2f} {currency_code}/m²\n'
 
         fecha_orden = datetime.now()
-        fecha_expiracion = fecha_orden
-        dias_agregados = 0
-        while dias_agregados < 5:
-            fecha_expiracion += timedelta(days=1)
-            if fecha_expiracion.weekday() < 5:
-                dias_agregados += 1
+        fecha_expiracion = self.env['stock.lot.hold.order']._get_default_fecha_expiracion(fecha_orden)
 
         partner = self.env['res.partner'].browse(partner_id)
 
@@ -351,23 +411,28 @@ class StockQuant(models.Model):
             'currency_id': currency.id,
             'delivery_address': self._get_partner_delivery_address(partner),
         }
+
         order = self.env['stock.lot.hold.order'].create(hold_order_vals)
 
         success_count = 0
         error_count = 0
         failed_lots = []
 
+        line_model = self.env['stock.lot.hold.order.line']
+
         # ================================================================
-        # 1. LOTES FÍSICOS — Agrupar por producto, 1 línea = N lotes
+        # 1. LOTES FÍSICOS — AGRUPAR POR PRODUCTO
         # ================================================================
         if has_lots:
-            # Agrupar quants por producto
             product_quants = {}
+
             for quant_id in selected_lots:
                 try:
-                    quant = self.browse(quant_id)
+                    quant = self.browse(int(quant_id))
+
                     if not quant.exists() or not quant.lot_id:
                         continue
+
                     if hasattr(quant, 'x_tiene_hold') and quant.x_tiene_hold:
                         error_count += 1
                         failed_lots.append({
@@ -376,15 +441,22 @@ class StockQuant(models.Model):
                         })
                         continue
 
+                    selected_qty = selected_qty_by_quant.get(quant.id, quant.quantity or 0.0)
                     pid = quant.product_id.id
+
                     if pid not in product_quants:
                         product_quants[pid] = {
                             'product_id': pid,
-                            'quants': [],
+                            'items': [],
                             'lot_ids': [],
                         }
-                    product_quants[pid]['quants'].append(quant)
+
+                    product_quants[pid]['items'].append({
+                        'quant': quant,
+                        'quantity': selected_qty,
+                    })
                     product_quants[pid]['lot_ids'].append(quant.lot_id.id)
+
                 except Exception as e:
                     error_count += 1
                     failed_lots.append({
@@ -392,22 +464,29 @@ class StockQuant(models.Model):
                         'error': str(e),
                     })
 
-            # Crear 1 línea por producto con lot_ids Many2many
             for pid, group in product_quants.items():
                 try:
-                    precio_unitario = normalized_prices.get(str(pid), 0.0)
-                    first_quant = group['quants'][0]
+                    precio_unitario = float(normalized_prices.get(str(pid), 0.0))
+                    cantidad_m2 = sum(item['quantity'] for item in group['items'])
+                    first_quant = group['items'][0]['quant']
 
-                    self.env['stock.lot.hold.order.line'].create({
+                    line_model.with_context(skip_hold_line_quantity_sync=True).create({
                         'order_id': order.id,
                         'product_id': pid,
                         'lot_ids': [(6, 0, group['lot_ids'])],
-                        # Legacy fields para compatibilidad
                         'lot_id': group['lot_ids'][0],
                         'quant_id': first_quant.id,
+                        'cantidad_m2': cantidad_m2,
                         'precio_unitario': precio_unitario,
+                        'x_price_selector': line_model._selector_from_price(
+                            pid,
+                            currency_code,
+                            precio_unitario,
+                        ),
                     })
+
                     success_count += len(group['lot_ids'])
+
                 except Exception as e:
                     error_count += len(group['lot_ids'])
                     failed_lots.append({
@@ -416,19 +495,28 @@ class StockQuant(models.Model):
                     })
 
         # ================================================================
-        # 2. BACKORDERS (Sin lote, solo cantidad financiera)
+        # 2. BACKORDERS — SIN LOTE, SOLO CANTIDAD FINANCIERA
         # ================================================================
         if has_backorders:
             for item in backorder_items:
                 try:
-                    self.env['stock.lot.hold.order.line'].create({
+                    product_id = int(item['product_id'])
+                    price_unit = float(item['price_unit'] or 0.0)
+
+                    line_model.create({
                         'order_id': order.id,
-                        'product_id': int(item['product_id']),
+                        'product_id': product_id,
                         'lot_id': False,
                         'quant_id': False,
-                        'cantidad_m2': float(item['quantity']),
-                        'precio_unitario': float(item['price_unit']),
+                        'cantidad_m2': float(item['quantity'] or 0.0),
+                        'precio_unitario': price_unit,
+                        'x_price_selector': line_model._selector_from_price(
+                            product_id,
+                            currency_code,
+                            price_unit,
+                        ),
                     })
+
                 except Exception as e:
                     error_count += 1
                     failed_lots.append({
@@ -442,14 +530,16 @@ class StockQuant(models.Model):
         if has_services:
             for service in services:
                 try:
-                    self.env['stock.lot.hold.order.line'].create({
+                    line_model.create({
                         'order_id': order.id,
                         'product_id': int(service['product_id']),
                         'lot_id': False,
                         'quant_id': False,
-                        'cantidad_m2': float(service['quantity']),
-                        'precio_unitario': float(service['price_unit']),
+                        'cantidad_m2': float(service['quantity'] or 0.0),
+                        'precio_unitario': float(service['price_unit'] or 0.0),
+                        'x_price_selector': 'custom',
                     })
+
                 except Exception as e:
                     error_count += 1
                     failed_lots.append({
@@ -458,9 +548,14 @@ class StockQuant(models.Model):
                     })
 
         has_content = success_count > 0 or has_backorders or has_services
+
         if has_content:
             try:
-                order.action_confirm()
+                order.with_context(
+                    skip_authorization_check=True,
+                    skip_hold_line_quantity_sync=True,
+                ).action_confirm()
+
             except Exception as e:
                 return {
                     'success': 0,
@@ -480,12 +575,24 @@ class StockQuant(models.Model):
         }
 
     @api.model
-    def create_price_authorization(self, operation_type, partner_id, project_id,
-                                   selected_lots, currency_code, product_prices,
-                                   product_groups, notes=None, architect_id=None):
+    def create_price_authorization(
+        self,
+        operation_type,
+        partner_id,
+        project_id,
+        selected_lots,
+        currency_code,
+        product_prices,
+        product_groups,
+        notes=None,
+        architect_id=None,
+        selected_quantities=None,
+    ):
         """Crea solicitud de autorización de precio"""
         if isinstance(product_prices, dict):
             product_prices = {str(k): v for k, v in product_prices.items()}
+
+        selected_quantities = selected_quantities or {}
 
         auth = self.env['price.authorization'].create({
             'seller_id': self.env.user.id,
@@ -496,6 +603,10 @@ class StockQuant(models.Model):
             'notes': notes or '',
             'temp_data': {
                 'selected_lots': selected_lots,
+                'selected_quantities': {
+                    str(k): float(v or 0.0)
+                    for k, v in selected_quantities.items()
+                },
                 'product_prices': product_prices,
                 'product_groups': product_groups,
                 'architect_id': architect_id,
@@ -505,6 +616,7 @@ class StockQuant(models.Model):
         for product_id_key, group in product_groups.items():
             product_id = int(product_id_key)
             product = self.env['product.product'].browse(product_id)
+
             if currency_code == 'USD':
                 medium_price = product.product_tmpl_id.x_price_usd_2
                 minimum_price = product.product_tmpl_id.x_price_usd_3
@@ -512,7 +624,7 @@ class StockQuant(models.Model):
                 medium_price = product.product_tmpl_id.x_price_mxn_2
                 minimum_price = product.product_tmpl_id.x_price_mxn_3
 
-            requested_price = float(product_prices.get(str(product_id), 0))
+            requested_price = float(product_prices.get(str(product_id), 0.0))
 
             self.env['price.authorization.line'].create({
                 'authorization_id': auth.id,

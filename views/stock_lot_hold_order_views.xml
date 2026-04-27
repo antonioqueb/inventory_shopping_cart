@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_stock_lot_hold_order_tree_manual_pricing" model="ir.ui.view">
+        <field name="name">stock.lot.hold.order.list.manual.pricing</field>
+        <field name="model">stock.lot.hold.order</field>
+        <field name="arch" type="xml">
+            <list decoration-info="state == 'draft'" decoration-success="state == 'confirmed'" decoration-muted="state == 'cancel'">
+                <field name="name"/>
+                <field name="partner_id"/>
+                <field name="project_id"/>
+                <field name="arquitecto_id"/>
+                <field name="user_id"/>
+                <field name="fecha_orden"/>
+                <field name="fecha_expiracion"/>
+                <field name="currency_id"/>
+                <field name="x_total_m2" string="m²"/>
+                <field name="x_amount_total" string="Total" widget="monetary"/>
+                <field name="state" widget="badge"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_stock_lot_hold_order_form_manual_pricing" model="ir.ui.view">
+        <field name="name">stock.lot.hold.order.form.manual.pricing</field>
+        <field name="model">stock.lot.hold.order</field>
+        <field name="arch" type="xml">
+            <form string="Apartado / Reservación">
+                <header>
+                    <button name="action_recompute_hold_lines"
+                            string="Recalcular"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-refresh"/>
+
+                    <button name="action_confirm"
+                            string="Confirmar Apartado"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state not in ['draft', 'borrador']"/>
+
+                    <field name="state" widget="statusbar"/>
+                </header>
+
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" readonly="1"/>
+                        </h1>
+                    </div>
+
+                    <group>
+                        <group string="Cliente y Proyecto">
+                            <field name="partner_id" required="1"/>
+                            <field name="project_id"/>
+                            <field name="arquitecto_id"/>
+                            <field name="user_id" readonly="1"/>
+                        </group>
+
+                        <group string="Vigencia y Moneda">
+                            <field name="currency_id" required="1"/>
+                            <field name="fecha_orden" readonly="1" force_save="1"/>
+                            <field name="fecha_expiracion" readonly="1" force_save="1"/>
+                        </group>
+                    </group>
+
+                    <group>
+                        <field name="delivery_address" placeholder="Dirección de entrega..." colspan="2"/>
+                    </group>
+
+                    <notebook>
+                        <page string="Materiales">
+                            <field name="line_ids"
+                                   context="{'default_order_id': id, 'default_currency_id': currency_id}">
+                                <list editable="bottom">
+                                    <field name="currency_id" column_invisible="1"/>
+                                    <field name="x_price_1_value" column_invisible="1"/>
+                                    <field name="x_price_2_value" column_invisible="1"/>
+                                    <field name="x_price_level_currency" column_invisible="1"/>
+                                    <field name="x_can_use_custom_price" column_invisible="1"/>
+
+                                    <field name="product_id" required="1"/>
+                                    <field name="lot_ids" widget="many2many_tags"/>
+                                    <field name="lot_id" optional="hide"/>
+                                    <field name="quant_id" optional="hide"/>
+
+                                    <field name="cantidad_m2"
+                                           string="m²"
+                                           force_save="1"/>
+
+                                    <field name="x_price_selector"
+                                           string="Nivel de Precio"
+                                           widget="price_level_selector"
+                                           required="1"/>
+
+                                    <field name="precio_unitario"
+                                           string="Precio/m²"
+                                           readonly="x_price_selector != 'custom' or not x_can_use_custom_price"
+                                           force_save="1"/>
+
+                                    <field name="x_subtotal"
+                                           string="Total"
+                                           widget="monetary"
+                                           readonly="1"/>
+                                </list>
+
+                                <form>
+                                    <group>
+                                        <group string="Material">
+                                            <field name="product_id" required="1"/>
+                                            <field name="lot_ids" widget="many2many_tags"/>
+                                            <field name="lot_id"/>
+                                            <field name="quant_id"/>
+                                            <field name="cantidad_m2" string="m²" force_save="1"/>
+                                        </group>
+
+                                        <group string="Precio">
+                                            <field name="currency_id" invisible="1"/>
+                                            <field name="x_price_1_value" invisible="1"/>
+                                            <field name="x_price_2_value" invisible="1"/>
+                                            <field name="x_price_level_currency" invisible="1"/>
+                                            <field name="x_can_use_custom_price" invisible="1"/>
+
+                                            <field name="x_price_selector"
+                                                   widget="price_level_selector"
+                                                   required="1"/>
+
+                                            <field name="precio_unitario"
+                                                   string="Precio/m²"
+                                                   readonly="x_price_selector != 'custom' or not x_can_use_custom_price"
+                                                   force_save="1"/>
+
+                                            <field name="x_subtotal"
+                                                   string="Total"
+                                                   widget="monetary"
+                                                   readonly="1"/>
+                                        </group>
+                                    </group>
+                                </form>
+                            </field>
+
+                            <group class="oe_subtotal_footer">
+                                <field name="x_total_m2" readonly="1" string="Total m²"/>
+                                <field name="x_amount_total" readonly="1" widget="monetary" string="Total Apartado"/>
+                            </group>
+                        </page>
+
+                        <page string="Notas">
+                            <field name="notas" placeholder="Observaciones del apartado..."/>
+                        </page>
+                    </notebook>
+                </sheet>
+
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_stock_lot_hold_order_manual_pricing" model="ir.actions.act_window">
+        <field name="name">Apartados / Reservaciones</field>
+        <field name="res_model">stock.lot.hold.order</field>
+        <field name="view_mode">list,form</field>
+        <field name="views" eval="[
+            (ref('inventory_shopping_cart.view_stock_lot_hold_order_tree_manual_pricing'), 'list'),
+            (ref('inventory_shopping_cart.view_stock_lot_hold_order_form_manual_pricing'), 'form')
+        ]"/>
+        <field name="context">{'default_currency_id': ref('base.USD')}</field>
+    </record>
+
+    <menuitem id="menu_stock_lot_hold_order_manual_pricing"
+              name="Apartados / Reservaciones"
+              parent="sale.sale_menu_root"
+              action="action_stock_lot_hold_order_manual_pricing"
+              groups="inventory_shopping_cart.group_seller,inventory_shopping_cart.group_price_authorizer"
+              sequence="36"/>
+
+</odoo>

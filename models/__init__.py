@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 from . import shopping_cart
 from . import sale_order
+from . import stock_lot_hold_order
 from . import stock_quant
 from . import product_template
 from . import price_authorization
 from . import stock_picking
 from . import ir_actions_report
-from . import product_category_pricing  # NUEVO
+from . import product_category_pricing
 from . import banorte_rate_log
