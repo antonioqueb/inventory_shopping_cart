@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
-    
-    <t t-name="inventory_visual_enhanced.InventoryView" t-inherit="inventory_visual_enhanced.InventoryView" t-inherit-mode="extension" owl="1">
+
+    <t t-name="inventory_visual_enhanced.InventoryView"
+       t-inherit="inventory_visual_enhanced.InventoryView"
+       t-inherit-mode="extension"
+       owl="1">
+
         <xpath expr="//ProductRow" position="attributes">
             <attribute name="isInCart.bind">isInCart</attribute>
             <attribute name="getDisplayQuantity.bind">getDisplayQuantity</attribute>
@@ -10,18 +14,23 @@
             <attribute name="areAllCurrentProductSelected.bind">areAllCurrentProductSelected</attribute>
             <attribute name="selectAllCurrentProduct.bind">selectAllCurrentProduct</attribute>
             <attribute name="deselectAllCurrentProduct.bind">deselectAllCurrentProduct</attribute>
+            <attribute name="openSaleOrderInfoPopup.bind">openSaleOrderInfoPopup</attribute>
             <attribute name="cart">cart</attribute>
         </xpath>
     </t>
-    
-    <t t-name="inventory_visual_enhanced.ProductDetails" t-inherit="inventory_visual_enhanced.ProductDetails" t-inherit-mode="extension" owl="1">
+
+    <t t-name="inventory_visual_enhanced.ProductDetails"
+       t-inherit="inventory_visual_enhanced.ProductDetails"
+       t-inherit-mode="extension"
+       owl="1">
+
         <!-- Reemplazar el header del checkbox con seleccionar todo -->
         <xpath expr="//thead/tr/th[@class='col-checkbox']" position="replace">
             <th class="col-checkbox text-center" style="width: 70px;">
                 <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
-                    <input 
-                        type="checkbox" 
-                        class="cart-checkbox-all" 
+                    <input
+                        type="checkbox"
+                        class="cart-checkbox-all"
                         t-att-checked="props.areAllCurrentProductSelected ? (props.areAllCurrentProductSelected() ? 'checked' : undefined) : undefined"
                         t-on-click.stop="() => props.areAllCurrentProductSelected() ? props.deselectAllCurrentProduct() : props.selectAllCurrentProduct()"
                         title="Seleccionar/Deseleccionar todos los lotes disponibles de este producto"
@@ -30,14 +39,14 @@
                 </div>
             </th>
         </xpath>
-        
+
         <!-- Modificar el checkbox individual en el body -->
         <xpath expr="//td[@class='col-checkbox text-center']" position="replace">
             <td class="col-checkbox text-center">
                 <div class="d-flex align-items-center justify-content-center gap-2" t-on-click.stop="">
-                    
+
                     <!-- Checkbox: deshabilitado si tiene hold o está en orden de venta -->
-                    <input 
+                    <input
                         type="checkbox"
                         class="form-check-input cart-checkbox"
                         t-att-checked="props.isInCart ? (props.isInCart(detail.id) ? 'checked' : undefined) : undefined"
@@ -49,7 +58,7 @@
                     <!-- Input adicional para Formato y Pieza (permite parcialidades), NO para Placa -->
                     <t t-if="detail.tipo and (detail.tipo === 'formato' or detail.tipo === 'Formato' or detail.tipo === 'pieza' or detail.tipo === 'Pieza') and !detail.tiene_hold and !detail.en_orden_venta">
                         <div class="d-flex align-items-center gap-1">
-                            <input 
+                            <input
                                 type="number"
                                 class="form-control form-control-sm p-1 text-center"
                                 style="width: 60px; height: 24px; font-size: 11px;"
@@ -65,9 +74,20 @@
                             </span>
                         </div>
                     </t>
+
+                    <!-- Acceso rápido al popup de SO cuando el lote ya está en orden de venta -->
+                    <button
+                        t-if="detail.en_orden_venta"
+                        type="button"
+                        class="btn btn-sm btn-link p-0 text-success"
+                        title="Ver orden de venta relacionada"
+                        t-on-click.stop="() => props.openSaleOrderInfoPopup ? props.openSaleOrderInfoPopup(detail) : null"
+                    >
+                        <i class="fa fa-usd"></i>
+                    </button>
                 </div>
             </td>
         </xpath>
     </t>
-    
+
 </templates>

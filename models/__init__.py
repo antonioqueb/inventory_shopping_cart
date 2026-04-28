@@ -3,6 +3,7 @@ from . import shopping_cart
 from . import sale_order
 from . import stock_lot_hold_order
 from . import stock_quant
+from . import stock_quant_sale_popup
 from . import product_template
 from . import price_authorization
 from . import stock_picking
