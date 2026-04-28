@@ -1,7 +1,7 @@
 # ./__manifest__.py
 {
     'name': 'Carrito de Compra para Inventario Visual',
-    'version': '19.0.2.2.0',
+    'version': '19.0.2.1.0',
     'category': 'Inventory/Inventory',
     'summary': 'Sistema de carrito de compra y apartado múltiple desde inventario visual',
     'author': 'Alphaqueb Consulting SAS',
@@ -33,7 +33,6 @@
             'inventory_shopping_cart/static/src/components/floating_bar/floating_bar.scss',
             'inventory_shopping_cart/static/src/components/dialogs/hold_wizard/hold_wizard.scss',
             'inventory_shopping_cart/static/src/components/dialogs/sale_order_wizard/sale_order_wizard.scss',
-            'inventory_shopping_cart/static/src/components/dialogs/sale_order_info_dialog/sale_order_info_dialog.scss',
             'inventory_shopping_cart/static/src/components/dialogs/transfer_wizard/transfer_wizard.scss',
             'inventory_shopping_cart/static/src/components/price_level_selector/price_level_selector.scss',
 
@@ -43,17 +42,13 @@
             'inventory_shopping_cart/static/src/components/dialogs/cart_dialog/cart_dialog.js',
             'inventory_shopping_cart/static/src/components/dialogs/hold_wizard/hold_wizard.js',
             'inventory_shopping_cart/static/src/components/dialogs/sale_order_wizard/sale_order_wizard.js',
-            'inventory_shopping_cart/static/src/components/dialogs/sale_order_info_dialog/sale_order_info_dialog.js',
             'inventory_shopping_cart/static/src/components/dialogs/transfer_wizard/transfer_wizard.js',
 
-            'inventory_shopping_cart/static/src/patches/sale_order_info_popup_patch.js',
             'inventory_shopping_cart/static/src/patches/inventory_controller_patch.xml',
-
             'inventory_shopping_cart/static/src/components/floating_bar/floating_bar.xml',
             'inventory_shopping_cart/static/src/components/dialogs/cart_dialog/cart_dialog.xml',
             'inventory_shopping_cart/static/src/components/dialogs/hold_wizard/hold_wizard.xml',
             'inventory_shopping_cart/static/src/components/dialogs/sale_order_wizard/sale_order_wizard.xml',
-            'inventory_shopping_cart/static/src/components/dialogs/sale_order_info_dialog/sale_order_info_dialog.xml',
             'inventory_shopping_cart/static/src/components/dialogs/transfer_wizard/transfer_wizard.xml',
 
             'inventory_shopping_cart/static/src/components/dialogs/label_wizard/label_wizard.scss',
