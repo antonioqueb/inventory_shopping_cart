@@ -152,10 +152,12 @@
                 <field name="x_price_1_value" column_invisible="1"/>
                 <field name="x_price_2_value" column_invisible="1"/>
                 <field name="x_price_level_currency" column_invisible="1"/>
+                <field name="x_can_use_custom_price" column_invisible="1"/>
+
                 <field name="x_price_selector"
-                    widget="price_level_selector"
-                    style="width: 240px;"
-                    required="1"/>
+                       widget="price_level_selector"
+                       style="width: 240px;"
+                       required="1"/>
             </xpath>
 
             <xpath expr="//field[@name='order_line']/list//field[@name='price_unit']" position="attributes">
