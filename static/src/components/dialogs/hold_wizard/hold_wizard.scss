@@ -18,7 +18,7 @@
                 width: 36px;
                 height: 36px;
                 border-radius: 50%;
-                border: 1px solid rgba(122, 68, 36, 0.18);
+                border: 1px solid rgba(92, 185, 242, 0.18);
                 background: var(--isc-parchment);
                 color: var(--isc-muted);
                 display: flex;
@@ -43,10 +43,10 @@
 
             &.active {
                 .step-number {
-                    border-color: rgba(122, 68, 36, 0.30);
+                    border-color: rgba(92, 185, 242, 0.30);
                     color: #fff;
                     background: linear-gradient(135deg, var(--isc-amber), var(--isc-cedar));
-                    box-shadow: 0 10px 20px rgba(201, 130, 40, 0.18);
+                    box-shadow: 0 10px 20px rgba(242, 183, 5, 0.18);
                 }
 
                 .step-label {
@@ -56,7 +56,7 @@
 
             &.completed {
                 .step-number {
-                    border-color: rgba(97, 114, 76, 0.24);
+                    border-color: rgba(4, 217, 79, 0.24);
                     color: #fff;
                     background: linear-gradient(135deg, var(--isc-sage), var(--isc-sage-dark));
                 }
@@ -73,7 +73,7 @@
             min-width: 18px;
             margin-top: -22px;
             border-radius: 999px;
-            background: rgba(122, 68, 36, 0.14);
+            background: rgba(92, 185, 242, 0.14);
             transition: background 0.18s ease;
 
             &.active {
@@ -85,9 +85,9 @@
     .step-content {
         min-height: 390px;
         padding: 18px;
-        border: 1px solid rgba(122, 68, 36, 0.12);
+        border: 1px solid rgba(92, 185, 242, 0.12);
         border-radius: var(--isc-radius-lg);
-        background: rgba(255, 253, 247, 0.72);
+        background: rgba(255, 255, 255, 0.72);
         box-shadow: var(--isc-shadow-card);
         animation: iscFadeUp 0.22s ease-out;
 

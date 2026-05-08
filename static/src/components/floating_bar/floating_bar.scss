@@ -1,31 +1,41 @@
 /* ==========================================================================
-   Inventory Shopping Cart — Warm Wood Premium Theme
+   Inventory Shopping Cart — Allocation Blue Premium Theme
    Odoo 19 / OWL / SCSS
    ========================================================================== */
 
 :root {
-    --isc-walnut: #4A2A18;
-    --isc-walnut-dark: #2F1B10;
-    --isc-cedar: #7A4424;
-    --isc-copper: #A76735;
-    --isc-caramel: #C58A4A;
-    --isc-honey: #E4B66A;
-    --isc-oak: #F1D6AA;
-    --isc-oak-light: #F9E8CC;
-    --isc-cream: #FFFDF7;
-    --isc-cream-alt: #FFF8EC;
-    --isc-parchment: #FCF0DC;
-    --isc-parchment-strong: #F8E7CB;
-    --isc-sand: #E9CDA5;
-    --isc-bark: #6A4A32;
-    --isc-charcoal: #2A1A12;
-    --isc-muted: #92735A;
-    --isc-line: #EBD5B5;
-    --isc-sage: #61724C;
-    --isc-sage-dark: #415136;
-    --isc-sage-light: #EEF4E7;
-    --isc-redwood: #9A4A32;
-    --isc-amber: #C98228;
+    /* Paleta alineada a To Be Allocated / To Be Purchased / Sale Stone Selection */
+    --isc-walnut: #155f94;
+    --isc-walnut-dark: #0f172a;
+    --isc-cedar: #247fbd;
+    --isc-copper: #4BA4F2;
+    --isc-caramel: #5CB9F2;
+    --isc-honey: #5CB9F2;
+    --isc-oak: #DCEAF2;
+    --isc-oak-light: #eef8fe;
+    --isc-cream: #ffffff;
+    --isc-cream-alt: #f8fcff;
+    --isc-parchment: #edf7fd;
+    --isc-parchment-strong: #d7e8f2;
+    --isc-sand: #bdd7e8;
+    --isc-bark: #284256;
+    --isc-charcoal: #0f172a;
+    --isc-muted: #60798c;
+    --isc-muted-2: #91a9b8;
+    --isc-line: #d7e8f2;
+    --isc-head: #0f172a;
+    --isc-head-2: #111827;
+    --isc-blue-soft: rgba(92, 185, 242, 0.14);
+    --isc-blue-glass: rgba(92, 185, 242, 0.20);
+    --isc-sage: #04D94F;
+    --isc-sage-dark: #047a31;
+    --isc-sage-light: #eafff2;
+    --isc-redwood: #dc2626;
+    --isc-redwood-dark: #991b1b;
+    --isc-redwood-soft: #fef2f2;
+    --isc-amber: #F2B705;
+    --isc-amber-dark: #8f6500;
+    --isc-amber-soft: rgba(242, 183, 5, 0.15);
 
     --isc-radius-sm: 12px;
     --isc-radius-md: 18px;
@@ -33,9 +43,9 @@
     --isc-radius-xl: 30px;
     --isc-radius-pill: 999px;
 
-    --isc-shadow-soft: 0 12px 34px rgba(74, 42, 24, 0.10);
-    --isc-shadow-card: 0 10px 26px rgba(74, 42, 24, 0.08);
-    --isc-shadow-deep: 0 28px 80px rgba(47, 27, 16, 0.22);
+    --isc-shadow-soft: 0 12px 34px rgba(75, 164, 242, 0.10);
+    --isc-shadow-card: 0 10px 26px rgba(75, 164, 242, 0.08);
+    --isc-shadow-deep: 0 28px 80px rgba(15, 23, 42, 0.20);
 }
 
 /* ==========================================================================
@@ -58,18 +68,18 @@
     z-index: 999;
     color: var(--isc-charcoal);
     padding: 14px 18px;
-    border: 1px solid rgba(122, 68, 36, 0.16);
+    border: 1px solid rgba(92, 185, 242, 0.16);
     border-radius: 26px;
     background:
-        linear-gradient(135deg, rgba(255, 253, 247, 0.96) 0%, rgba(255, 248, 236, 0.96) 52%, rgba(252, 240, 220, 0.96) 100%),
+        linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 252, 255, 0.96) 52%, rgba(237, 247, 253, 0.96) 100%),
         repeating-linear-gradient(
             90deg,
-            rgba(122, 68, 36, 0.035) 0,
-            rgba(122, 68, 36, 0.035) 1px,
+            rgba(92, 185, 242, 0.035) 0,
+            rgba(92, 185, 242, 0.035) 1px,
             transparent 1px,
             transparent 16px
         );
-    box-shadow: 0 18px 54px rgba(74, 42, 24, 0.16);
+    box-shadow: 0 18px 54px rgba(75, 164, 242, 0.16);
     backdrop-filter: blur(16px);
     animation: iscSlideUp 0.22s ease-out;
 }
@@ -113,7 +123,7 @@
         border-radius: 14px;
         color: var(--isc-walnut);
         background: linear-gradient(135deg, var(--isc-honey), var(--isc-oak));
-        box-shadow: 0 8px 18px rgba(167, 103, 53, 0.18);
+        box-shadow: 0 8px 18px rgba(75, 164, 242, 0.18);
     }
 
     strong {
@@ -142,9 +152,9 @@
     }
 
     .btn-light {
-        border: 1px solid rgba(122, 68, 36, 0.18);
+        border: 1px solid rgba(92, 185, 242, 0.18);
         color: var(--isc-cedar);
-        background: rgba(255, 253, 247, 0.86);
+        background: rgba(255, 255, 255, 0.86);
 
         &:hover {
             color: var(--isc-walnut);
@@ -155,12 +165,12 @@
     .btn-primary {
         border: 0;
         color: #fff;
-        background: linear-gradient(135deg, var(--isc-cedar), var(--isc-walnut));
-        box-shadow: 0 12px 24px rgba(74, 42, 24, 0.22);
+        background: linear-gradient(135deg, var(--isc-copper), var(--isc-cedar));
+        box-shadow: 0 12px 24px rgba(75, 164, 242, 0.22);
 
         &:hover {
             background: linear-gradient(135deg, var(--isc-copper), var(--isc-cedar));
-            box-shadow: 0 14px 28px rgba(74, 42, 24, 0.26);
+            box-shadow: 0 14px 28px rgba(75, 164, 242, 0.26);
         }
     }
 }
@@ -174,7 +184,7 @@
     width: 20px;
     height: 20px;
     cursor: pointer;
-    border: 2px solid rgba(122, 68, 36, 0.35);
+    border: 2px solid rgba(92, 185, 242, 0.35);
     border-radius: 6px;
     background-color: var(--isc-cream);
     accent-color: var(--isc-cedar);
@@ -196,14 +206,14 @@
 
     .form-control {
         border-radius: 10px !important;
-        border-color: rgba(122, 68, 36, 0.24) !important;
+        border-color: rgba(92, 185, 242, 0.24) !important;
         color: var(--isc-charcoal) !important;
         background: var(--isc-cream) !important;
         box-shadow: none !important;
 
         &:focus {
             border-color: var(--isc-copper) !important;
-            box-shadow: 0 0 0 3px rgba(167, 103, 53, 0.14) !important;
+            box-shadow: 0 0 0 3px rgba(75, 164, 242, 0.14) !important;
         }
     }
 
@@ -271,10 +281,10 @@
     gap: 10px;
     min-height: 74px;
     padding: 14px 22px !important;
-    border-top: 1px solid rgba(122, 68, 36, 0.16) !important;
+    border-top: 1px solid rgba(92, 185, 242, 0.16) !important;
     background:
-        linear-gradient(180deg, rgba(255, 253, 247, 0.98), rgba(255, 248, 236, 0.98)) !important;
-    box-shadow: 0 -12px 30px rgba(74, 42, 24, 0.08);
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 252, 255, 0.98)) !important;
+    box-shadow: 0 -12px 30px rgba(75, 164, 242, 0.08);
 }
 
 .isc-modal-surface {
@@ -282,8 +292,8 @@
     min-height: 0;
     color: var(--isc-charcoal);
     background:
-        radial-gradient(circle at 12% 0%, rgba(228, 182, 106, 0.22) 0, transparent 28%),
-        radial-gradient(circle at 92% 8%, rgba(241, 214, 170, 0.48) 0, transparent 30%),
+        radial-gradient(circle at 12% 0%, rgba(92, 185, 242, 0.22) 0, transparent 28%),
+        radial-gradient(circle at 92% 8%, rgba(220, 234, 242, 0.48) 0, transparent 30%),
         linear-gradient(180deg, #ffffff 0%, var(--isc-cream) 45%, var(--isc-cream-alt) 100%);
 }
 
@@ -296,8 +306,8 @@
     background:
         repeating-linear-gradient(
             92deg,
-            rgba(122, 68, 36, 0.10) 0,
-            rgba(122, 68, 36, 0.10) 1px,
+            rgba(92, 185, 242, 0.10) 0,
+            rgba(92, 185, 242, 0.10) 1px,
             transparent 1px,
             transparent 18px
         );
@@ -315,11 +325,11 @@
     z-index: 6;
     width: 38px;
     height: 38px;
-    border: 1px solid rgba(122, 68, 36, 0.18);
+    border: 1px solid rgba(92, 185, 242, 0.18);
     border-radius: 50%;
     color: var(--isc-cedar);
-    background: rgba(255, 253, 247, 0.86);
-    box-shadow: 0 8px 18px rgba(74, 42, 24, 0.10);
+    background: rgba(255, 255, 255, 0.86);
+    box-shadow: 0 8px 18px rgba(75, 164, 242, 0.10);
     transition: all 0.16s ease;
 
     &:hover {
@@ -332,11 +342,11 @@
 
 .isc-modal-hero {
     padding: 28px 72px 24px 28px;
-    border-bottom: 1px solid rgba(122, 68, 36, 0.14);
+    border-bottom: 1px solid rgba(92, 185, 242, 0.14);
     background:
-        radial-gradient(circle at 10% 10%, rgba(228, 182, 106, 0.26), transparent 32%),
-        radial-gradient(circle at 96% 18%, rgba(197, 138, 74, 0.16), transparent 34%),
-        linear-gradient(135deg, rgba(255, 253, 247, 0.96), rgba(249, 232, 204, 0.86));
+        radial-gradient(circle at 10% 10%, rgba(92, 185, 242, 0.26), transparent 32%),
+        radial-gradient(circle at 96% 18%, rgba(75, 164, 242, 0.16), transparent 34%),
+        linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(237, 247, 253, 0.86));
 }
 
 .isc-hero-row {
@@ -352,11 +362,11 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgba(167, 103, 53, 0.22);
+    border: 1px solid rgba(75, 164, 242, 0.22);
     border-radius: 26px;
     color: var(--isc-walnut);
     background: linear-gradient(135deg, var(--isc-honey), var(--isc-oak-light));
-    box-shadow: 0 16px 34px rgba(167, 103, 53, 0.20);
+    box-shadow: 0 16px 34px rgba(75, 164, 242, 0.20);
 
     i {
         font-size: 30px;
@@ -408,10 +418,10 @@
     gap: 6px;
     min-height: 28px;
     padding: 6px 10px;
-    border: 1px solid rgba(122, 68, 36, 0.16);
+    border: 1px solid rgba(92, 185, 242, 0.16);
     border-radius: var(--isc-radius-pill);
     color: var(--isc-bark);
-    background: rgba(255, 253, 247, 0.72);
+    background: rgba(255, 255, 255, 0.72);
     font-size: 11px;
     font-weight: 900;
 
@@ -457,8 +467,8 @@
     .btn-secondary {
         border: 0 !important;
         color: #fff !important;
-        background: linear-gradient(135deg, var(--isc-cedar), var(--isc-walnut)) !important;
-        box-shadow: 0 12px 24px rgba(74, 42, 24, 0.20) !important;
+        background: linear-gradient(135deg, var(--isc-copper), var(--isc-cedar)) !important;
+        box-shadow: 0 12px 24px rgba(75, 164, 242, 0.20) !important;
 
         &:hover {
             background: linear-gradient(135deg, var(--isc-copper), var(--isc-cedar)) !important;
@@ -469,14 +479,14 @@
         border: 0 !important;
         color: #fff !important;
         background: linear-gradient(135deg, var(--isc-sage), var(--isc-sage-dark)) !important;
-        box-shadow: 0 12px 24px rgba(65, 81, 54, 0.18) !important;
+        box-shadow: 0 12px 24px rgba(4, 122, 49, 0.18) !important;
     }
 
     .btn-warning {
         border: 0 !important;
         color: var(--isc-walnut-dark) !important;
-        background: linear-gradient(135deg, var(--isc-honey), var(--isc-amber)) !important;
-        box-shadow: 0 12px 24px rgba(201, 130, 40, 0.18) !important;
+        background: linear-gradient(135deg, var(--isc-amber), #d99a00) !important;
+        box-shadow: 0 12px 24px rgba(242, 183, 5, 0.18) !important;
     }
 
     .btn-danger {
@@ -488,9 +498,9 @@
     .btn-light,
     .btn-outline-primary,
     .btn-outline-secondary {
-        border: 1px solid rgba(122, 68, 36, 0.18) !important;
+        border: 1px solid rgba(92, 185, 242, 0.18) !important;
         color: var(--isc-cedar) !important;
-        background: rgba(255, 253, 247, 0.82) !important;
+        background: rgba(255, 255, 255, 0.82) !important;
         box-shadow: none !important;
 
         &:hover {
@@ -502,9 +512,9 @@
     .form-control,
     .form-select,
     .input-group-text {
-        border-color: rgba(122, 68, 36, 0.20) !important;
+        border-color: rgba(92, 185, 242, 0.20) !important;
         color: var(--isc-charcoal) !important;
-        background-color: rgba(255, 253, 247, 0.92) !important;
+        background-color: rgba(255, 255, 255, 0.92) !important;
         border-radius: 12px !important;
         box-shadow: none !important;
     }
@@ -521,7 +531,7 @@
     .form-control:focus,
     .form-select:focus {
         border-color: var(--isc-copper) !important;
-        box-shadow: 0 0 0 3px rgba(167, 103, 53, 0.14) !important;
+        box-shadow: 0 0 0 3px rgba(75, 164, 242, 0.14) !important;
         background-color: #fff !important;
     }
 
@@ -537,20 +547,20 @@
     textarea.form-control {
         min-height: 98px;
         background:
-            linear-gradient(180deg, rgba(255, 253, 247, 0.96), rgba(252, 240, 220, 0.78)) !important;
+            linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(237, 247, 253, 0.78)) !important;
     }
 
     .card {
-        border: 1px solid rgba(122, 68, 36, 0.14) !important;
+        border: 1px solid rgba(92, 185, 242, 0.14) !important;
         border-radius: var(--isc-radius-lg) !important;
-        background: rgba(255, 253, 247, 0.88) !important;
+        background: rgba(255, 255, 255, 0.88) !important;
         box-shadow: var(--isc-shadow-card);
         overflow: hidden;
     }
 
     .card-header,
     .table-light {
-        border-color: rgba(122, 68, 36, 0.12) !important;
+        border-color: rgba(92, 185, 242, 0.12) !important;
         color: var(--isc-walnut) !important;
         background: linear-gradient(135deg, var(--isc-parchment), var(--isc-oak-light)) !important;
     }
@@ -587,7 +597,7 @@
     .bg-primary,
     .bg-secondary {
         color: #fff !important;
-        background: linear-gradient(135deg, var(--isc-cedar), var(--isc-walnut)) !important;
+        background: linear-gradient(135deg, var(--isc-copper), var(--isc-cedar)) !important;
     }
 
     .bg-success {
@@ -597,7 +607,7 @@
 
     .bg-warning {
         color: var(--isc-walnut) !important;
-        background: linear-gradient(135deg, rgba(228, 182, 106, 0.62), rgba(249, 232, 204, 0.86)) !important;
+        background: linear-gradient(135deg, rgba(92, 185, 242, 0.62), rgba(237, 247, 253, 0.86)) !important;
     }
 
     .bg-info {
@@ -607,7 +617,7 @@
 
     .badge {
         padding: 6px 9px;
-        border: 1px solid rgba(122, 68, 36, 0.14);
+        border: 1px solid rgba(92, 185, 242, 0.14);
         border-radius: var(--isc-radius-pill);
         font-size: 10px;
         font-weight: 950;
@@ -617,30 +627,31 @@
 
     .alert {
         border-radius: var(--isc-radius-md) !important;
-        border: 1px solid rgba(122, 68, 36, 0.14) !important;
+        border: 1px solid rgba(92, 185, 242, 0.14) !important;
         color: var(--isc-bark) !important;
-        background: rgba(255, 248, 236, 0.76) !important;
-        box-shadow: 0 8px 18px rgba(74, 42, 24, 0.06);
+        background: rgba(248, 252, 255, 0.76) !important;
+        box-shadow: 0 8px 18px rgba(75, 164, 242, 0.06);
     }
 
     .alert-info {
-        border-color: rgba(167, 103, 53, 0.18) !important;
-        background: linear-gradient(135deg, rgba(249, 232, 204, 0.75), rgba(255, 253, 247, 0.9)) !important;
+        border-color: rgba(75, 164, 242, 0.18) !important;
+        background: linear-gradient(135deg, rgba(237, 247, 253, 0.75), rgba(255, 255, 255, 0.9)) !important;
     }
 
     .alert-warning {
-        border-color: rgba(201, 130, 40, 0.24) !important;
-        background: linear-gradient(135deg, rgba(228, 182, 106, 0.30), rgba(255, 248, 236, 0.92)) !important;
+        border-color: rgba(242, 183, 5, 0.28) !important;
+        color: var(--isc-amber-dark) !important;
+        background: linear-gradient(135deg, rgba(242, 183, 5, 0.18), rgba(255, 251, 235, 0.94)) !important;
     }
 
     .alert-light,
     .alert-secondary {
-        border-color: rgba(122, 68, 36, 0.14) !important;
-        background: rgba(255, 253, 247, 0.88) !important;
+        border-color: rgba(92, 185, 242, 0.14) !important;
+        background: rgba(255, 255, 255, 0.88) !important;
     }
 
     .table-responsive {
-        border: 1px solid rgba(122, 68, 36, 0.14);
+        border: 1px solid rgba(92, 185, 242, 0.14);
         border-radius: var(--isc-radius-md);
         background: var(--isc-cream);
         box-shadow: var(--isc-shadow-card);
@@ -653,9 +664,9 @@
 
         thead th,
         tfoot th {
-            border-color: rgba(122, 68, 36, 0.14) !important;
-            color: var(--isc-bark) !important;
-            background: linear-gradient(135deg, var(--isc-parchment), var(--isc-oak-light)) !important;
+            border-color: rgba(15, 23, 42, 0.96) !important;
+            color: #ffffff !important;
+            background: linear-gradient(135deg, var(--isc-head), var(--isc-head-2)) !important;
             font-size: 10px;
             font-weight: 950;
             letter-spacing: 0.08em;
@@ -663,7 +674,7 @@
         }
 
         tbody td {
-            border-color: rgba(122, 68, 36, 0.10) !important;
+            border-color: rgba(92, 185, 242, 0.10) !important;
             vertical-align: middle;
         }
 
@@ -671,7 +682,7 @@
             transition: background 0.16s ease;
 
             &:hover {
-                background: rgba(228, 182, 106, 0.12) !important;
+                background: rgba(92, 185, 242, 0.12) !important;
             }
         }
     }
@@ -683,9 +694,9 @@
     }
 
     .list-group-item {
-        border-color: rgba(122, 68, 36, 0.10) !important;
+        border-color: rgba(92, 185, 242, 0.10) !important;
         color: var(--isc-charcoal);
-        background: rgba(255, 253, 247, 0.90);
+        background: rgba(255, 255, 255, 0.90);
         transition: background 0.16s ease, transform 0.16s ease;
 
         &:hover {
@@ -701,9 +712,9 @@
 
     .btn-group {
         padding: 4px;
-        border: 1px solid rgba(122, 68, 36, 0.12);
+        border: 1px solid rgba(92, 185, 242, 0.12);
         border-radius: var(--isc-radius-pill);
-        background: rgba(255, 253, 247, 0.76);
+        background: rgba(255, 255, 255, 0.76);
         gap: 4px;
 
         .btn {
@@ -723,9 +734,9 @@
     }
 
     .isc-cart-product-card {
-        border: 1px solid rgba(122, 68, 36, 0.14);
+        border: 1px solid rgba(92, 185, 242, 0.14);
         border-radius: var(--isc-radius-lg);
-        background: rgba(255, 253, 247, 0.9);
+        background: rgba(255, 255, 255, 0.9);
         box-shadow: var(--isc-shadow-card);
         overflow: hidden;
     }
@@ -736,9 +747,9 @@
         align-items: flex-start;
         gap: 16px;
         padding: 16px 18px;
-        border-bottom: 1px solid rgba(122, 68, 36, 0.12);
+        border-bottom: 1px solid rgba(92, 185, 242, 0.12);
         background:
-            linear-gradient(135deg, rgba(252, 240, 220, 0.86), rgba(255, 253, 247, 0.92));
+            linear-gradient(135deg, rgba(237, 247, 253, 0.86), rgba(255, 255, 255, 0.92));
     }
 
     .isc-cart-product-title {
@@ -756,7 +767,7 @@
             border-radius: 15px;
             color: var(--isc-walnut);
             background: linear-gradient(135deg, var(--isc-honey), var(--isc-oak-light));
-            box-shadow: 0 8px 18px rgba(167, 103, 53, 0.16);
+            box-shadow: 0 8px 18px rgba(75, 164, 242, 0.16);
         }
 
         h5 {
@@ -777,7 +788,7 @@
         white-space: nowrap;
         color: var(--isc-sage-dark);
         background: var(--isc-sage-light) !important;
-        border-color: rgba(97, 114, 76, 0.24) !important;
+        border-color: rgba(4, 217, 79, 0.24) !important;
     }
 
     .isc-cart-table {
@@ -791,10 +802,10 @@
     .isc-summary-panel {
         margin-top: 18px;
         padding: 18px;
-        border: 1px solid rgba(97, 114, 76, 0.22);
+        border: 1px solid rgba(4, 217, 79, 0.22);
         border-radius: var(--isc-radius-lg);
         background:
-            linear-gradient(135deg, rgba(238, 244, 231, 0.9), rgba(255, 253, 247, 0.96));
+            linear-gradient(135deg, rgba(234, 255, 242, 0.9), rgba(255, 255, 255, 0.96));
         box-shadow: var(--isc-shadow-card);
 
         h4 {
@@ -813,12 +824,12 @@
     }
 }
 
-/* Legacy names kept warm for compatibility */
+/* Legacy names kept for compatibility */
 .product-group {
-    border: 1px solid rgba(122, 68, 36, 0.14);
+    border: 1px solid rgba(92, 185, 242, 0.14);
     border-radius: var(--isc-radius-lg);
     padding: 16px;
-    background: rgba(255, 253, 247, 0.9);
+    background: rgba(255, 255, 255, 0.9);
     box-shadow: var(--isc-shadow-card);
 }
 
@@ -829,7 +840,7 @@
     gap: 14px;
     margin-bottom: 12px;
     padding-bottom: 12px;
-    border-bottom: 1px solid rgba(122, 68, 36, 0.16);
+    border-bottom: 1px solid rgba(92, 185, 242, 0.16);
 
     h5 {
         color: var(--isc-walnut);
@@ -839,7 +850,7 @@
 
 .cart-summary-footer {
     padding: 18px;
-    border: 1px solid rgba(97, 114, 76, 0.22);
+    border: 1px solid rgba(4, 217, 79, 0.22);
     border-radius: var(--isc-radius-lg);
     text-align: center;
     background: var(--isc-sage-light);

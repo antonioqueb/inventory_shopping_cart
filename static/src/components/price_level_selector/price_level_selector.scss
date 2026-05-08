@@ -6,16 +6,16 @@
         min-width: 210px;
         min-height: 34px;
         padding: 4px 10px;
-        border: 1px solid rgba(122, 68, 36, 0.20) !important;
+        border: 1px solid rgba(92, 185, 242, 0.20) !important;
         border-radius: 12px !important;
-        color: var(--isc-charcoal, #2A1A12) !important;
-        background-color: var(--isc-cream, #FFFDF7) !important;
+        color: var(--isc-charcoal, #0f172a) !important;
+        background-color: var(--isc-cream, #ffffff) !important;
         font-weight: 700;
         box-shadow: none !important;
 
         &:focus {
-            border-color: var(--isc-copper, #A76735) !important;
-            box-shadow: 0 0 0 3px rgba(167, 103, 53, 0.14) !important;
+            border-color: var(--isc-copper, #4BA4F2) !important;
+            box-shadow: 0 0 0 3px rgba(75, 164, 242, 0.14) !important;
         }
     }
 
@@ -24,10 +24,10 @@
         align-items: center;
         min-height: 28px;
         padding: 4px 10px;
-        border: 1px solid rgba(122, 68, 36, 0.14);
+        border: 1px solid rgba(92, 185, 242, 0.14);
         border-radius: 999px;
-        color: var(--isc-bark, #6A4A32);
-        background: var(--isc-parchment, #FCF0DC);
+        color: var(--isc-bark, #284256);
+        background: var(--isc-parchment, #edf7fd);
         font-size: 12px;
         font-weight: 850;
         white-space: nowrap;
