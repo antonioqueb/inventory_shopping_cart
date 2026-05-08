@@ -148,6 +148,7 @@ export class HoldWizard extends Component {
         // Limpiar backorders si cambia la moneda (para obligar a actualizar precios)
         // Opcional: Podríamos recalcularlos
         this.state.selectedBackorderItems = [];
+        await this.refreshSelectedServicePrices();
         
         await this.loadAllProductPrices();
     }
@@ -289,23 +290,65 @@ export class HoldWizard extends Component {
                 ['id', 'display_name', 'list_price', 'uom_id'],
                 { limit: 20 }
             );
-            this.state.availableServices = services;
+
+            const enriched = [];
+            for (const service of services) {
+                const price = await this.getBackendProductPrice(service.id, 1);
+                enriched.push({
+                    ...service,
+                    price_unit: price,
+                });
+            }
+
+            this.state.availableServices = enriched;
         } catch (error) {
             this.notification.add("Error al buscar servicios", { type: "danger" });
         }
     }
+
+    async getBackendProductPrice(productId, quantity = 1) {
+        try {
+            const result = await this.orm.call(
+                "stock.quant",
+                "get_sale_price_for_product",
+                [],
+                {
+                    product_id: productId,
+                    currency_code: this.state.selectedCurrency,
+                    partner_id: this.state.selectedPartnerId,
+                    quantity: quantity || 1,
+                }
+            );
+            return result.price_unit || 0;
+        } catch (error) {
+            console.error("Error cargando precio de backend:", error);
+            return 0;
+        }
+    }
+
+    async refreshSelectedServicePrices() {
+        for (const service of this.state.selectedServices) {
+            service.price_unit = await this.getBackendProductPrice(
+                service.product_id,
+                service.quantity || 1
+            );
+        }
+    }
     
-    addService(service) {
+    async addService(service) {
         const exists = this.state.selectedServices.find(s => s.product_id === service.id);
         if (exists) {
             this.notification.add("Este servicio ya fue agregado", { type: "warning" });
             return;
         }
+
+        const priceUnit = service.price_unit || await this.getBackendProductPrice(service.id, 1);
+
         this.state.selectedServices.push({
             product_id: service.id,
             display_name: service.display_name,
             quantity: 1,
-            price_unit: service.list_price,
+            price_unit: priceUnit,
             uom_name: service.uom_id[1]
         });
         this.state.searchServiceTerm = '';
@@ -316,14 +359,17 @@ export class HoldWizard extends Component {
         this.state.selectedServices.splice(index, 1);
     }
     
-    updateServiceQuantity(index, value) {
+    async updateServiceQuantity(index, value) {
         const qty = parseFloat(value) || 1;
         this.state.selectedServices[index].quantity = qty > 0 ? qty : 1;
+        this.state.selectedServices[index].price_unit = await this.getBackendProductPrice(
+            this.state.selectedServices[index].product_id,
+            this.state.selectedServices[index].quantity
+        );
     }
     
     updateServicePrice(index, value) {
-        const price = parseFloat(value) || 0;
-        this.state.selectedServices[index].price_unit = price >= 0 ? price : 0;
+        this.notification.add("El precio del servicio se carga desde la lista de precios y no se modifica manualmente.", { type: "info" });
     }
     
     getTotalServices() {

@@ -3,6 +3,7 @@
 from odoo import models, fields, api
 from odoo.exceptions import UserError
 from datetime import datetime, timedelta
+import math
 
 
 class StockQuant(models.Model):
@@ -15,6 +16,126 @@ class StockQuant(models.Model):
             'id': self.env.user.id,
             'name': self.env.user.name
         }
+
+    @api.model
+    def _get_pricelist_for_currency(self, currency_code='USD'):
+        currency_code = currency_code or 'USD'
+        return self.env['product.pricelist'].search([
+            ('name', '=', currency_code),
+        ], limit=1)
+
+    @api.model
+    def _compute_product_sale_price(self, product, currency_code='USD', partner_id=None, quantity=1.0):
+        """
+        Calcula un precio de venta de catálogo/pricelist para productos no sujetos
+        a la escalera especial de mármol, principalmente servicios.
+
+        No confía en el valor enviado por el frontend.
+        """
+        quantity = float(quantity or 1.0)
+        if quantity <= 0:
+            quantity = 1.0
+
+        partner = self.env['res.partner'].browse(partner_id) if partner_id else self.env['res.partner']
+        pricelist = self._get_pricelist_for_currency(currency_code)
+        price = 0.0
+
+        if product and product.exists() and pricelist:
+            try:
+                price = pricelist._get_product_price(product, quantity, partner=partner if partner else False)
+            except TypeError:
+                try:
+                    price = pricelist.get_product_price(product, quantity, partner if partner else False)
+                except Exception:
+                    price = 0.0
+            except Exception:
+                price = 0.0
+
+        if price <= 0 and product and product.exists():
+            price = getattr(product, 'lst_price', 0.0) or getattr(product, 'list_price', 0.0) or 0.0
+
+            # Si no hubo lista de precios y la moneda solicitada es distinta a la de compañía,
+            # convertir el precio base de la compañía a la moneda solicitada.
+            currency = self.env['res.currency'].search([('name', '=', currency_code)], limit=1)
+            company_currency = self.env.company.currency_id
+            if currency and company_currency and currency != company_currency:
+                try:
+                    price = company_currency._convert(
+                        price,
+                        currency,
+                        self.env.company,
+                        fields.Date.today(),
+                    )
+                except Exception:
+                    pass
+
+        return math.ceil(float(price or 0.0))
+
+    @api.model
+    def get_sale_price_for_product(self, product_id=None, currency_code='USD', partner_id=None, quantity=1.0):
+        """
+        Endpoint RPC para que los wizards carguen precios de servicios desde backend.
+        """
+        if not product_id:
+            return {
+                'price_unit': 0.0,
+                'currency_code': currency_code or 'USD',
+            }
+
+        product = self.env['product.product'].browse(int(product_id))
+        if not product.exists():
+            return {
+                'price_unit': 0.0,
+                'currency_code': currency_code or 'USD',
+            }
+
+        price_unit = self._compute_product_sale_price(
+            product,
+            currency_code=currency_code,
+            partner_id=partner_id,
+            quantity=quantity,
+        )
+
+        return {
+            'product_id': product.id,
+            'price_unit': price_unit,
+            'currency_code': currency_code or 'USD',
+        }
+
+    @api.model
+    def _normalize_services_for_hold(self, services=None, currency_code='USD', partner_id=None):
+        """
+        Fuerza precios de servicios desde backend para evitar que el usuario
+        capture manualmente el precio unitario del servicio en el apartado.
+        """
+        normalized = []
+        for service in (services or []):
+            product_id = service.get('product_id')
+            if not product_id:
+                continue
+
+            product = self.env['product.product'].browse(int(product_id))
+            if not product.exists():
+                continue
+
+            qty = float(service.get('quantity') or 1.0)
+            if qty <= 0:
+                qty = 1.0
+
+            price_unit = self._compute_product_sale_price(
+                product,
+                currency_code=currency_code,
+                partner_id=partner_id,
+                quantity=qty,
+            )
+
+            normalized.append({
+                'product_id': product.id,
+                'quantity': qty,
+                'price_unit': price_unit,
+            })
+
+        return normalized
 
     @api.model
     def check_sales_permissions(self):
@@ -288,6 +409,12 @@ class StockQuant(models.Model):
         """
         selected_lots = selected_lots or []
         product_prices = product_prices or {}
+        services = self._normalize_services_for_hold(
+            services=services,
+            currency_code=currency_code,
+            partner_id=partner_id,
+        )
+        backorder_items = backorder_items or []
 
         has_lots = bool(selected_lots)
         has_services = bool(services)
@@ -310,11 +437,23 @@ class StockQuant(models.Model):
             currency = self.env.company.currency_id
 
         # ================================================================
-        # VERIFICAR AUTORIZACIÓN — SOLO LOTES FÍSICOS
+        # VERIFICAR AUTORIZACIÓN — LOTES FÍSICOS Y PEDIDOS SIN EXISTENCIA
         # ================================================================
-        if has_lots and not self.env.context.get('skip_authorization_check'):
+        auth_price_map = {
+            str(k): float(v or 0.0)
+            for k, v in (product_prices or {}).items()
+        }
+
+        for item in backorder_items:
+            try:
+                product_id = int(item.get('product_id'))
+                auth_price_map[str(product_id)] = float(item.get('price_unit') or 0.0)
+            except Exception:
+                continue
+
+        if (has_lots or has_backorders) and not self.env.context.get('skip_authorization_check'):
             auth_check = self.env['product.template'].check_price_authorization_needed(
-                product_prices,
+                auth_price_map,
                 currency_code
             )
 
@@ -343,17 +482,38 @@ class StockQuant(models.Model):
                     })
                     product_groups[pid]['total_quantity'] += selected_qty
 
+                for item in backorder_items:
+                    try:
+                        product_id = int(item.get('product_id'))
+                    except Exception:
+                        continue
+
+                    product = self.env['product.product'].browse(product_id)
+                    if not product.exists():
+                        continue
+
+                    if product_id not in product_groups:
+                        product_groups[product_id] = {
+                            'name': product.display_name,
+                            'lots': [],
+                            'total_quantity': 0.0,
+                        }
+
+                    product_groups[product_id]['total_quantity'] += float(item.get('quantity') or 0.0)
+
                 result = self.create_price_authorization(
                     operation_type='hold',
                     partner_id=partner_id,
                     project_id=project_id,
                     selected_lots=selected_lots,
                     currency_code=currency_code,
-                    product_prices=product_prices,
+                    product_prices=auth_price_map,
                     product_groups=product_groups,
                     notes=notes,
                     architect_id=architect_id,
                     selected_quantities=selected_qty_by_quant,
+                    services=services,
+                    backorder_items=backorder_items,
                 )
 
                 if result.get('success'):
@@ -587,6 +747,8 @@ class StockQuant(models.Model):
         notes=None,
         architect_id=None,
         selected_quantities=None,
+        services=None,
+        backorder_items=None,
     ):
         """Crea solicitud de autorización de precio"""
         if isinstance(product_prices, dict):
@@ -610,6 +772,8 @@ class StockQuant(models.Model):
                 'product_prices': product_prices,
                 'product_groups': product_groups,
                 'architect_id': architect_id,
+                'services': services or [],
+                'backorder_items': backorder_items or [],
             },
         })
 

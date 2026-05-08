@@ -241,7 +241,10 @@ class PriceAuthorization(models.Model):
                 self._create_sale_order_from_authorization(pricelist, temp_data)
 
         elif self.operation_type == 'hold':
-            self._create_holds_from_authorization(temp_data)
+            if temp_data.get('source') == 'manual_hold_order':
+                self._confirm_existing_hold_order_from_authorization(temp_data)
+            else:
+                self._create_holds_from_authorization(temp_data)
 
     def _update_existing_order_prices(self, order_id):
         """
@@ -409,6 +412,8 @@ class PriceAuthorization(models.Model):
         selected_lots = temp_data.get('selected_lots', [])
         selected_quantities = temp_data.get('selected_quantities') or {}
         architect_id = temp_data.get('architect_id')
+        services = temp_data.get('services') or []
+        backorder_items = temp_data.get('backorder_items') or []
 
         full_notes = self.notes or ''
         full_notes += f'\n\n=== AUTORIZACIÓN DE PRECIO ===\n'
@@ -428,6 +433,8 @@ class PriceAuthorization(models.Model):
             notes=full_notes,
             currency_code=self.currency_code,
             product_prices=product_prices,
+            services=services,
+            backorder_items=backorder_items,
         )
 
         if result.get('success', 0) == 0 and result.get('errors', 0) > 0:
@@ -435,6 +442,64 @@ class PriceAuthorization(models.Model):
             for failed in result.get('failed', []):
                 error_msg += f"• {failed.get('lot_name', 'Lote')}: {failed.get('error', 'Error desconocido')}\n"
             raise UserError(error_msg)
+
+    def _confirm_existing_hold_order_from_authorization(self, temp_data):
+        """
+        Aplica una autorización aprobada sobre un apartado manual existente.
+
+        No crea un nuevo apartado: actualiza los precios autorizados en la orden
+        de reserva en borrador y después la confirma saltando la validación de
+        autorización para evitar un ciclo infinito.
+        """
+        self.ensure_one()
+
+        hold_order_id = temp_data.get('hold_order_id')
+        if not hold_order_id:
+            raise UserError("La autorización no tiene una orden de apartado vinculada.")
+
+        order = self.env['stock.lot.hold.order'].browse(int(hold_order_id))
+        if not order.exists():
+            raise UserError(f"La orden de apartado ID {hold_order_id} ya no existe.")
+
+        if order.state not in ['draft', 'borrador']:
+            raise UserError(f"La orden de apartado {order.name} ya no está en borrador.")
+
+        product_prices = {
+            line.product_id.id: math.ceil(line.authorized_price)
+            for line in self.line_ids
+        }
+
+        order_lines = self.env['stock.lot.hold.order.line']
+        if hasattr(order, 'line_ids'):
+            order_lines |= order.line_ids
+        if hasattr(order, 'hold_line_ids'):
+            order_lines |= order.hold_line_ids
+
+        for order_line in order_lines:
+            if not order_line.product_id or order_line.product_id.type == 'service':
+                continue
+
+            authorized_price = product_prices.get(order_line.product_id.id)
+            if authorized_price is False or authorized_price is None:
+                continue
+
+            vals = {
+                'precio_unitario': authorized_price,
+            }
+            if hasattr(order_line, 'x_price_selector'):
+                vals['x_price_selector'] = 'custom'
+
+            order_line.write(vals)
+
+        order.message_post(
+            body=(
+                f"Autorización de precio {self.name} aprobada por "
+                f"{self.authorizer_id.name}. Se aplicaron los precios autorizados."
+            )
+        )
+
+        order.with_context(skip_authorization_check=True).action_confirm()
+
 
 
 class PriceAuthorizationLine(models.Model):

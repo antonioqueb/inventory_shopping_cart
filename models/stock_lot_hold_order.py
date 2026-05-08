@@ -234,57 +234,201 @@ class StockLotHoldOrder(models.Model):
             order.line_ids._sync_quantity_from_lots()
             order.line_ids._sync_price_from_selector()
 
-    def _check_manual_price_policy(self):
+    def _get_manual_price_violations(self):
         """
-        Regla comercial:
-        - Vendedor normal: Precio 1 y Precio 2.
-        - Autorizador: Precio 1, Precio 2, Precio 3 y personalizado.
-        """
-        if self.env.context.get('skip_authorization_check'):
-            return
+        Devuelve líneas de apartado que requieren autorización.
 
+        Regla corregida:
+        - Vendedor: Precio 3, personalizado o cualquier precio debajo de Precio 2 requiere autorización.
+        - Autorizador: puede usar Precio 3, pero cualquier precio por debajo de Precio 3 requiere autorización.
+        - Servicios: no participan en la escalera ni en autorización de precio.
+        """
+        self.ensure_one()
+
+        violations = []
         is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
 
-        if is_authorizer:
-            return
+        for line in self.line_ids:
+            if not line.product_id or line.product_id.type == 'service':
+                continue
 
-        for order in self:
-            violating = []
+            currency_code = line._get_currency_code() if hasattr(line, '_get_currency_code') else (
+                self.currency_id.name if self.currency_id else 'USD'
+            )
+            tmpl = line.product_id.product_tmpl_id
 
-            for line in order.line_ids:
-                if not line.product_id:
-                    continue
+            if currency_code == 'MXN':
+                medium_price = tmpl.x_price_mxn_2 or 0.0
+                minimum_price = tmpl.x_price_mxn_3 or 0.0
+            else:
+                medium_price = tmpl.x_price_usd_2 or 0.0
+                minimum_price = tmpl.x_price_usd_3 or 0.0
 
-                if line.product_id.type == 'service':
-                    continue
+            requested_price = float(line.precio_unitario or 0.0)
+            selector = line.x_price_selector or 'custom'
+            reason = False
 
-                if line.x_price_selector == 'minimum':
-                    violating.append(
-                        f"{line.product_id.display_name}: Precio 3 requiere autorización"
+            if is_authorizer:
+                if minimum_price > 0 and requested_price < (minimum_price - 0.01):
+                    reason = (
+                        f"precio {requested_price:.2f} menor al Precio 3 "
+                        f"{minimum_price:.2f}"
                     )
-                    continue
-
-                if line.x_price_selector == 'custom':
-                    violating.append(
-                        f"{line.product_id.display_name}: precio personalizado requiere autorización"
-                    )
-                    continue
-
-                medium_price = line.x_price_2_value or 0.0
-
-                if medium_price > 0 and line.precio_unitario < (medium_price - 0.01):
-                    violating.append(
-                        f"{line.product_id.display_name}: "
-                        f"{line.precio_unitario:.2f} menor al precio medio {medium_price:.2f}"
+            else:
+                if selector == 'minimum':
+                    reason = "Precio 3 requiere autorización"
+                elif selector == 'custom':
+                    reason = "precio personalizado requiere autorización"
+                elif medium_price > 0 and requested_price < (medium_price - 0.01):
+                    reason = (
+                        f"precio {requested_price:.2f} menor al Precio 2 "
+                        f"{medium_price:.2f}"
                     )
 
-            if violating:
-                raise UserError(
-                    "🚫 APARTADO BLOQUEADO POR PRECIO\n\n"
-                    "No puede confirmar este apartado porque contiene precios que requieren autorización:\n"
-                    f"• {chr(10).join(violating)}\n\n"
-                    "Use Precio 1 o Precio 2, o confirme con un usuario autorizador."
-                )
+            if reason:
+                violations.append({
+                    'line': line,
+                    'reason': reason,
+                    'requested_price': requested_price,
+                    'medium_price': medium_price,
+                    'minimum_price': minimum_price,
+                })
+
+        return violations
+
+    def _find_pending_manual_hold_authorization(self):
+        self.ensure_one()
+
+        authorizations = self.env['price.authorization'].search([
+            ('operation_type', '=', 'hold'),
+            ('partner_id', '=', self.partner_id.id),
+            ('seller_id', '=', self.env.user.id),
+            ('state', '=', 'pending'),
+        ], order='create_date desc', limit=25)
+
+        for auth in authorizations:
+            temp_data = auth.temp_data or {}
+            if (
+                temp_data.get('source') == 'manual_hold_order'
+                and int(temp_data.get('hold_order_id') or 0) == self.id
+            ):
+                return auth
+
+        return self.env['price.authorization']
+
+    def _create_manual_hold_price_authorization(self, violations):
+        self.ensure_one()
+
+        existing_auth = self._find_pending_manual_hold_authorization()
+        if existing_auth:
+            return existing_auth
+
+        currency_code = self.currency_id.name if self.currency_id else 'USD'
+        product_prices = {}
+        product_groups = {}
+        line_ids = []
+
+        for item in violations:
+            line = item['line']
+            pid = line.product_id.id
+            pid_str = str(pid)
+            requested_price = float(item['requested_price'] or 0.0)
+
+            product_prices[pid_str] = requested_price
+            line_ids.append(line.id)
+
+            if pid_str not in product_groups:
+                product_groups[pid_str] = {
+                    'name': line.product_id.display_name,
+                    'lots': [],
+                    'total_quantity': 0.0,
+                }
+
+            product_groups[pid_str]['total_quantity'] += line.cantidad_m2 or 0.0
+
+            for lot in line.lot_ids:
+                product_groups[pid_str]['lots'].append({
+                    'id': line.quant_id.id if line.quant_id else False,
+                    'lot_id': lot.id,
+                    'lot_name': lot.name,
+                    'quantity': line.cantidad_m2 or 0.0,
+                })
+
+        notes = self.notas or ''
+        notes += f"\n\n=== SOLICITUD DESDE APARTADO MANUAL ===\n"
+        notes += f"Apartado: {self.name}\n"
+        notes += "Motivos:\n"
+        for item in violations:
+            line = item['line']
+            notes += f"• {line.product_id.display_name}: {item['reason']}\n"
+
+        auth = self.env['price.authorization'].create({
+            'seller_id': self.env.user.id,
+            'operation_type': 'hold',
+            'partner_id': self.partner_id.id,
+            'project_id': self.project_id.id if self.project_id else False,
+            'currency_code': currency_code,
+            'notes': notes,
+            'temp_data': {
+                'source': 'manual_hold_order',
+                'hold_order_id': self.id,
+                'hold_order_line_ids': line_ids,
+                'product_prices': product_prices,
+                'product_groups': product_groups,
+                'architect_id': self.arquitecto_id.id if self.arquitecto_id else False,
+            },
+        })
+
+        for pid_str, group in product_groups.items():
+            product = self.env['product.product'].browse(int(pid_str))
+            medium = product.product_tmpl_id.x_price_mxn_2 if currency_code == 'MXN' else product.product_tmpl_id.x_price_usd_2
+            minimum = product.product_tmpl_id.x_price_mxn_3 if currency_code == 'MXN' else product.product_tmpl_id.x_price_usd_3
+
+            self.env['price.authorization.line'].create({
+                'authorization_id': auth.id,
+                'product_id': int(pid_str),
+                'quantity': group['total_quantity'],
+                'lot_count': len(group['lots']),
+                'requested_price': product_prices[pid_str],
+                'authorized_price': product_prices[pid_str],
+                'medium_price': medium,
+                'minimum_price': minimum,
+            })
+
+        self.message_post(
+            body=(
+                f"Se creó la solicitud de autorización de precio "
+                f"<b>{auth.name}</b> para confirmar este apartado."
+            )
+        )
+
+        return auth
+
+    def _request_manual_hold_authorization_if_needed(self):
+        if self.env.context.get('skip_authorization_check'):
+            return False
+
+        self.ensure_one()
+        violations = self._get_manual_price_violations()
+        if not violations:
+            return False
+
+        auth = self._create_manual_hold_price_authorization(violations)
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'price.authorization',
+            'res_id': auth.id,
+            'view_mode': 'form',
+            'target': 'current',
+        }
+
+    def _check_manual_price_policy(self):
+        """
+        Compatibilidad: mantiene el nombre anterior, pero ahora la política
+        crea solicitud de autorización en action_confirm en lugar de bloquear
+        con un UserError genérico.
+        """
+        return True
 
     def action_recompute_hold_lines(self):
         self._sync_manual_defaults_and_lines()
@@ -302,7 +446,12 @@ class StockLotHoldOrder(models.Model):
 
     def action_confirm(self):
         self._sync_manual_defaults_and_lines()
-        self._check_manual_price_policy()
+
+        for order in self:
+            action = order._request_manual_hold_authorization_if_needed()
+            if action:
+                return action
+
         return super().action_confirm()
 
 

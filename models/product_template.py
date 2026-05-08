@@ -833,7 +833,8 @@ class ProductTemplate(models.Model):
 
     @api.model
     def get_custom_prices(self, product_id, currency_code):
-        product = self.browse(product_id)
+        product_variant = self.env['product.product'].browse(int(product_id))
+        product = product_variant.product_tmpl_id if product_variant.exists() else self.browse(int(product_id))
         prices = []
         is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
 
@@ -895,41 +896,58 @@ class ProductTemplate(models.Model):
 
     @api.model
     def check_price_authorization_needed(self, product_prices, currency_code):
-        is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
+        """
+        Valida si una operación requiere autorización de precio.
 
-        if is_authorizer:
+        Regla corregida:
+        - Vendedor limitado: requiere autorización si el precio queda debajo del Precio 2.
+        - Autorizador/Administrador: puede usar Precio 3, pero si captura un precio por debajo
+          del Precio 3 también debe generar solicitud de autorización.
+        - Usuarios sin rol comercial explícito no disparan autorización desde este helper.
+        """
+        needs_auth = []
+        is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
+        is_seller = self.env.user.has_group('inventory_shopping_cart.group_seller')
+
+        if not is_authorizer and not is_seller:
             return {
                 'needs_authorization': False,
                 'products': [],
-                'is_authorizer': True
+                'is_authorizer': is_authorizer,
             }
 
-        needs_auth = []
-        is_seller = self.env.user.has_group('inventory_shopping_cart.group_seller')
+        for product_id_str, requested_price in (product_prices or {}).items():
+            product_variant = self.env['product.product'].browse(int(product_id_str))
+            product = product_variant.product_tmpl_id if product_variant.exists() else self.browse(int(product_id_str))
 
-        if not is_seller:
-            return {
-                'needs_authorization': False,
-                'products': []
-            }
+            if not product.exists():
+                continue
 
-        for product_id_str, requested_price in product_prices.items():
-            product = self.browse(int(product_id_str))
+            try:
+                requested_price = float(requested_price or 0.0)
+            except Exception:
+                requested_price = 0.0
 
             medium = product.x_price_mxn_2 if currency_code == 'MXN' else product.x_price_usd_2
+            minimum = product.x_price_mxn_3 if currency_code == 'MXN' else product.x_price_usd_3
 
-            if requested_price < (medium - 0.01):
+            threshold = minimum if is_authorizer else medium
+
+            if threshold > 0 and requested_price < (threshold - 0.01):
                 needs_auth.append({
                     'product_id': int(product_id_str),
-                    'product_name': product.display_name,
+                    'product_name': product_variant.display_name if product_variant.exists() else product.display_name,
                     'requested_price': requested_price,
                     'medium_price': medium,
-                    'minimum_price': product.x_price_mxn_3 if currency_code == 'MXN' else product.x_price_usd_3,
+                    'minimum_price': minimum,
+                    'threshold_price': threshold,
+                    'threshold_label': 'Precio 3' if is_authorizer else 'Precio 2',
                 })
 
         return {
             'needs_authorization': len(needs_auth) > 0,
-            'products': needs_auth
+            'products': needs_auth,
+            'is_authorizer': is_authorizer,
         }
 
 
