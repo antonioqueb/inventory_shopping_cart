@@ -58,7 +58,9 @@
                     <group>
                         <group string="Cliente">
                             <field name="partner_id" string="Cliente" required="1"/>
-                            <field name="delivery_address" string="Dirección de Entrega" placeholder="Dirección de entrega..."/>
+                            <field name="delivery_address"
+                                   string="Dirección de Entrega"
+                                   placeholder="Dirección de entrega..."/>
                             <field name="project_id" string="Proyecto"/>
                             <field name="arquitecto_id" string="Arquitecto"/>
                         </group>
@@ -106,6 +108,7 @@
                                         'default_currency_id': currency_id
                                    }">
                                 <list editable="bottom">
+                                    <!-- Campos técnicos de precio -->
                                     <field name="currency_id" column_invisible="1"/>
                                     <field name="x_price_1_value" column_invisible="1"/>
                                     <field name="x_price_2_value" column_invisible="1"/>
@@ -114,34 +117,26 @@
                                     <field name="x_can_use_custom_price" column_invisible="1"/>
                                     <field name="x_can_use_minimum_price" column_invisible="1"/>
 
-                                    <!-- Campos técnicos para conservar la sincronización original -->
-                                    <field name="lot_id" column_invisible="1"/>
+                                    <!-- Campos técnicos de selección.
+                                         NO visibles: el selector JS los manipula. -->
                                     <field name="lot_ids" column_invisible="1"/>
+                                    <field name="lot_id" column_invisible="1"/>
+                                    <field name="quant_id" column_invisible="1"/>
+
+                                    <!-- Botón del selector visual.
+                                         Este widget debe abrir el popup de placas.
+                                         No debe ser quant_id ni many2many_tags. -->
+                                    <field name="x_can_use_custom_price"
+                                           widget="hold_stone_expand_button"
+                                           string=" "
+                                           nolabel="1"
+                                           width="44px"
+                                           class="p-0 text-center"/>
 
                                     <field name="product_id"
                                            string="Producto"
                                            required="1"
                                            optional="show"/>
-
-                                    <!-- Selector de placas / quants.
-                                         Se deja como many2one tradicional para que lo tome el JS global
-                                         que ya parchea los Many2One. No se reemplaza por many2many_tags. -->
-                                    <field name="quant_id"
-                                           string="Placa"
-                                           required="1"
-                                           domain="[
-                                                ('product_id', '=', product_id),
-                                                ('location_id.usage', '=', 'internal'),
-                                                ('quantity', '>', 0)
-                                           ]"
-                                           context="{
-                                                'search_default_product_id': product_id,
-                                                'default_product_id': product_id
-                                           }"
-                                           options="{
-                                                'no_create': True,
-                                                'no_open': False
-                                           }"/>
 
                                     <field name="cantidad_m2"
                                            string="m²"
@@ -168,26 +163,15 @@
                                         <group string="Material">
                                             <field name="product_id" required="1"/>
 
-                                            <field name="quant_id"
-                                                   string="Placa"
-                                                   required="1"
-                                                   domain="[
-                                                        ('product_id', '=', product_id),
-                                                        ('location_id.usage', '=', 'internal'),
-                                                        ('quantity', '>', 0)
-                                                   ]"
-                                                   context="{
-                                                        'search_default_product_id': product_id,
-                                                        'default_product_id': product_id
-                                                   }"
-                                                   options="{
-                                                        'no_create': True,
-                                                        'no_open': False
-                                                   }"/>
-
-                                            <field name="lot_id" invisible="1"/>
+                                            <!-- La selección real se conserva aquí, pero oculta.
+                                                 La UI debe abrirse desde el widget JS. -->
                                             <field name="lot_ids" invisible="1"/>
-                                            <field name="cantidad_m2" string="m²" force_save="1"/>
+                                            <field name="lot_id" invisible="1"/>
+                                            <field name="quant_id" invisible="1"/>
+
+                                            <field name="cantidad_m2"
+                                                   string="m²"
+                                                   force_save="1"/>
                                         </group>
 
                                         <group string="Precio">
