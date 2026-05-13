@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="inventory_shopping_cart.HoldStoneExpandButton" owl="1">
+        <div class="o_hold_stone_selector_field">
+            <button type="button"
+                    class="btn btn-sm o_hold_stone_selector_btn"
+                    t-att-class="selectedCount > 0 ? 'btn-primary' : 'btn-outline-secondary'"
+                    t-on-click.stop="openPopup"
+                    t-att-title="selectedCount > 0 ? 'Ver o modificar placas seleccionadas' : 'Seleccionar placas'">
+                <i class="fa fa-th-large me-1"/>
+                <span t-if="selectedCount === 0">Placas</span>
+                <span t-else="">
+                    <t t-esc="selectedCount"/>
+                </span>
+            </button>
+        </div>
+    </t>
+
+</templates>
