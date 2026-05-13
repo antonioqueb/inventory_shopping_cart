@@ -10,17 +10,21 @@
                   decoration-success="state == 'confirmed'"
                   decoration-muted="state == 'cancel'">
                 <field name="name"/>
+                <field name="fecha_orden"/>
                 <field name="partner_id"/>
                 <field name="project_id"/>
                 <field name="arquitecto_id"/>
                 <field name="user_id"/>
-                <field name="fecha_orden"/>
-                <field name="fecha_expiracion"/>
-                <field name="x_hold_business_days" string="Días hábiles"/>
-                <field name="x_days_to_expiration" string="Días restantes"/>
                 <field name="currency_id"/>
-                <field name="x_total_m2" string="m²"/>
-                <field name="x_amount_total" string="Total" widget="monetary"/>
+                <field name="total_placas" string="Placas"/>
+                <field name="total_m2" string="m²"/>
+                <field name="total_con_precio" string="Total" widget="monetary"/>
+                <field name="fecha_expiracion"/>
+                <field name="dias_restantes"
+                       string="Días restantes"
+                       decoration-danger="dias_restantes &lt;= 2"
+                       decoration-warning="dias_restantes &lt;= 5 and dias_restantes &gt; 2"/>
+                <field name="sale_order_id" optional="hide"/>
                 <field name="state" widget="badge"/>
             </list>
         </field>
@@ -37,18 +41,58 @@
                             string="Recalcular"
                             type="object"
                             class="btn-secondary"
-                            icon="fa-refresh"/>
+                            icon="fa-refresh"
+                            invisible="state in ['done', 'cancel']"/>
 
                     <button name="action_confirm"
-                            string="Confirmar Apartado"
+                            string="Confirmar Reserva"
                             type="object"
                             class="btn-primary"
                             invisible="state not in ['draft', 'borrador']"/>
 
-                    <field name="state" widget="statusbar"/>
+                    <button name="action_convert_to_sale_order"
+                            string="Crear SO"
+                            type="object"
+                            class="btn-success"
+                            invisible="state != 'confirmed' or sale_order_id"
+                            confirm="¿Convertir esta reserva en orden de venta? Se liberarán los apartados automáticamente."/>
+
+                    <button name="action_renew"
+                            string="Renovar 5 Días"
+                            type="object"
+                            class="btn-warning"
+                            invisible="state != 'confirmed' or sale_order_id"/>
+
+                    <button name="action_done"
+                            string="Finalizar"
+                            type="object"
+                            invisible="state != 'confirmed' or sale_order_id"/>
+
+                    <button name="action_cancel"
+                            string="Cancelar"
+                            type="object"
+                            invisible="state in ['done', 'cancel']"/>
+
+                    <field name="state" widget="statusbar" statusbar_visible="draft,confirmed,done,cancel"/>
                 </header>
 
                 <sheet>
+                    <field name="sale_order_id" invisible="1"/>
+
+                    <div class="oe_button_box" name="button_box">
+                        <button name="%(sale.act_res_partner_2_sale_order)d"
+                                type="action"
+                                class="oe_stat_button"
+                                icon="fa-shopping-cart"
+                                invisible="not sale_order_id"
+                                context="{'search_default_order_id': sale_order_id}">
+                            <div class="o_field_widget o_stat_info">
+                                <span class="o_stat_text">Ver</span>
+                                <span class="o_stat_text">Orden de Venta</span>
+                            </div>
+                        </button>
+                    </div>
+
                     <div class="oe_title">
                         <h1>
                             <field name="name" readonly="1"/>
@@ -69,7 +113,7 @@
                             <field name="user_id" string="Vendedor" readonly="1"/>
                             <field name="fecha_orden" string="Fecha de Orden" readonly="1" force_save="1"/>
                             <field name="fecha_expiracion" string="Fecha de Expiración" readonly="1" force_save="1"/>
-                            <field name="x_days_to_expiration" string="Días Restantes" readonly="1"/>
+                            <field name="dias_restantes" string="Días Restantes" readonly="1"/>
                             <field name="currency_id" string="Moneda" required="1"/>
 
                             <separator/>
@@ -79,11 +123,15 @@
                                    readonly="1"
                                    force_save="1"/>
 
-                            <field name="x_total_m2"
+                            <field name="total_placas"
+                                   string="Total Placas"
+                                   readonly="1"/>
+
+                            <field name="total_m2"
                                    string="Total m²"
                                    readonly="1"/>
 
-                            <field name="x_amount_total"
+                            <field name="total_con_precio"
                                    string="Total General"
                                    widget="monetary"
                                    readonly="1"/>
@@ -101,11 +149,11 @@
 
                     <notebook>
                         <page string="Placas Reservadas">
-                            <field name="line_ids"
+                            <field name="hold_line_ids"
                                    nolabel="1"
                                    context="{
-                                        'default_order_id': id,
-                                        'default_currency_id': currency_id
+                                       'default_order_id': id,
+                                       'default_currency_id': currency_id
                                    }">
                                 <list editable="bottom">
                                     <!-- Campos técnicos de precio -->
@@ -117,29 +165,26 @@
                                     <field name="x_can_use_custom_price" column_invisible="1"/>
                                     <field name="x_can_use_minimum_price" column_invisible="1"/>
 
-                                    <!-- Campos técnicos de selección.
-                                         NO visibles: el selector JS los manipula. -->
-                                    <field name="lot_ids" column_invisible="1"/>
-                                    <field name="lot_id" column_invisible="1"/>
-                                    <field name="quant_id" column_invisible="1"/>
-
-                                    <!-- Botón del selector visual.
-                                         Este widget debe abrir el popup de placas.
-                                         No debe ser quant_id ni many2many_tags. -->
-                                    <field name="x_can_use_custom_price"
-                                           widget="hold_stone_expand_button"
+                                    <!-- Selector visual existente de stock_lot_dimensions.
+                                         Este es el widget correcto, no hold_stone_expand_button. -->
+                                    <field name="lot_ids"
+                                           widget="hold_stone_button"
                                            string=" "
+                                           width="30px"
                                            nolabel="1"
-                                           width="44px"
                                            class="p-0 text-center"/>
 
                                     <field name="product_id"
                                            string="Producto"
-                                           required="1"
-                                           optional="show"/>
+                                           required="1"/>
+
+                                    <field name="lot_count"
+                                           string="Placas"
+                                           readonly="1"/>
 
                                     <field name="cantidad_m2"
                                            string="m²"
+                                           readonly="1"
                                            force_save="1"/>
 
                                     <field name="x_price_selector"
@@ -152,10 +197,17 @@
                                            readonly="x_price_selector != 'custom'"
                                            force_save="1"/>
 
-                                    <field name="x_subtotal"
+                                    <field name="precio_total"
                                            string="Total"
                                            widget="monetary"
                                            readonly="1"/>
+
+                                    <!-- Campos técnicos / legacy -->
+                                    <field name="lot_ids" column_invisible="1"/>
+                                    <field name="lot_id" column_invisible="1"/>
+                                    <field name="quant_id" column_invisible="1"/>
+                                    <field name="hold_ids" column_invisible="1"/>
+                                    <field name="hold_id" column_invisible="1"/>
                                 </list>
 
                                 <form>
@@ -163,15 +215,23 @@
                                         <group string="Material">
                                             <field name="product_id" required="1"/>
 
-                                            <!-- La selección real se conserva aquí, pero oculta.
-                                                 La UI debe abrirse desde el widget JS. -->
-                                            <field name="lot_ids" invisible="1"/>
-                                            <field name="lot_id" invisible="1"/>
-                                            <field name="quant_id" invisible="1"/>
+                                            <field name="lot_ids"
+                                                   widget="hold_stone_button"
+                                                   string="Placas"/>
+
+                                            <field name="lot_count"
+                                                   string="Placas"
+                                                   readonly="1"/>
 
                                             <field name="cantidad_m2"
                                                    string="m²"
+                                                   readonly="1"
                                                    force_save="1"/>
+
+                                            <field name="lot_id" invisible="1"/>
+                                            <field name="quant_id" invisible="1"/>
+                                            <field name="hold_ids" invisible="1"/>
+                                            <field name="hold_id" invisible="1"/>
                                         </group>
 
                                         <group string="Precio">
@@ -193,7 +253,7 @@
                                                    readonly="x_price_selector != 'custom'"
                                                    force_save="1"/>
 
-                                            <field name="x_subtotal"
+                                            <field name="precio_total"
                                                    string="Total"
                                                    widget="monetary"
                                                    readonly="1"/>
@@ -203,11 +263,15 @@
                             </field>
 
                             <group class="oe_subtotal_footer">
-                                <field name="x_total_m2"
+                                <field name="total_placas"
+                                       readonly="1"
+                                       string="Total Placas"/>
+
+                                <field name="total_m2"
                                        readonly="1"
                                        string="Total m²"/>
 
-                                <field name="x_amount_total"
+                                <field name="total_con_precio"
                                        readonly="1"
                                        widget="monetary"
                                        string="Total Apartado"/>
