@@ -33,3 +33,74 @@
         white-space: nowrap;
     }
 }
+/* Compactación específica del formulario de Apartados / Reservaciones.
+   Evita que la columna Producto consuma todo el ancho y oculte el selector de precio. */
+.o_hold_order_lines_pricing {
+    .o_list_renderer,
+    .o_list_view,
+    .table-responsive {
+        overflow-x: auto;
+    }
+
+    table.o_list_table,
+    table.table {
+        table-layout: fixed;
+        width: 100%;
+        min-width: 980px;
+    }
+
+    th[data-name="product_id"],
+    td[name="product_id"] {
+        width: 260px !important;
+        max-width: 260px !important;
+    }
+
+    th[data-name="lot_ids"],
+    td[name="lot_ids"] {
+        width: 190px !important;
+        max-width: 190px !important;
+    }
+
+    th[data-name="cantidad_m2"],
+    td[name="cantidad_m2"] {
+        width: 95px !important;
+        max-width: 95px !important;
+    }
+
+    th[data-name="x_price_selector"],
+    td[name="x_price_selector"] {
+        width: 230px !important;
+        max-width: 230px !important;
+    }
+
+    th[data-name="precio_unitario"],
+    td[name="precio_unitario"] {
+        width: 130px !important;
+        max-width: 130px !important;
+    }
+
+    th[data-name="x_subtotal"],
+    td[name="x_subtotal"] {
+        width: 130px !important;
+        max-width: 130px !important;
+    }
+
+    td[name="product_id"],
+    td[name="lot_ids"] {
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+        word-break: normal;
+    }
+
+    td[name="product_id"] .o_field_many2one,
+    td[name="product_id"] .o_field_widget,
+    td[name="lot_ids"] .o_field_many2many_tags,
+    td[name="lot_ids"] .o_field_widget {
+        max-width: 100%;
+        white-space: normal !important;
+    }
+
+    .o_price_level_selector__select {
+        min-width: 0;
+    }
+}

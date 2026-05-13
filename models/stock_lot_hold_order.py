@@ -236,11 +236,15 @@ class StockLotHoldOrder(models.Model):
 
     def _get_manual_price_violations(self):
         """
-        Devuelve líneas de apartado que requieren autorización.
+        Devuelve líneas de apartado manual que requieren autorización.
 
-        Regla corregida:
-        - Vendedor: Precio 3, personalizado o cualquier precio debajo de Precio 2 requiere autorización.
-        - Autorizador: puede usar Precio 3, pero cualquier precio por debajo de Precio 3 requiere autorización.
+        Misma política comercial que el carrito:
+        - Vendedor: puede elegir Precio 1, Precio 2 o capturar precio personalizado.
+          Solo requiere autorización cuando el precio final queda debajo de Precio 2.
+        - Precio 3 sigue restringido a autorizadores. Si un vendedor lo alcanza por
+          vista heredada, también cae en autorización por estar debajo del Precio 2.
+        - Autorizador: puede usar Precio 3. Solo requiere autorización si captura
+          un precio por debajo de Precio 3.
         - Servicios: no participan en la escalera ni en autorización de precio.
         """
         self.ensure_one()
@@ -275,15 +279,22 @@ class StockLotHoldOrder(models.Model):
                         f"{minimum_price:.2f}"
                     )
             else:
-                if selector == 'minimum':
-                    reason = "Precio 3 requiere autorización"
-                elif selector == 'custom':
-                    reason = "precio personalizado requiere autorización"
-                elif medium_price > 0 and requested_price < (medium_price - 0.01):
-                    reason = (
-                        f"precio {requested_price:.2f} menor al Precio 2 "
-                        f"{medium_price:.2f}"
-                    )
+                if medium_price > 0 and requested_price < (medium_price - 0.01):
+                    if selector == 'custom':
+                        reason = (
+                            f"precio personalizado {requested_price:.2f} menor al Precio 2 "
+                            f"{medium_price:.2f}"
+                        )
+                    elif selector == 'minimum':
+                        reason = (
+                            f"Precio 3 requiere autorización para vendedor "
+                            f"(Precio 2: {medium_price:.2f})"
+                        )
+                    else:
+                        reason = (
+                            f"precio {requested_price:.2f} menor al Precio 2 "
+                            f"{medium_price:.2f}"
+                        )
 
             if reason:
                 violations.append({
@@ -490,7 +501,12 @@ class StockLotHoldOrderLine(models.Model):
 
     x_can_use_custom_price = fields.Boolean(
         string='Puede usar precio personalizado',
-        compute='_compute_x_can_use_custom_price',
+        compute='_compute_x_price_permission_flags',
+    )
+
+    x_can_use_minimum_price = fields.Boolean(
+        string='Puede usar Precio 3',
+        compute='_compute_x_price_permission_flags',
     )
 
     cantidad_m2 = fields.Float(
@@ -521,10 +537,17 @@ class StockLotHoldOrderLine(models.Model):
     )
 
     @api.depends_context('uid')
-    def _compute_x_can_use_custom_price(self):
-        can_use = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
+    def _compute_x_price_permission_flags(self):
+        """
+        El precio personalizado debe estar disponible desde el formulario manual,
+        igual que en el carrito. La autorización se decide al confirmar.
+
+        Precio 3 se mantiene visible únicamente para autorizadores.
+        """
+        can_use_minimum = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
         for line in self:
-            line.x_can_use_custom_price = can_use
+            line.x_can_use_custom_price = True
+            line.x_can_use_minimum_price = can_use_minimum
 
     def _get_currency_code(self):
         self.ensure_one()

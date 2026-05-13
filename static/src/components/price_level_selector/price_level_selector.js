@@ -24,6 +24,7 @@ export class PriceLevelSelectorField extends Component {
                 this.props.record.data.x_price_3_value,
                 this.props.record.data.x_price_level_currency,
                 this.props.record.data.x_can_use_custom_price,
+                this.props.record.data.x_can_use_minimum_price,
             ]
         );
     }
@@ -41,8 +42,18 @@ export class PriceLevelSelectorField extends Component {
         return this.props.record.data.x_price_level_currency || "USD";
     }
 
-    get canUseRestrictedPrices() {
+    get canUseCustomPrice() {
         return Boolean(this.props.record.data.x_can_use_custom_price);
+    }
+
+    get canUseMinimumPrice() {
+        const explicitFlag = this.props.record.data.x_can_use_minimum_price;
+
+        if (explicitFlag === undefined) {
+            return this.canUseCustomPrice;
+        }
+
+        return Boolean(explicitFlag);
     }
 
     formatPrice(value) {
@@ -61,9 +72,14 @@ export class PriceLevelSelectorField extends Component {
 
         return this.rawSelection
             .filter(([val]) => {
-                if ((val === "minimum" || val === "custom") && !this.canUseRestrictedPrices) {
+                if (val === "minimum" && !this.canUseMinimumPrice) {
                     return false;
                 }
+
+                if (val === "custom" && !this.canUseCustomPrice) {
+                    return false;
+                }
+
                 return true;
             })
             .map(([val, label]) => {
