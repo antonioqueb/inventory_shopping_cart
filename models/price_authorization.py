@@ -297,25 +297,7 @@ class PriceAuthorization(models.Model):
         services = temp_data.get('services', [])
 
         notes = self.notes or ''
-
-        if self.project_id:
-            notes += f'\n\n=== INFORMACIÓN DEL PROYECTO ===\n'
-            notes += f'Proyecto: {self.project_id.name}\n'
-
-        architect_id = temp_data.get('architect_id')
-        if architect_id:
-            architect = self.env['res.partner'].browse(architect_id)
-            if architect.exists():
-                notes += f'Arquitecto: {architect.name}\n'
-
-        notes += f'\n\n=== AUTORIZACIÓN DE PRECIO ===\n'
-        notes += f'Autorización: {self.name}\n'
-        notes += f'Autorizado por: {self.authorizer_id.name}\n'
-        notes += f'Fecha: {self.authorization_date}\n'
-
         apply_tax = temp_data.get('apply_tax', True)
-        if not apply_tax:
-            notes += '\n\n⚠️ NOTA IMPORTANTE: El IVA se agregará posteriormente.'
 
         company_id = self.env.context.get('company_id') or self.env.company.id
 
@@ -416,10 +398,6 @@ class PriceAuthorization(models.Model):
         backorder_items = temp_data.get('backorder_items') or []
 
         full_notes = self.notes or ''
-        full_notes += f'\n\n=== AUTORIZACIÓN DE PRECIO ===\n'
-        full_notes += f'Autorización: {self.name}\n'
-        full_notes += f'Autorizado por: {self.authorizer_id.name}\n'
-        full_notes += f'Fecha: {self.authorization_date}\n'
 
         result = self.env['stock.quant'].with_context(
             skip_authorization_check=True,

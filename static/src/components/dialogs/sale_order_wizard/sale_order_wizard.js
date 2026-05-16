@@ -548,19 +548,6 @@ export class SaleOrderWizard extends Component {
             
             let finalNotes = this.state.notas || '';
             
-            if (this.state.selectedProjectName) {
-                finalNotes += `\n\n=== INFORMACIÓN DEL PROYECTO ===\n`;
-                finalNotes += `Proyecto: ${this.state.selectedProjectName}\n`;
-            }
-            
-            if (this.state.selectedArchitectName) {
-                finalNotes += `Arquitecto: ${this.state.selectedArchitectName}\n`;
-            }
-            
-            if (!this.state.applyTax) {
-                finalNotes += '\n\n⚠️ NOTA IMPORTANTE: El IVA se agregará posteriormente por cuestiones legales.';
-            }
-            
             const result = await this.orm.call("sale.order", "create_from_shopping_cart", [], {
                 partner_id: this.state.selectedPartnerId,
                 products: products,

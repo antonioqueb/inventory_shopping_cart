@@ -534,26 +534,6 @@ class StockQuant(models.Model):
         if product_prices and isinstance(product_prices, dict):
             normalized_prices = {str(k): float(v or 0.0) for k, v in product_prices.items()}
 
-            price_by_product = {}
-
-            if has_lots:
-                for quant_id in selected_lots:
-                    quant = self.browse(int(quant_id))
-                    if not quant.exists():
-                        continue
-
-                    pid = quant.product_id.id
-                    if str(pid) in normalized_prices and pid not in price_by_product:
-                        price_by_product[pid] = {
-                            'name': quant.product_id.display_name,
-                            'price': normalized_prices[str(pid)],
-                        }
-
-            if price_by_product:
-                full_notes += '\n\n=== PRECIOS LOTES EXISTENTES ({}) ===\n'.format(currency_code)
-                for data in price_by_product.values():
-                    full_notes += f'• {data["name"]}: {data["price"]:.2f} {currency_code}/m²\n'
-
         fecha_orden = datetime.now()
         fecha_expiracion = self.env['stock.lot.hold.order']._get_default_fecha_expiracion(fecha_orden)
 
