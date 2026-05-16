@@ -1,9 +1,14 @@
 # -*- coding: utf-8 -*-
 import math
+import logging
+from collections import defaultdict
 from datetime import datetime, timedelta
 
 from odoo import models, fields, api
 from odoo.exceptions import UserError
+
+
+_logger = logging.getLogger(__name__)
 
 
 class StockLotHoldOrder(models.Model):
@@ -455,6 +460,207 @@ class StockLotHoldOrder(models.Model):
             },
         }
 
+    # -------------------------------------------------------------------------
+    # Reserva → Orden de venta: sincronizar selección para stone_select
+    # -------------------------------------------------------------------------
+
+    def _stone_get_hold_lines_for_sale_sync(self):
+        self.ensure_one()
+
+        lines = self.env['stock.lot.hold.order.line']
+
+        if 'line_ids' in self._fields:
+            lines |= self.line_ids
+
+        if 'hold_line_ids' in self._fields:
+            lines |= self.hold_line_ids
+
+        return lines.exists()
+
+    def _stone_get_line_lots_for_sale_sync(self, line):
+        lots = self.env['stock.lot']
+
+        if 'lot_ids' in line._fields and line.lot_ids:
+            lots |= line.lot_ids
+
+        if 'lot_id' in line._fields and line.lot_id:
+            lots |= line.lot_id
+
+        if 'quant_id' in line._fields and line.quant_id and line.quant_id.lot_id:
+            lots |= line.quant_id.lot_id
+
+        return lots.exists()
+
+    def _stone_get_line_quants_for_sale_sync(self, line, lots):
+        Quant = self.env['stock.quant']
+        quants = Quant.browse()
+
+        if 'quant_id' in line._fields and line.quant_id:
+            quants |= line.quant_id
+
+        if line.product_id and lots:
+            domain = [
+                ('product_id', '=', line.product_id.id),
+                ('lot_id', 'in', lots.ids),
+                ('location_id.usage', '=', 'internal'),
+                ('quantity', '>', 0),
+            ]
+
+            # Primero busca quants que todavía estén ligados a esta reserva.
+            if 'x_hold_activo_id' in Quant._fields:
+                held_quants = Quant.search(
+                    domain + [('x_hold_activo_id', '=', self.id)],
+                    order='lot_id, id',
+                )
+                quants |= held_quants
+
+            # Fallback: si el método base libera el hold antes de terminar,
+            # recupera los quants por lote/producto.
+            all_quants = Quant.search(domain, order='lot_id, id')
+            quants |= all_quants
+
+        return quants.exists()
+
+    def _stone_prepare_sale_sync_payload_from_hold(self):
+        """
+        Captura lotes/quants ANTES de convertir la reserva.
+
+        Esto es necesario porque el método base de conversión puede liberar
+        el apartado. Si esperamos hasta después del super(), ya no siempre se
+        puede distinguir qué quants pertenecían a la reserva original.
+        """
+        self.ensure_one()
+
+        payload_by_product = defaultdict(lambda: {
+            'product_id': False,
+            'lot_ids': set(),
+            'quant_ids': set(),
+            'breakdown': {},
+        })
+
+        for line in self._stone_get_hold_lines_for_sale_sync():
+            if not line.product_id or line.product_id.type == 'service':
+                continue
+
+            lots = self._stone_get_line_lots_for_sale_sync(line)
+            if not lots:
+                continue
+
+            quants = self._stone_get_line_quants_for_sale_sync(line, lots)
+            product_id = line.product_id.id
+
+            data = payload_by_product[product_id]
+            data['product_id'] = product_id
+            data['lot_ids'].update(lots.ids)
+
+            if quants:
+                data['quant_ids'].update(quants.ids)
+                data['lot_ids'].update(quants.mapped('lot_id').ids)
+
+            # Para formatos/piezas, conservar cantidad seleccionada.
+            # stone_select soporta breakdown por lot_id y algunos flujos viejos por quant_id.
+            for lot in lots:
+                tipo = str(getattr(lot, 'x_tipo', '') or 'placa').lower()
+                if tipo not in ('formato', 'pieza'):
+                    continue
+
+                qty = 0.0
+
+                if len(lots) == 1 and 'cantidad_m2' in line._fields:
+                    qty = float(line.cantidad_m2 or 0.0)
+
+                if qty <= 0 and quants:
+                    lot_quants = quants.filtered(lambda q: q.lot_id.id == lot.id)
+                    qty = sum(lot_quants.mapped('quantity')) if lot_quants else 0.0
+
+                if qty > 0:
+                    data['breakdown'][str(lot.id)] = qty
+
+                    for quant in quants.filtered(lambda q: q.lot_id.id == lot.id):
+                        data['breakdown'][str(quant.id)] = qty
+
+        return {
+            product_id: {
+                'product_id': values['product_id'],
+                'lot_ids': list(values['lot_ids']),
+                'quant_ids': list(values['quant_ids']),
+                'breakdown': values['breakdown'],
+            }
+            for product_id, values in payload_by_product.items()
+            if values['lot_ids']
+        }
+
+    def _stone_resolve_sale_order_from_convert_result(self, result=None):
+        self.ensure_one()
+
+        sale_order = self.env['sale.order']
+
+        if 'sale_order_id' in self._fields and self.sale_order_id:
+            sale_order = self.sale_order_id
+
+        if not sale_order and isinstance(result, dict):
+            if result.get('res_model') == 'sale.order' and result.get('res_id'):
+                sale_order = self.env['sale.order'].browse(result['res_id'])
+
+        return sale_order.exists()
+
+    def _stone_apply_hold_payload_to_sale_order(self, sale_order, payload_by_product):
+        self.ensure_one()
+
+        if not sale_order or not payload_by_product:
+            return
+
+        for product_id, payload in payload_by_product.items():
+            sale_lines = sale_order.order_line.filtered(
+                lambda l:
+                    not l.display_type
+                    and l.product_id.id == product_id
+            )
+
+            if not sale_lines:
+                _logger.warning(
+                    "[HOLD→STONE] No se encontró línea SO para producto_id=%s en %s",
+                    product_id,
+                    sale_order.name,
+                )
+                continue
+
+            target_line = sale_lines.filtered(
+                lambda l:
+                    ('lot_ids' not in l._fields or not l.lot_ids)
+                    and ('x_selected_lots' not in l._fields or not l.x_selected_lots)
+            )[:1] or sale_lines[:1]
+
+            vals = {}
+
+            # x_selected_lots puede escribirse aun si la SO queda como cotización.
+            # Después, action_confirm de sale.order lo convierte a lot_ids.
+            if 'x_selected_lots' in target_line._fields and payload.get('quant_ids'):
+                vals['x_selected_lots'] = [(6, 0, payload['quant_ids'])]
+
+            # lot_ids solo se escribe si la SO ya está confirmada.
+            # sale_stone_selection bloquea selección de lotes en cotización.
+            if sale_order.state in ('sale', 'done'):
+                if 'lot_ids' in target_line._fields and payload.get('lot_ids'):
+                    vals['lot_ids'] = [(6, 0, payload['lot_ids'])]
+
+                if 'x_lot_breakdown_json' in target_line._fields and payload.get('breakdown'):
+                    vals['x_lot_breakdown_json'] = payload['breakdown']
+
+            if vals:
+                target_line.sudo().write(vals)
+
+                _logger.info(
+                    "[HOLD→STONE] SO %s línea %s sincronizada: lots=%s quants=%s",
+                    sale_order.name,
+                    target_line.id,
+                    len(payload.get('lot_ids') or []),
+                    len(payload.get('quant_ids') or []),
+                )
+
+        if sale_order.state in ('sale', 'done') and hasattr(sale_order, '_sync_lot_ids_from_selected_lots'):
+            sale_order.sudo()._sync_lot_ids_from_selected_lots()
+
     def action_confirm(self):
         self._sync_manual_defaults_and_lines()
 
@@ -464,6 +670,41 @@ class StockLotHoldOrder(models.Model):
                 return action
 
         return super().action_confirm()
+
+    def action_convert_to_sale_order(self):
+        """
+        Corrige Reserva → SO para que stone_select muestre las placas reservadas.
+
+        Flujo:
+        1. Captura lotes/quants de la reserva antes del super().
+        2. Ejecuta la conversión original.
+        3. Localiza la SO creada.
+        4. Copia quants a x_selected_lots.
+        5. Si la SO ya quedó confirmada, también copia lotes a lot_ids.
+        """
+        payload_by_order = {
+            order.id: order._stone_prepare_sale_sync_payload_from_hold()
+            for order in self
+        }
+
+        result = super().action_convert_to_sale_order()
+
+        for order in self:
+            order.invalidate_recordset()
+
+            sale_order = order._stone_resolve_sale_order_from_convert_result(result)
+            payload = payload_by_order.get(order.id) or {}
+
+            if not sale_order:
+                _logger.warning(
+                    "[HOLD→STONE] Reserva %s convertida, pero no se pudo resolver sale_order_id.",
+                    order.name,
+                )
+                continue
+
+            order._stone_apply_hold_payload_to_sale_order(sale_order, payload)
+
+        return result
 
 
 class StockLotHoldOrderLine(models.Model):
