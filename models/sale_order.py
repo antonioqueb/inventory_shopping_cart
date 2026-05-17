@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 # models/sale_order.py
+
 import math
+import logging
+
 from odoo import models, fields, api
 from odoo.exceptions import UserError, ValidationError
-import logging
-import json
 
 _logger = logging.getLogger(__name__)
 
@@ -17,13 +18,21 @@ except ImportError:
 class SaleOrderLine(models.Model):
     _inherit = 'sale.order.line'
 
-    x_selected_lots = fields.Many2many('stock.quant', string='Lotes Seleccionados', copy=True)
-    x_lot_breakdown_json = fields.Json(string='Desglose de Lotes', copy=True)
+    x_selected_lots = fields.Many2many(
+        'stock.quant',
+        string='Lotes Seleccionados',
+        copy=True,
+    )
+
+    x_lot_breakdown_json = fields.Json(
+        string='Desglose de Lotes',
+        copy=True,
+    )
 
     x_price_selector = fields.Selection([
         ('high', 'Precio 1'),
         ('medium', 'Precio 2'),
-        ('custom', 'Precio Personalizado')
+        ('custom', 'Precio Personalizado'),
     ], string='Nivel de Precio', default='high',
        help="Seleccione el nivel de precio.")
 
@@ -51,14 +60,6 @@ class SaleOrderLine(models.Model):
 
     @api.depends_context('uid')
     def _compute_x_can_use_custom_price(self):
-        """
-        En órdenes de venta debe mostrarse Precio Personalizado.
-
-        La validación comercial ya se controla a nivel orden:
-        - Si el vendedor captura un precio debajo del nivel medio, x_has_low_prices bloquea enviar/confirmar/imprimir.
-        - El vendedor puede solicitar autorización.
-        - El autorizador puede continuar.
-        """
         for line in self:
             line.x_can_use_custom_price = True
 
@@ -138,18 +139,25 @@ class SaleOrderLine(models.Model):
 class SaleOrder(models.Model):
     _inherit = 'sale.order'
 
-    # ── OVERRIDE: Quitar required de direcciones ──
     partner_invoice_id = fields.Many2one(
-        'res.partner', required=False,
+        'res.partner',
+        required=False,
     )
 
     partner_shipping_id = fields.Many2one(
-        'res.partner', required=False,
+        'res.partner',
+        required=False,
     )
 
-    x_project_id = fields.Many2one('project.project', string='Proyecto')
+    x_project_id = fields.Many2one(
+        'project.project',
+        string='Proyecto',
+    )
 
-    x_architect_id = fields.Many2one('res.partner', string='Arquitecto')
+    x_architect_id = fields.Many2one(
+        'res.partner',
+        string='Arquitecto',
+    )
 
     x_price_authorization_id = fields.Many2one(
         'price.authorization',
@@ -175,27 +183,206 @@ class SaleOrder(models.Model):
         ('official', 'Diario Oficial (SAT)'),
     ], string='Fuente Tipo de Cambio', default='banorte', tracking=True)
 
-    # IMPORTANTE:
-    # Ya NO se guarda para que siempre lea el último banorte.last_rate actual.
     x_exchange_rate = fields.Float(
         string='Tipo de Cambio',
         digits=(12, 4),
         compute='_compute_exchange_rate',
     )
 
-    # Ya NO se guarda para que responda al vuelo al cambiar la lista de precios.
     x_is_usd = fields.Boolean(
         string='Es USD',
         compute='_compute_is_usd',
     )
 
+    # -------------------------------------------------------------------------
+    # GUARDIA CENTRAL CONTRA DOBLE RESERVA DE LOTES / QUANTS
+    # -------------------------------------------------------------------------
+
+    def _get_selected_quant_ids_from_products_payload(self, products):
+        quant_ids = []
+
+        for product in products or []:
+            for quant_id in product.get('selected_lots') or []:
+                try:
+                    quant_ids.append(int(quant_id))
+                except Exception:
+                    continue
+
+        return list(dict.fromkeys(quant_ids))
+
+    def _get_selected_quants_from_order(self):
+        quants = self.env['stock.quant'].sudo()
+
+        for order in self:
+            for line in order.order_line:
+                if line.display_type or not line.product_id:
+                    continue
+
+                if line.product_id.type not in ['product', 'consu']:
+                    continue
+
+                if line.x_selected_lots:
+                    quants |= line.x_selected_lots.sudo()
+
+        return quants.exists()
+
+    def _resolve_sale_order_from_pickings(self, pickings):
+        sale_order = self.env['sale.order'].sudo()
+
+        if not pickings:
+            return sale_order
+
+        if 'sale_id' in pickings._fields:
+            sale_order |= pickings.mapped('sale_id').sudo()
+
+        sale_order |= pickings.mapped('move_ids.sale_line_id.order_id').sudo()
+
+        return sale_order.exists()[:1]
+
+    def _get_native_reservation_blockers(self, quant, allowed_order=False, allowed_pickings=False):
+        """
+        Busca reservas nativas activas del mismo quant lógico.
+
+        No filtra por picking_type_code='outgoing' porque en flujos multi-step
+        el compromiso de venta puede vivir en un picking interno, por ejemplo:
+        SOM/Existencias -> SOM/Salida.
+        """
+        StockMoveLine = self.env['stock.move.line'].sudo()
+
+        if not quant or not quant.exists() or not quant.lot_id:
+            return StockMoveLine.browse()
+
+        domain = [
+            ('product_id', '=', quant.product_id.id),
+            ('lot_id', '=', quant.lot_id.id),
+            ('location_id', '=', quant.location_id.id),
+            ('state', 'in', ['assigned', 'partially_available']),
+            ('quantity', '>', 0),
+        ]
+
+        if quant.company_id:
+            domain.append(('company_id', '=', quant.company_id.id))
+
+        if quant.package_id:
+            domain.append(('package_id', '=', quant.package_id.id))
+        else:
+            domain.append(('package_id', '=', False))
+
+        if quant.owner_id:
+            domain.append(('owner_id', '=', quant.owner_id.id))
+        else:
+            domain.append(('owner_id', '=', False))
+
+        blockers = StockMoveLine.search(domain)
+
+        if allowed_pickings:
+            allowed_picking_ids = set(allowed_pickings.ids)
+            blockers = blockers.filtered(lambda ml: ml.picking_id.id not in allowed_picking_ids)
+
+        if allowed_order:
+            blockers = blockers.filtered(
+                lambda ml: (
+                    not ml.move_id
+                    or not ml.move_id.sale_line_id
+                    or ml.move_id.sale_line_id.order_id.id != allowed_order.id
+                )
+            )
+
+        return blockers
+
+    def _format_native_reservation_blockers(self, blockers):
+        docs = []
+
+        for ml in blockers:
+            picking_name = ml.picking_id.name or 'Sin picking'
+            origin = ml.picking_id.origin or ''
+            so = ml.move_id.sale_line_id.order_id if ml.move_id and ml.move_id.sale_line_id else False
+
+            if so:
+                docs.append(f"{picking_name} / {so.name}")
+            elif origin:
+                docs.append(f"{picking_name} / {origin}")
+            else:
+                docs.append(picking_name)
+
+        return ', '.join(sorted(set(docs)))
+
+    def _assert_quants_can_be_used(
+        self,
+        quants,
+        partner_id=False,
+        allowed_order=False,
+        allowed_pickings=False,
+    ):
+        """
+        Bloquea:
+        1. Holds activos de otro cliente.
+        2. Reservas nativas activas en otra SO/picking.
+        """
+        quants = quants.sudo().exists()
+
+        for quant in quants:
+            if not quant.lot_id:
+                continue
+
+            if quant.quantity <= 0:
+                raise UserError(
+                    f"El lote {quant.lot_id.name} no tiene cantidad física disponible."
+                )
+
+            if hasattr(quant, 'x_tiene_hold') and quant.x_tiene_hold:
+                hold = quant.x_hold_activo_id
+
+                if hold and (not partner_id or hold.partner_id.id != partner_id):
+                    raise UserError(
+                        f"El lote {quant.lot_id.name} ya está apartado para {hold.partner_id.name}.\n\n"
+                        f"No se puede usar en esta operación."
+                    )
+
+            blockers = self._get_native_reservation_blockers(
+                quant,
+                allowed_order=allowed_order,
+                allowed_pickings=allowed_pickings,
+            )
+
+            if blockers:
+                docs_txt = self._format_native_reservation_blockers(blockers)
+
+                raise UserError(
+                    f"El lote {quant.lot_id.name} ya está reservado/asignado en otra operación activa.\n\n"
+                    f"Producto: {quant.product_id.display_name}\n"
+                    f"Ubicación: {quant.location_id.complete_name}\n"
+                    f"Cantidad física: {quant.quantity:.4f}\n"
+                    f"Reservado nativo actual: {quant.reserved_quantity:.4f}\n"
+                    f"Documento activo: {docs_txt}\n\n"
+                    f"No se puede usar el mismo lote en otra orden de venta, entrega o apartado."
+                )
+
+        return True
+
+    def _assert_product_payload_quants_can_be_used(self, products, partner_id=False):
+        quant_ids = self._get_selected_quant_ids_from_products_payload(products)
+
+        if not quant_ids:
+            return True
+
+        quants = self.env['stock.quant'].sudo().browse(quant_ids).exists()
+        return self._assert_quants_can_be_used(
+            quants,
+            partner_id=partner_id,
+        )
+
+    # -------------------------------------------------------------------------
+    # CAMPOS COMPUTADOS / PRECIOS
+    # -------------------------------------------------------------------------
+
     @api.depends('pricelist_id', 'pricelist_id.currency_id')
     def _compute_is_usd(self):
         for order in self:
             order.x_is_usd = bool(
-                order.pricelist_id and
-                order.pricelist_id.currency_id and
-                order.pricelist_id.currency_id.name == 'USD'
+                order.pricelist_id
+                and order.pricelist_id.currency_id
+                and order.pricelist_id.currency_id.name == 'USD'
             )
 
     @api.depends('x_exchange_rate_source', 'pricelist_id', 'pricelist_id.currency_id')
@@ -221,11 +408,6 @@ class SaleOrder(models.Model):
         return self._get_official_rate()
 
     def _get_official_rate(self):
-        """
-        Retorna cuántos MXN equivale 1 USD (tipo de cambio MXN/USD).
-        Robusto ante configuración invertida de res.currency.rate:
-        lee directamente las tasas y si el resultado sale < 1, lo invierte.
-        """
         usd = self.env.ref('base.USD', raise_if_not_found=False)
         mxn = self.env.ref('base.MXN', raise_if_not_found=False)
 
@@ -259,7 +441,6 @@ class SaleOrder(models.Model):
         else:
             rate = 0.0
 
-        # Defensa: si la tasa sale < 1, está invertida.
         if 0 < rate < 1:
             rate = 1.0 / rate
 
@@ -343,8 +524,7 @@ class SaleOrder(models.Model):
 
     def _sync_lot_ids_from_selected_lots(self):
         """
-        Sincroniza lot_ids (Many2many stock.lot) desde x_selected_lots (Many2many stock.quant)
-        para que sale_stone_selection detecte los lotes correctamente al confirmar.
+        Sincroniza lot_ids desde x_selected_lots antes de confirmar.
         """
         for order in self:
             for line in order.order_line:
@@ -360,22 +540,29 @@ class SaleOrder(models.Model):
 
     def action_confirm(self):
         """
-        Override de action_confirm para:
-        1. Validar precios bajos (bloqueo si no autorizado).
-        2. Sincronizar lot_ids desde x_selected_lots para sale_stone_selection.
-        3. Delegar backup/copia/renombrado a sale_stone_selection.
-        4. Asignar lotes específicos del carrito después de confirmar.
+        Override:
+        1. Valida precios bajos.
+        2. Bloquea quants/lotes ya reservados nativamente en otra SO/picking.
+        3. Sincroniza lot_ids.
+        4. Confirma.
+        5. Asigna lotes específicos.
         """
         if not self.env.context.get('skip_auth_check'):
             self._check_seller_low_price_block("confirmar")
 
-        # CRÍTICO: Poblar lot_ids desde x_selected_lots ANTES de que
-        # sale_stone_selection revise line.lot_ids para decidir el flujo.
+        for order in self:
+            selected_quants = order._get_selected_quants_from_order()
+            if selected_quants:
+                order._assert_quants_can_be_used(
+                    selected_quants,
+                    partner_id=order.partner_id.id,
+                    allowed_order=order,
+                )
+
         self._sync_lot_ids_from_selected_lots()
 
         res = super().action_confirm()
 
-        # Asignar lotes específicos del carrito (x_selected_lots) a los pickings.
         for order in self:
             for line in order.order_line:
                 if line.display_type or not line.product_id or line.product_id.type not in ['product', 'consu']:
@@ -396,7 +583,7 @@ class SaleOrder(models.Model):
                                 for k, v in line.x_lot_breakdown_json.items()
                             }
                         except Exception as e:
-                            _logger.warning(f"Error parseando breakdown: {e}")
+                            _logger.warning("Error parseando breakdown: %s", e)
 
                     order._assign_specific_lots(
                         pickings,
@@ -533,6 +720,12 @@ class SaleOrder(models.Model):
         grouped_items = {}
 
         for item in cart_items:
+            self._assert_quants_can_be_used(
+                item.quant_id,
+                partner_id=self.partner_id.id,
+                allowed_order=self,
+            )
+
             if any(
                 line.x_selected_lots and item.quant_id.id in line.x_selected_lots.ids
                 for line in self.order_line
@@ -606,7 +799,6 @@ class SaleOrder(models.Model):
 
     @staticmethod
     def _resolve_partner_addresses(env, partner_id):
-        """Resuelve las direcciones de facturación y entrega del partner."""
         partner = env['res.partner'].browse(partner_id)
         addr = partner.address_get(['delivery', 'invoice'])
         return addr.get('invoice', partner_id), addr.get('delivery', partner_id)
@@ -653,6 +845,11 @@ class SaleOrder(models.Model):
                         'needs_authorization': True,
                         'message': 'Se detectaron precios por debajo del nivel medio. Se requiere autorización.',
                     }
+
+            self._assert_product_payload_quants_can_be_used(
+                products,
+                partner_id=partner_id,
+            )
 
             company_id = self.env.company.id
             invoice_id, shipping_id = self._resolve_partner_addresses(self.env, partner_id)
@@ -708,7 +905,6 @@ class SaleOrder(models.Model):
                     'x_price_selector': 'custom',
                 })
 
-            # Sincronizar lot_ids desde x_selected_lots ANTES de confirmar.
             sale_order._sync_lot_ids_from_selected_lots()
 
             sale_order.invalidate_recordset()
@@ -721,21 +917,28 @@ class SaleOrder(models.Model):
             }
 
         except Exception as e:
-            _logger.error(f"Error en create_from_shopping_cart: {str(e)}", exc_info=True)
+            _logger.error("Error en create_from_shopping_cart: %s", str(e), exc_info=True)
             raise UserError(f"Error al procesar la orden: {str(e)}")
 
     def _assign_specific_lots(self, pickings, product, selected_quants, breakdown=None):
         """
-        Asigna lotes específicos a los move lines del picking.
+        Asigna lotes específicos a move lines del picking.
 
-        1. Usa quant.location_id como ubicación real.
-        2. Para Formato/Pieza usa cantidad parcial del breakdown.
-        3. Para Placa usa lote completo.
+        Bloquea cualquier quant que ya esté reservado en otra operación activa.
         """
-        sale_order = pickings.mapped('sale_id')
-        cart_owner_id = sale_order.user_id.id if sale_order else self.env.user.id
+        sale_order = self._resolve_sale_order_from_pickings(pickings)
+        cart_owner_id = sale_order.user_id.id if sale_order and sale_order.user_id else self.env.user.id
 
-        # Recuperar breakdown desde la sale order line si no fue pasado.
+        selected_quants = selected_quants.sudo().exists()
+
+        if selected_quants:
+            self._assert_quants_can_be_used(
+                selected_quants,
+                partner_id=sale_order.partner_id.id if sale_order and sale_order.partner_id else False,
+                allowed_order=sale_order,
+                allowed_pickings=pickings,
+            )
+
         if not breakdown:
             sample_move = pickings.mapped('move_ids').filtered(
                 lambda m: m.product_id.id == product.id
@@ -755,7 +958,6 @@ class SaleOrder(models.Model):
                 continue
 
             for move in picking.move_ids.filtered(lambda m: m.product_id.id == product.id):
-                # Limpiar move lines auto-generados por Odoo.
                 try:
                     if move.move_line_ids:
                         move.move_line_ids.unlink()
@@ -768,15 +970,12 @@ class SaleOrder(models.Model):
                     if quant.product_id.id != product.id or remaining <= 0:
                         continue
 
-                    # ── Detectar tipo del lote ──
                     tipo = 'placa'
 
                     if quant.lot_id and hasattr(quant.lot_id, 'x_tipo') and quant.lot_id.x_tipo:
                         tipo = str(quant.lot_id.x_tipo).lower()
 
-                    # ── Determinar cantidad a reservar ──
                     if 'formato' in tipo or 'pieza' in tipo:
-                        # FORMATO/PIEZA: usar cantidad parcial del breakdown.
                         if breakdown and quant.id in breakdown:
                             qty = breakdown[quant.id]
                         else:
@@ -786,7 +985,6 @@ class SaleOrder(models.Model):
                             ], limit=1)
                             qty = cart_item.quantity if cart_item else quant.quantity
                     else:
-                        # PLACA: lote completo siempre.
                         qty = quant.quantity
 
                     reserve = min(qty, remaining)
@@ -794,7 +992,6 @@ class SaleOrder(models.Model):
                     if reserve <= 0.001:
                         continue
 
-                    # Usar ubicación real del quant.
                     source_location_id = quant.location_id.id
 
                     try:
