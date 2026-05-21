@@ -36,14 +36,15 @@
             <td class="col-checkbox text-center">
                 <div class="d-flex align-items-center justify-content-center gap-2" t-on-click.stop="">
                     
-                    <!-- Checkbox: deshabilitado si tiene hold o está en orden de venta -->
+                    <!-- Checkbox: deshabilitado si tiene hold o está en orden de venta,
+                         SALVO que el usuario tenga permiso de inventario puro (canSelectBlocked) -->
                     <input 
                         type="checkbox"
                         class="form-check-input cart-checkbox"
                         t-att-checked="props.isInCart ? (props.isInCart(detail.id) ? 'checked' : undefined) : undefined"
-                        t-att-disabled="detail.tiene_hold or detail.en_orden_venta"
+                        t-att-disabled="(detail.tiene_hold or detail.en_orden_venta) and !(props.cart and props.cart.canSelectBlocked)"
                         t-on-click.stop="() => props.toggleCartSelection ? props.toggleCartSelection(detail) : null"
-                        t-att-title="detail.tiene_hold ? 'Lote con apartado activo' : (detail.en_orden_venta ? 'Lote en orden de venta confirmada' : '')"
+                        t-att-title="(props.cart and props.cart.canSelectBlocked and (detail.tiene_hold or detail.en_orden_venta)) ? (detail.tiene_hold ? 'Lote apartado — disponible solo para movimiento/etiquetas' : 'Lote en orden de venta — disponible solo para movimiento/etiquetas') : (detail.tiene_hold ? 'Lote con apartado activo' : (detail.en_orden_venta ? 'Lote en orden de venta confirmada' : ''))"
                     />
 
                     <!-- Input adicional para Formato y Pieza (permite parcialidades), NO para Placa -->

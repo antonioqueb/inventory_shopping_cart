@@ -26,7 +26,8 @@ patch(InventoryVisualController.prototype, {
             typeLabel: 'Placas', // Default
             productGroups: {},
             hasSalesPermissions: false,
-            hasInventoryPermissions: false
+            hasInventoryPermissions: false,
+            canSelectBlocked: false
         });
         
         this.isInCart = this.isInCart.bind(this);
@@ -50,6 +51,7 @@ patch(InventoryVisualController.prototype, {
             console.error('[CART] Error verificando permisos:', error);
             this.cart.hasSalesPermissions = false;
         }
+        this._updateBlockedSelectionPolicy();
     },
     
     async loadInventoryPermissions() {
@@ -60,6 +62,16 @@ patch(InventoryVisualController.prototype, {
             console.error('[CART] Error verificando permisos de inventario:', error);
             this.cart.hasInventoryPermissions = false;
         }
+        this._updateBlockedSelectionPolicy();
+    },
+
+    /**
+     * Define quién puede seleccionar placas ya comprometidas (hold u orden de venta).
+     * Solo el rol de inventario PURO: puede mover/imprimir pero NO apartar ni vender.
+     */
+    _updateBlockedSelectionPolicy() {
+        this.cart.canSelectBlocked =
+            this.cart.hasInventoryPermissions && !this.cart.hasSalesPermissions;
     },
     
     async loadCartFromDB() {
@@ -127,22 +139,36 @@ patch(InventoryVisualController.prototype, {
     },
 
     /**
+     * Verifica si un lote es seleccionable considerando el rol del usuario.
+     * El rol de inventario puro puede seleccionar incluso lotes comprometidos
+     * (para traslado o impresión de etiquetas).
+     */
+    _isLotSelectable(detail) {
+        if (this.cart.canSelectBlocked) {
+            return true;
+        }
+        return !this._isLotBlocked(detail);
+    },
+
+    /**
      * Lógica al hacer click en el Checkbox.
-     * - Bloquea lotes con hold o en orden de venta.
+     * - Bloquea lotes con hold o en orden de venta SOLO para roles que pueden apartar/vender.
      * - Si está marcado: Lo quita.
      * - Si está desmarcado: Lo agrega.
      *   -> Si hay valor en input manual: Usa ese valor.
      *   -> Si input está vacío: Usa TODO el lote.
      */
     async toggleCartSelection(detail) {
-        // === BLOQUEO: No permitir seleccionar lotes con hold o en orden de venta ===
-        if (detail.tiene_hold) {
-            this.notification.add("Este lote tiene un apartado activo y no puede seleccionarse", { type: "warning" });
-            return;
-        }
-        if (detail.en_orden_venta) {
-            this.notification.add("Este lote está asignado a una orden de venta confirmada", { type: "warning" });
-            return;
+        // === BLOQUEO: solo aplica a roles que pueden apartar o vender ===
+        if (!this.cart.canSelectBlocked) {
+            if (detail.tiene_hold) {
+                this.notification.add("Este lote tiene un apartado activo y no puede seleccionarse", { type: "warning" });
+                return;
+            }
+            if (detail.en_orden_venta) {
+                this.notification.add("Este lote está asignado a una orden de venta confirmada", { type: "warning" });
+                return;
+            }
         }
         // === FIN BLOQUEO ===
 
@@ -246,8 +272,8 @@ patch(InventoryVisualController.prototype, {
         if (!this.state.activeProductId) return;
         const details = this.getProductDetails(this.state.activeProductId);
         for (const detail of details) {
-            // Solo seleccionar lotes que NO están bloqueados ni ya en carrito
-            if (!this.isInCart(detail.id) && !this._isLotBlocked(detail)) {
+            // Solo seleccionar lotes seleccionables (según rol) y que NO estén ya en carrito
+            if (!this.isInCart(detail.id) && this._isLotSelectable(detail)) {
                 await this.toggleCartSelection(detail);
             }
         }
@@ -281,8 +307,8 @@ patch(InventoryVisualController.prototype, {
         if (!this.state.activeProductId) return false;
         const details = this.getProductDetails(this.state.activeProductId);
         if (details.length === 0) return false;
-        // Solo considerar lotes seleccionables (no bloqueados)
-        const selectableDetails = details.filter(d => !this._isLotBlocked(d));
+        // Solo considerar lotes seleccionables según el rol del usuario
+        const selectableDetails = details.filter(d => this._isLotSelectable(d));
         if (selectableDetails.length === 0) return false;
         return selectableDetails.every(detail => this.isInCart(detail.id));
     },
