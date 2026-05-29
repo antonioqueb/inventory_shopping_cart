@@ -71,10 +71,9 @@ patch(InventoryVisualController.prototype, {
         this.dialog.add(SaleOrderWizard, {
             productGroups: this.cart.productGroups,
             onSuccess: async () => {
+                // Solo limpiar el carrito. NO recargar la página, porque el wizard
+                // abrirá la orden de venta creada con doAction (igual que el apartado).
                 await this.clearCart();
-                // En venta no es estrictamente necesario recargar si se redirige a la orden,
-                // pero si te quedas en el inventario, es mejor recargar.
-                window.location.reload();
             }
         });
     },
@@ -94,9 +93,8 @@ patch(InventoryVisualController.prototype, {
             selectedLots: this.cart.items.map(item => item.id),
             productGroups: this.cart.productGroups,
             onSuccess: async () => {
-                // CORRECCIÓN: Igual que en HoldWizard
+                // El wizard abre el traslado con doAction, no recargamos aquí.
                 await this.clearCart();
-                window.location.reload();
             }
         });
     },
