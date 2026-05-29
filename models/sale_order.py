@@ -538,6 +538,104 @@ class SaleOrder(models.Model):
                         )
                         line.lot_ids = [(6, 0, lot_ids.ids)]
 
+    def _sync_stone_selection_after_confirm(self):
+        """
+        Tras confirmar una venta originada en el carrito, copia la selección
+        real de placas hacia lot_ids / x_lot_breakdown_json de la línea de
+        venta, para que el widget de selección de placas (sale_stone_selection)
+        muestre las mismas placas que ya quedaron asignadas en la entrega.
+
+        Motivo:
+        El carrito llena x_selected_lots en borrador, pero sale_stone_selection
+        bloquea/limpia la escritura de lot_ids mientras la orden es cotización.
+        Por eso, una vez confirmada (estado sale), reconstruimos la selección
+        del widget directamente desde los move lines ya asignados.
+
+        - Lee las cantidades desde los move lines asignados por
+          _assign_specific_lots, respetando placas completas y cantidades
+          parciales de formato/pieza.
+        - Evita doble conteo en entregas multi-paso tomando la mayor cantidad
+          registrada en un solo picking por cada lote.
+        - No reconstruye los pickings (skip_stone_sync_picking).
+        """
+        SaleOrderLine = self.env['sale.order.line']
+        if 'lot_ids' not in SaleOrderLine._fields:
+            return
+
+        StockMoveLine = self.env['stock.move.line']
+        qty_field = 'quantity' if 'quantity' in StockMoveLine._fields else 'qty_done'
+
+        for order in self:
+            if order.state not in ('sale', 'done'):
+                continue
+
+            for line in order.order_line:
+                if line.display_type or not line.product_id:
+                    continue
+
+                if line.product_id.type not in ('product', 'consu'):
+                    continue
+
+                if not line.x_selected_lots:
+                    continue
+
+                move_lines = line.move_ids.filtered(
+                    lambda m: m.state != 'cancel'
+                ).mapped('move_line_ids').filtered(lambda ml: ml.lot_id)
+
+                # Agrupar por (lote, picking) para poder deduplicar multi-paso.
+                qty_by_lot_picking = {}
+                for ml in move_lines:
+                    key = (ml.lot_id.id, ml.picking_id.id if ml.picking_id else 0)
+                    qty_by_lot_picking[key] = qty_by_lot_picking.get(key, 0.0) + float(
+                        getattr(ml, qty_field, 0.0) or 0.0
+                    )
+
+                # Por lote, tomar la mayor cantidad de un solo picking.
+                # En entregas multi-paso cada paso repite la misma cantidad,
+                # por lo que el máximo equivale a la cantidad real seleccionada.
+                qty_by_lot = {}
+                for (lot_id, _pick_id), qty in qty_by_lot_picking.items():
+                    if qty > qty_by_lot.get(lot_id, 0.0):
+                        qty_by_lot[lot_id] = qty
+
+                # Fallback: si todavía no hay move lines, usar x_selected_lots.
+                if not qty_by_lot:
+                    for quant in line.x_selected_lots:
+                        if quant.lot_id:
+                            qty_by_lot[quant.lot_id.id] = qty_by_lot.get(
+                                quant.lot_id.id, 0.0
+                            ) + (quant.quantity or 0.0)
+
+                lot_ids = list(qty_by_lot.keys())
+                if not lot_ids:
+                    continue
+
+                # Breakdown re-keado por lot_id solo para formato/pieza,
+                # que es lo que lee el widget de selección de placas.
+                lot_breakdown = {}
+                for lot in self.env['stock.lot'].browse(lot_ids):
+                    tipo = str(getattr(lot, 'x_tipo', '') or 'placa').lower()
+                    if tipo in ('formato', 'pieza'):
+                        lot_breakdown[str(lot.id)] = qty_by_lot.get(lot.id, 0.0)
+
+                vals = {}
+                if set(line.lot_ids.ids) != set(lot_ids):
+                    vals['lot_ids'] = [(6, 0, lot_ids)]
+                if lot_breakdown:
+                    vals['x_lot_breakdown_json'] = lot_breakdown
+
+                if vals:
+                    _logger.info(
+                        "[CART→STONE] Sincronizando selección post-confirmación en línea %s: %s lotes",
+                        line.id,
+                        len(lot_ids),
+                    )
+                    line.with_context(
+                        skip_stone_sync_picking=True,
+                        skip_stone_sync_so=True,
+                    ).write(vals)
+
     def action_confirm(self):
         """
         Override:
@@ -546,6 +644,7 @@ class SaleOrder(models.Model):
         3. Sincroniza lot_ids.
         4. Confirma.
         5. Asigna lotes específicos.
+        6. Sincroniza la selección de placas hacia la orden de venta.
         """
         if not self.env.context.get('skip_auth_check'):
             self._check_seller_low_price_block("confirmar")
@@ -591,6 +690,10 @@ class SaleOrder(models.Model):
                         line.x_selected_lots,
                         breakdown=breakdown_int,
                     )
+
+        # Copiar la selección real a lot_ids/breakdown para que el widget
+        # de selección de placas de la orden de venta muestre las placas.
+        self._sync_stone_selection_after_confirm()
 
         return res
 
