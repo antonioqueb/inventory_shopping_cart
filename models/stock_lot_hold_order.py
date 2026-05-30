@@ -697,6 +697,48 @@ class StockLotHoldOrder(models.Model):
         if sale_order.state in ('sale', 'done') and hasattr(sale_order, '_sync_lot_ids_from_selected_lots'):
             sale_order.sudo()._sync_lot_ids_from_selected_lots()
 
+    @staticmethod
+    def _hold_line_is_backorder(line):
+        """
+        Material por pedir: producto físico, sin lote/quant, pero con cantidad
+        capturada. No reserva stock, así que no debe pasar por la validación
+        de placas del modelo base.
+        """
+        if not line.product_id or line.product_id.type == 'service':
+            return False
+
+        if line.lot_ids or line.lot_id or line.quant_id:
+            return False
+
+        return (line.cantidad_m2 or 0.0) > 0
+
+    @api.model
+    def _snapshot_hold_line_vals(self, line):
+        """
+        Copia genérica de todos los campos almacenables y escribibles de la
+        línea (sin conocer el esquema del modelo base), para poder recrearla
+        tras la confirmación.
+        """
+        ignore = ('id', 'create_uid', 'create_date', 'write_uid', 'write_date')
+        vals = {}
+
+        for name, field in line._fields.items():
+            if name in ignore:
+                continue
+            if not field.store or field.compute or field.related:
+                continue
+
+            value = line[name]
+
+            if field.type == 'many2one':
+                vals[name] = value.id or False
+            elif field.type in ('one2many', 'many2many'):
+                vals[name] = [(6, 0, value.ids)]
+            else:
+                vals[name] = value
+
+        return vals
+
     def action_confirm(self):
         self._sync_manual_defaults_and_lines()
         self._assert_material_lines_have_placas()
@@ -706,7 +748,44 @@ class StockLotHoldOrder(models.Model):
             if action:
                 return action
 
-        return super().action_confirm()
+        HoldLine = self.env['stock.lot.hold.order.line']
+        detached_vals = {}
+
+        # 1. Sacar líneas backorder para que el base no las valide ni reserve.
+        for order in self:
+            backorder_lines = order.line_ids.filtered(self._hold_line_is_backorder)
+            if not backorder_lines:
+                continue
+
+            if len(backorder_lines) == len(order.line_ids):
+                # Apartado 100% por pedir: no hay nada físico que reservar.
+                # No se desprende para que el base no confirme un apartado vacío.
+                continue
+
+            detached_vals[order.id] = [
+                self._snapshot_hold_line_vals(line) for line in backorder_lines
+            ]
+            backorder_lines.with_context(skip_hold_order_sync=True).unlink()
+
+        # 2. Confirmar (el base solo ve líneas físicas con placas).
+        res = super().action_confirm()
+
+        # 3. Reinsertar las líneas backorder en el apartado ya confirmado.
+        for order in self:
+            vals_list = detached_vals.get(order.id)
+            if not vals_list:
+                continue
+
+            for vals in vals_list:
+                vals['order_id'] = order.id
+
+            HoldLine.with_context(
+                skip_hold_order_sync=True,
+                skip_hold_line_quantity_sync=True,
+                skip_hold_line_price_sync=True,
+            ).create(vals_list)
+
+        return res
 
     def action_convert_to_sale_order(self):
         """
