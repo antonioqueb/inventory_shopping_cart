@@ -300,11 +300,4 @@
         <field name="context">{'default_currency_id': ref('base.USD'), 'default_x_hold_business_days': 5}</field>
     </record>
 
-    <menuitem id="menu_stock_lot_hold_order_manual_pricing"
-              name="Apartados / Reservaciones"
-              parent="sale.sale_menu_root"
-              action="action_stock_lot_hold_order_manual_pricing"
-              groups="inventory_shopping_cart.group_seller,inventory_shopping_cart.group_price_authorizer"
-              sequence="36"/>
-
 </odoo>
