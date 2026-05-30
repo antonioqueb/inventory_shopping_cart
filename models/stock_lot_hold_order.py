@@ -239,6 +239,42 @@ class StockLotHoldOrder(models.Model):
             order.line_ids._sync_quantity_from_lots()
             order.line_ids._sync_price_from_selector()
 
+    def _assert_material_lines_have_placas(self):
+        """
+        Bloquea confirmación si una línea de material no tiene placas.
+        Exenta servicios y líneas backorder (sin lote pero con cantidad y precio
+        capturados manualmente como material por pedido).
+        """
+        for order in self:
+            empty = []
+
+            for line in order.line_ids:
+                if not line.product_id or line.product_id.type == 'service':
+                    continue
+
+                has_lots = bool(line.lot_ids or line.lot_id or line.quant_id)
+                if has_lots:
+                    continue
+
+                # Backorder legítimo: sin lote/quant, pero con cantidad capturada.
+                is_backorder = (
+                    (line.cantidad_m2 or 0.0) > 0
+                    and (line.precio_unitario or 0.0) >= 0
+                    and not line.quant_id
+                    and not line.lot_id
+                )
+
+                if not is_backorder:
+                    empty.append(line.product_id.display_name)
+
+            if empty:
+                raise UserError(
+                    "Las siguientes líneas no tienen placas seleccionadas y no son "
+                    "material por pedido:\n• "
+                    + "\n• ".join(empty)
+                    + "\n\nAsigna placas con el selector o elimina la línea antes de confirmar."
+                )
+
     def _get_manual_price_violations(self):
         """
         Devuelve líneas de apartado manual que requieren autorización.
@@ -663,6 +699,7 @@ class StockLotHoldOrder(models.Model):
 
     def action_confirm(self):
         self._sync_manual_defaults_and_lines()
+        self._assert_material_lines_have_placas()
 
         for order in self:
             action = order._request_manual_hold_authorization_if_needed()
