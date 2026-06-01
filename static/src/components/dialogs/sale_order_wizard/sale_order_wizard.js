@@ -74,8 +74,9 @@ export class SaleOrderWizard extends Component {
 
     async checkAuthorizerStatus() {
         try {
-            const groups = await this.orm.call("res.users", "has_group", ["inventory_shopping_cart.group_price_authorizer"]);
-            this.state.isAuthorizer = groups;
+            const isAuth = await this.orm.call("res.users", "has_group", ["inventory_shopping_cart.group_price_authorizer"]);
+            const isMayorista = await this.orm.call("res.users", "has_group", ["inventory_shopping_cart.group_seller_mayorista"]);
+            this.state.isAuthorizer = isAuth || isMayorista;
         } catch (e) {
             this.state.isAuthorizer = false;
         }
@@ -452,21 +453,23 @@ export class SaleOrderWizard extends Component {
     // ========== NAVEGACIÓN ==========
     
     /**
-     * Detecta productos con precio bajo del medio para mostrar warning al autorizador.
+     * Detecta productos con precio por debajo del umbral autorizado por el rol
+     * del usuario actual. El backend marca la opción umbral con is_threshold=true.
      */
     _detectLowPriceProducts() {
         const lowProducts = [];
         for (const productId of this.productIds) {
             const price = this.state.productPrices[productId];
             const options = this.state.productPriceOptions[productId] || [];
-            // Buscar precio medio (level === 'medium')
-            const mediumOption = options.find(o => o.level === 'medium');
-            if (mediumOption && price < (mediumOption.value - 0.01)) {
+            const thresholdOption = options.find(o => o.is_threshold) ||
+                options.find(o => o.level === 'medium');
+            if (thresholdOption && price < (thresholdOption.value - 0.01)) {
                 const group = this.props.productGroups[productId];
                 lowProducts.push({
                     name: group ? group.name : `Producto ${productId}`,
                     price: price,
-                    medium: mediumOption.value
+                    medium: thresholdOption.value,
+                    threshold_label: thresholdOption.label,
                 });
             }
         }

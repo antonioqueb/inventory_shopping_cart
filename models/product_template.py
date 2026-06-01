@@ -203,9 +203,23 @@ class ProductTemplate(models.Model):
     )
 
     x_utilidad_minima = fields.Float(
-        string='% Utilidad Mínima',
+        string='% Utilidad Nivel 3',
         default=30.0,
-        help="Margen de utilidad para el Precio Mínimo (Nivel 3). Precio = Costo / (1 - %)."
+        help="Margen de utilidad para el Precio Nivel 3. Precio = Costo / (1 - %)."
+    )
+
+    x_utilidad_4 = fields.Float(
+        string='% Utilidad Nivel 4',
+        default=25.0,
+        help="Margen de utilidad para el Precio Nivel 4. Visible solo para vendedores mayoristas y autorizadores. "
+             "Precio = Costo / (1 - %)."
+    )
+
+    x_utilidad_5 = fields.Float(
+        string='% Utilidad Mínima (Nivel 5)',
+        default=20.0,
+        help="Margen de utilidad para el Precio Mínimo (Nivel 5). Visible solo para autorizadores. "
+             "Precio = Costo / (1 - %)."
     )
 
     # === CAMPOS DE PRECIOS CALCULADOS ===
@@ -213,10 +227,14 @@ class ProductTemplate(models.Model):
     x_price_usd_1 = fields.Float(string='Precio USD 1', digits='Product Price', default=0.0, company_dependent=True)
     x_price_usd_2 = fields.Float(string='Precio USD 2', digits='Product Price', default=0.0, company_dependent=True)
     x_price_usd_3 = fields.Float(string='Precio USD 3', digits='Product Price', default=0.0, company_dependent=True)
+    x_price_usd_4 = fields.Float(string='Precio USD 4', digits='Product Price', default=0.0, company_dependent=True)
+    x_price_usd_5 = fields.Float(string='Precio USD 5', digits='Product Price', default=0.0, company_dependent=True)
 
     x_price_mxn_1 = fields.Float(string='Precio MXN 1', digits='Product Price', default=0.0, company_dependent=True)
     x_price_mxn_2 = fields.Float(string='Precio MXN 2', digits='Product Price', default=0.0, company_dependent=True)
     x_price_mxn_3 = fields.Float(string='Precio MXN 3', digits='Product Price', default=0.0, company_dependent=True)
+    x_price_mxn_4 = fields.Float(string='Precio MXN 4', digits='Product Price', default=0.0, company_dependent=True)
+    x_price_mxn_5 = fields.Float(string='Precio MXN 5', digits='Product Price', default=0.0, company_dependent=True)
 
     x_name_sps = fields.Char(
         string='Nombre SPS',
@@ -560,6 +578,8 @@ class ProductTemplate(models.Model):
             mxn_1 = 0
             mxn_2 = 0
             mxn_3 = 0
+            mxn_4 = 0
+            mxn_5 = 0
 
             if record.x_pricing_mode == 'fixed' and record.x_fixed_price > 0:
                 base = record.x_fixed_price
@@ -570,18 +590,26 @@ class ProductTemplate(models.Model):
                 mxn_1 = _price_from_utility(base, record.x_utilidad)
                 mxn_2 = _price_from_utility(base, record.x_utilidad_media)
                 mxn_3 = _price_from_utility(base, record.x_utilidad_minima)
+                mxn_4 = _price_from_utility(base, record.x_utilidad_4)
+                mxn_5 = _price_from_utility(base, record.x_utilidad_5)
 
             usd_1 = math.ceil(mxn_1 / banorte_rate) if banorte_rate > 0 else 0
             usd_2 = math.ceil(mxn_2 / banorte_rate) if banorte_rate > 0 else 0
             usd_3 = math.ceil(mxn_3 / banorte_rate) if banorte_rate > 0 else 0
+            usd_4 = math.ceil(mxn_4 / banorte_rate) if banorte_rate > 0 else 0
+            usd_5 = math.ceil(mxn_5 / banorte_rate) if banorte_rate > 0 else 0
 
             record.sudo().write({
                 'x_price_mxn_1': mxn_1,
                 'x_price_mxn_2': mxn_2,
                 'x_price_mxn_3': mxn_3,
+                'x_price_mxn_4': mxn_4,
+                'x_price_mxn_5': mxn_5,
                 'x_price_usd_1': usd_1,
                 'x_price_usd_2': usd_2,
                 'x_price_usd_3': usd_3,
+                'x_price_usd_4': usd_4,
+                'x_price_usd_5': usd_5,
             })
 
     def write(self, vals):
@@ -600,6 +628,8 @@ class ProductTemplate(models.Model):
             'x_utilidad',
             'x_utilidad_media',
             'x_utilidad_minima',
+            'x_utilidad_4',
+            'x_utilidad_5',
             'x_pricing_mode',
             'x_fixed_price',
         ]
@@ -832,49 +862,97 @@ class ProductTemplate(models.Model):
     # ============================================================
 
     @api.model
+    def _get_user_price_role(self):
+        """
+        Identifica el rol comercial del usuario para la escalera de precios.
+
+        Retorna uno de: 'authorizer', 'mayorista', 'seller', 'none'.
+        """
+        user = self.env.user
+        if user.has_group('inventory_shopping_cart.group_price_authorizer'):
+            return 'authorizer'
+        if user.has_group('inventory_shopping_cart.group_seller_mayorista'):
+            return 'mayorista'
+        if user.has_group('inventory_shopping_cart.group_seller'):
+            return 'seller'
+        return 'none'
+
+    @api.model
+    def _get_user_visible_price_levels(self):
+        """
+        Devuelve la lista de niveles ('high', 'medium', 'minimum', 'level_4', 'level_5')
+        que el usuario actual puede ver en los selectores.
+        """
+        role = self._get_user_price_role()
+        if role in ('authorizer', 'mayorista'):
+            return ['high', 'medium', 'minimum', 'level_4', 'level_5']
+        return ['high', 'medium']
+
+    @api.model
+    def _get_user_threshold_level(self):
+        """
+        Devuelve el nivel ('high', 'medium', 'minimum', 'level_4', 'level_5') por
+        debajo del cual el usuario requiere solicitar autorización.
+
+        - Vendedor regular: medium (debajo del Precio 2 requiere autorización).
+        - Vendedor mayorista: level_4 (debajo del Precio 4 requiere autorización).
+        - Autorizador: level_5 (debajo del Precio 5 requiere autorización).
+        """
+        role = self._get_user_price_role()
+        if role == 'authorizer':
+            return 'level_5'
+        if role == 'mayorista':
+            return 'level_4'
+        return 'medium'
+
+    @api.model
+    def _get_price_level_value(self, tmpl, level, currency_code):
+        """Lee del template el valor del nivel pedido en la moneda solicitada."""
+        if not tmpl:
+            return 0.0
+
+        if currency_code == 'MXN':
+            mapping = {
+                'high': tmpl.x_price_mxn_1,
+                'medium': tmpl.x_price_mxn_2,
+                'minimum': tmpl.x_price_mxn_3,
+                'level_4': tmpl.x_price_mxn_4,
+                'level_5': tmpl.x_price_mxn_5,
+            }
+        else:
+            mapping = {
+                'high': tmpl.x_price_usd_1,
+                'medium': tmpl.x_price_usd_2,
+                'minimum': tmpl.x_price_usd_3,
+                'level_4': tmpl.x_price_usd_4,
+                'level_5': tmpl.x_price_usd_5,
+            }
+        return mapping.get(level, 0.0) or 0.0
+
+    @api.model
     def get_custom_prices(self, product_id, currency_code):
         product_variant = self.env['product.product'].browse(int(product_id))
         product = product_variant.product_tmpl_id if product_variant.exists() else self.browse(int(product_id))
+
+        visible_levels = self._get_user_visible_price_levels()
+        threshold_level = self._get_user_threshold_level()
+
+        labels = {
+            'high': 'Precio  (1)',
+            'medium': 'Precio  (2)',
+            'minimum': 'Precio  (3)',
+            'level_4': 'Precio  (4)',
+            'level_5': 'Precio  (5)',
+        }
+
         prices = []
-        is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
-
-        if currency_code == 'USD':
+        for level in visible_levels:
             prices.append({
-                'label': 'Precio  (1)',
-                'value': product.x_price_usd_1,
-                'level': 'high'
+                'label': labels.get(level, level),
+                'value': self._get_price_level_value(product, level, currency_code),
+                'level': level,
+                'is_threshold': level == threshold_level,
             })
-            prices.append({
-                'label': 'Precio  (2)',
-                'value': product.x_price_usd_2,
-                'level': 'medium'
-            })
-
-            if is_authorizer:
-                prices.append({
-                    'label': 'Precio  (3)',
-                    'value': product.x_price_usd_3,
-                    'level': 'minimum'
-                })
-
-        else:
-            prices.append({
-                'label': 'Precio  (1)',
-                'value': product.x_price_mxn_1,
-                'level': 'high'
-            })
-            prices.append({
-                'label': 'Precio  (2)',
-                'value': product.x_price_mxn_2,
-                'level': 'medium'
-            })
-
-            if is_authorizer:
-                prices.append({
-                    'label': 'Precio  (3)',
-                    'value': product.x_price_mxn_3,
-                    'level': 'minimum'
-                })
 
         return prices
 
@@ -899,22 +977,31 @@ class ProductTemplate(models.Model):
         """
         Valida si una operación requiere autorización de precio.
 
-        Regla corregida:
-        - Vendedor limitado: requiere autorización si el precio queda debajo del Precio 2.
-        - Autorizador/Administrador: puede usar Precio 3, pero si captura un precio por debajo
-          del Precio 3 también debe generar solicitud de autorización.
+        Regla por rol:
+        - Vendedor regular: autorización si el precio queda debajo del Precio 2.
+        - Vendedor mayorista: autorización si el precio queda debajo del Precio 4.
+        - Autorizador/Administrador: autorización si el precio queda debajo del Precio 5.
         - Usuarios sin rol comercial explícito no disparan autorización desde este helper.
         """
         needs_auth = []
-        is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
-        is_seller = self.env.user.has_group('inventory_shopping_cart.group_seller')
+        role = self._get_user_price_role()
+        is_authorizer = role == 'authorizer'
 
-        if not is_authorizer and not is_seller:
+        if role == 'none':
             return {
                 'needs_authorization': False,
                 'products': [],
                 'is_authorizer': is_authorizer,
+                'role': role,
             }
+
+        threshold_level = self._get_user_threshold_level()
+        threshold_label_map = {
+            'medium': 'Precio 2',
+            'minimum': 'Precio 3',
+            'level_4': 'Precio 4',
+            'level_5': 'Precio 5',
+        }
 
         for product_id_str, requested_price in (product_prices or {}).items():
             product_variant = self.env['product.product'].browse(int(product_id_str))
@@ -928,10 +1015,11 @@ class ProductTemplate(models.Model):
             except Exception:
                 requested_price = 0.0
 
-            medium = product.x_price_mxn_2 if currency_code == 'MXN' else product.x_price_usd_2
-            minimum = product.x_price_mxn_3 if currency_code == 'MXN' else product.x_price_usd_3
-
-            threshold = minimum if is_authorizer else medium
+            medium = self._get_price_level_value(product, 'medium', currency_code)
+            minimum = self._get_price_level_value(product, 'minimum', currency_code)
+            level_4 = self._get_price_level_value(product, 'level_4', currency_code)
+            level_5 = self._get_price_level_value(product, 'level_5', currency_code)
+            threshold = self._get_price_level_value(product, threshold_level, currency_code)
 
             if threshold > 0 and requested_price < (threshold - 0.01):
                 needs_auth.append({
@@ -940,14 +1028,17 @@ class ProductTemplate(models.Model):
                     'requested_price': requested_price,
                     'medium_price': medium,
                     'minimum_price': minimum,
+                    'level_4_price': level_4,
+                    'level_5_price': level_5,
                     'threshold_price': threshold,
-                    'threshold_label': 'Precio 3' if is_authorizer else 'Precio 2',
+                    'threshold_label': threshold_label_map.get(threshold_level, threshold_level),
                 })
 
         return {
             'needs_authorization': len(needs_auth) > 0,
             'products': needs_auth,
             'is_authorizer': is_authorizer,
+            'role': role,
         }
 
 

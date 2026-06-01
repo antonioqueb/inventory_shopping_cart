@@ -156,16 +156,29 @@
                                 <span class="text-muted">%</span>
                             </div>
 
-                            <label for="x_utilidad_minima" string="Utilidad Mínima (Nivel 3)"/>
+                            <label for="x_utilidad_minima" string="Utilidad Nivel 3"/>
                             <div class="o_row">
                                 <field name="x_utilidad_minima"/>
+                                <span class="text-muted">%</span>
+                            </div>
+
+                            <label for="x_utilidad_4" string="Utilidad Nivel 4"/>
+                            <div class="o_row">
+                                <field name="x_utilidad_4"/>
+                                <span class="text-muted">%</span>
+                            </div>
+
+                            <label for="x_utilidad_5" string="Utilidad Mínima (Nivel 5)"/>
+                            <div class="o_row">
+                                <field name="x_utilidad_5"/>
                                 <span class="text-muted">%</span>
                             </div>
 
                             <div class="alert alert-info mt-2" role="alert" colspan="2">
                                 <small>
                                     <strong>Modo Calculado:</strong> Precio = Costo / (1 - %Utilidad)<br/>
-                                    <strong>Modo Fijo:</strong> Nivel 1 = Precio Fijo. Niveles 2 y 3 = Precio Fijo × (1 - %Utilidad)
+                                    <strong>Modo Fijo:</strong> Nivel 1 = Precio Fijo. Niveles 2 a 5 = Precio Fijo × (1 - %Utilidad).<br/>
+                                    <strong>Visibilidad:</strong> Vendedor regular ve Nivel 1 y 2. Vendedor mayorista y Autorizador ven Niveles 1 a 5.
                                 </small>
                             </div>
                         </group>
@@ -183,8 +196,9 @@
 
                     <!-- ============================================================
                          ESCALERA DE PRECIOS
-                         - Autorizadores: Ven los 3 niveles
-                         - Vendedores: Solo ven Precio 1 y Precio 2
+                         - Vendedor regular: solo Precio 1 y Precio 2
+                         - Vendedor mayorista: Precios 1 a 5
+                         - Autorizador: Precios 1 a 5
                          ============================================================ -->
                     <group>
                         <group string="Escalera MXN">
@@ -199,8 +213,18 @@
                             <field name="x_price_mxn_3"
                                    readonly="1"
                                    force_save="1"
-                                   string="3. Precio Mínimo"
-                                   groups="inventory_shopping_cart.group_price_authorizer"/>
+                                   string="3. Precio Nivel 3"
+                                   groups="inventory_shopping_cart.group_seller_mayorista,inventory_shopping_cart.group_price_authorizer"/>
+                            <field name="x_price_mxn_4"
+                                   readonly="1"
+                                   force_save="1"
+                                   string="4. Precio Nivel 4"
+                                   groups="inventory_shopping_cart.group_seller_mayorista,inventory_shopping_cart.group_price_authorizer"/>
+                            <field name="x_price_mxn_5"
+                                   readonly="1"
+                                   force_save="1"
+                                   string="5. Precio Mínimo"
+                                   groups="inventory_shopping_cart.group_seller_mayorista,inventory_shopping_cart.group_price_authorizer"/>
                         </group>
 
                         <group string="Escalera USD">
@@ -215,8 +239,18 @@
                             <field name="x_price_usd_3"
                                    readonly="1"
                                    force_save="1"
-                                   string="3. Precio Mínimo"
-                                   groups="inventory_shopping_cart.group_price_authorizer"/>
+                                   string="3. Precio Nivel 3"
+                                   groups="inventory_shopping_cart.group_seller_mayorista,inventory_shopping_cart.group_price_authorizer"/>
+                            <field name="x_price_usd_4"
+                                   readonly="1"
+                                   force_save="1"
+                                   string="4. Precio Nivel 4"
+                                   groups="inventory_shopping_cart.group_seller_mayorista,inventory_shopping_cart.group_price_authorizer"/>
+                            <field name="x_price_usd_5"
+                                   readonly="1"
+                                   force_save="1"
+                                   string="5. Precio Mínimo"
+                                   groups="inventory_shopping_cart.group_seller_mayorista,inventory_shopping_cart.group_price_authorizer"/>
                         </group>
                     </group>
                 </page>

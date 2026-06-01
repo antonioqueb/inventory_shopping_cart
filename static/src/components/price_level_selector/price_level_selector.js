@@ -4,6 +4,8 @@ import { Component, useEffect, useRef } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 
+const MAYORISTA_LEVELS = new Set(["minimum", "level_4", "level_5"]);
+
 export class PriceLevelSelectorField extends Component {
     static template = "inventory_shopping_cart.PriceLevelSelectorField";
     static props = { ...standardFieldProps };
@@ -22,6 +24,8 @@ export class PriceLevelSelectorField extends Component {
                 this.props.record.data.x_price_1_value,
                 this.props.record.data.x_price_2_value,
                 this.props.record.data.x_price_3_value,
+                this.props.record.data.x_price_4_value,
+                this.props.record.data.x_price_5_value,
                 this.props.record.data.x_price_level_currency,
                 this.props.record.data.x_can_use_custom_price,
                 this.props.record.data.x_can_use_minimum_price,
@@ -46,7 +50,7 @@ export class PriceLevelSelectorField extends Component {
         return Boolean(this.props.record.data.x_can_use_custom_price);
     }
 
-    get canUseMinimumPrice() {
+    get canUseMayoristaPrices() {
         const explicitFlag = this.props.record.data.x_can_use_minimum_price;
 
         if (explicitFlag === undefined) {
@@ -69,10 +73,12 @@ export class PriceLevelSelectorField extends Component {
         const price1 = this.props.record.data.x_price_1_value || 0;
         const price2 = this.props.record.data.x_price_2_value || 0;
         const price3 = this.props.record.data.x_price_3_value || 0;
+        const price4 = this.props.record.data.x_price_4_value || 0;
+        const price5 = this.props.record.data.x_price_5_value || 0;
 
         return this.rawSelection
             .filter(([val]) => {
-                if (val === "minimum" && !this.canUseMinimumPrice) {
+                if (MAYORISTA_LEVELS.has(val) && !this.canUseMayoristaPrices) {
                     return false;
                 }
 
@@ -93,6 +99,14 @@ export class PriceLevelSelectorField extends Component {
 
                 if (val === "minimum") {
                     return [val, `${label} — ${this.formatPrice(price3)}`];
+                }
+
+                if (val === "level_4") {
+                    return [val, `${label} — ${this.formatPrice(price4)}`];
+                }
+
+                if (val === "level_5") {
+                    return [val, `${label} — ${this.formatPrice(price5)}`];
                 }
 
                 return [val, label];

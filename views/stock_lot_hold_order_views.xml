@@ -141,10 +141,15 @@
                     <div class="alert alert-info" role="status">
                         <strong>Regla comercial:</strong>
                         el apartado manual usa la escalera comercial del producto.
-                        Los vendedores ven <strong>Precio 1</strong>, <strong>Precio 2</strong> y pueden usar
-                        <strong>Precio Personalizado</strong>. Si el precio personalizado queda debajo de
-                        <strong>Precio 2</strong>, se genera solicitud de autorización.
-                        Los autorizadores pueden ver <strong>Precio 3</strong>.
+                        <br/>
+                        <strong>Vendedores regulares:</strong> ven <strong>Precio 1</strong> y <strong>Precio 2</strong>.
+                        Si capturan un precio por debajo del <strong>Precio 2</strong> se solicita autorización.
+                        <br/>
+                        <strong>Vendedores mayoristas:</strong> ven <strong>Precios 1 a 5</strong>. Solo se solicita
+                        autorización si el precio queda por debajo del <strong>Precio 4</strong>.
+                        <br/>
+                        <strong>Autorizadores:</strong> ven <strong>Precios 1 a 5</strong>. Solo se solicita
+                        autorización si el precio queda por debajo del <strong>Precio 5</strong>.
                     </div>
 
                     <notebook>
@@ -161,6 +166,8 @@
                                     <field name="x_price_1_value" column_invisible="1"/>
                                     <field name="x_price_2_value" column_invisible="1"/>
                                     <field name="x_price_3_value" column_invisible="1"/>
+                                    <field name="x_price_4_value" column_invisible="1"/>
+                                    <field name="x_price_5_value" column_invisible="1"/>
                                     <field name="x_price_level_currency" column_invisible="1"/>
                                     <field name="x_can_use_custom_price" column_invisible="1"/>
                                     <field name="x_can_use_minimum_price" column_invisible="1"/>
@@ -239,6 +246,8 @@
                                             <field name="x_price_1_value" invisible="1"/>
                                             <field name="x_price_2_value" invisible="1"/>
                                             <field name="x_price_3_value" invisible="1"/>
+                                            <field name="x_price_4_value" invisible="1"/>
+                                            <field name="x_price_5_value" invisible="1"/>
                                             <field name="x_price_level_currency" invisible="1"/>
                                             <field name="x_can_use_custom_price" invisible="1"/>
                                             <field name="x_can_use_minimum_price" invisible="1"/>

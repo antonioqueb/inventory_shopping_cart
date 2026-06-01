@@ -32,6 +32,9 @@ class SaleOrderLine(models.Model):
     x_price_selector = fields.Selection([
         ('high', 'Precio 1'),
         ('medium', 'Precio 2'),
+        ('minimum', 'Precio 3'),
+        ('level_4', 'Precio 4'),
+        ('level_5', 'Precio 5'),
         ('custom', 'Precio Personalizado'),
     ], string='Nivel de Precio', default='high',
        help="Seleccione el nivel de precio.")
@@ -48,6 +51,24 @@ class SaleOrderLine(models.Model):
         digits='Product Price',
     )
 
+    x_price_3_value = fields.Float(
+        string='Monto Precio 3',
+        compute='_compute_price_level_values',
+        digits='Product Price',
+    )
+
+    x_price_4_value = fields.Float(
+        string='Monto Precio 4',
+        compute='_compute_price_level_values',
+        digits='Product Price',
+    )
+
+    x_price_5_value = fields.Float(
+        string='Monto Precio 5',
+        compute='_compute_price_level_values',
+        digits='Product Price',
+    )
+
     x_price_level_currency = fields.Char(
         string='Moneda Nivel Precio',
         compute='_compute_price_level_values',
@@ -55,13 +76,23 @@ class SaleOrderLine(models.Model):
 
     x_can_use_custom_price = fields.Boolean(
         string='Puede usar precio personalizado',
-        compute='_compute_x_can_use_custom_price',
+        compute='_compute_x_price_permission_flags',
+    )
+
+    x_can_use_minimum_price = fields.Boolean(
+        string='Puede usar Precios 3-5',
+        compute='_compute_x_price_permission_flags',
+        help="Indica si el usuario puede usar los niveles 3, 4 y 5 (vendedores mayoristas y autorizadores).",
     )
 
     @api.depends_context('uid')
-    def _compute_x_can_use_custom_price(self):
+    def _compute_x_price_permission_flags(self):
+        Product = self.env['product.template']
+        role = Product._get_user_price_role()
+        can_use_mayorista = role in ('authorizer', 'mayorista')
         for line in self:
             line.x_can_use_custom_price = True
+            line.x_can_use_minimum_price = can_use_mayorista
 
     @api.depends('product_id', 'order_id.pricelist_id', 'order_id.pricelist_id.currency_id')
     def _compute_price_level_values(self):
@@ -80,12 +111,21 @@ class SaleOrderLine(models.Model):
             if tmpl and currency_name == 'MXN':
                 line.x_price_1_value = tmpl.x_price_mxn_1
                 line.x_price_2_value = tmpl.x_price_mxn_2
+                line.x_price_3_value = tmpl.x_price_mxn_3
+                line.x_price_4_value = tmpl.x_price_mxn_4
+                line.x_price_5_value = tmpl.x_price_mxn_5
             elif tmpl:
                 line.x_price_1_value = tmpl.x_price_usd_1
                 line.x_price_2_value = tmpl.x_price_usd_2
+                line.x_price_3_value = tmpl.x_price_usd_3
+                line.x_price_4_value = tmpl.x_price_usd_4
+                line.x_price_5_value = tmpl.x_price_usd_5
             else:
                 line.x_price_1_value = 0.0
                 line.x_price_2_value = 0.0
+                line.x_price_3_value = 0.0
+                line.x_price_4_value = 0.0
+                line.x_price_5_value = 0.0
 
             line.x_price_level_currency = currency_name
 
@@ -119,18 +159,9 @@ class SaleOrderLine(models.Model):
                     currency_name = pricelist.currency_id.name
 
             template = line.product_id.product_tmpl_id
-            new_price = 0.0
-
-            if currency_name == 'MXN':
-                if line.x_price_selector == 'high':
-                    new_price = template.x_price_mxn_1
-                elif line.x_price_selector == 'medium':
-                    new_price = template.x_price_mxn_2
-            else:
-                if line.x_price_selector == 'high':
-                    new_price = template.x_price_usd_1
-                elif line.x_price_selector == 'medium':
-                    new_price = template.x_price_usd_2
+            new_price = self.env['product.template']._get_price_level_value(
+                template, line.x_price_selector, currency_name,
+            )
 
             if new_price > 0:
                 line.price_unit = new_price
@@ -454,6 +485,8 @@ class SaleOrder(models.Model):
         'x_price_authorization_id.state',
     )
     def _compute_has_low_prices(self):
+        Product = self.env['product.template']
+        threshold_level = Product._get_user_threshold_level()
         for order in self:
             if order.x_price_authorization_id and order.x_price_authorization_id.state == 'approved':
                 order.x_has_low_prices = False
@@ -467,9 +500,9 @@ class SaleOrder(models.Model):
                     continue
 
                 tmpl = line.product_id.product_tmpl_id
-                medium = tmpl.x_price_mxn_2 if currency_code == 'MXN' else tmpl.x_price_usd_2
+                threshold = Product._get_price_level_value(tmpl, threshold_level, currency_code)
 
-                if medium > 0 and line.price_unit < (medium - 0.01):
+                if threshold > 0 and line.price_unit < (threshold - 0.01):
                     has_low = True
                     break
 
@@ -477,6 +510,16 @@ class SaleOrder(models.Model):
 
     def _get_violating_products(self):
         self.ensure_one()
+
+        Product = self.env['product.template']
+        threshold_level = Product._get_user_threshold_level()
+        threshold_label_map = {
+            'medium': 'Precio 2',
+            'minimum': 'Precio 3',
+            'level_4': 'Precio 4',
+            'level_5': 'Precio 5',
+        }
+        threshold_label = threshold_label_map.get(threshold_level, threshold_level)
 
         currency_code = self.pricelist_id.currency_id.name or 'USD' if self.pricelist_id else 'USD'
         violating = []
@@ -486,12 +529,12 @@ class SaleOrder(models.Model):
                 continue
 
             tmpl = line.product_id.product_tmpl_id
-            medium = tmpl.x_price_mxn_2 if currency_code == 'MXN' else tmpl.x_price_usd_2
+            threshold = Product._get_price_level_value(tmpl, threshold_level, currency_code)
 
-            if medium > 0 and line.price_unit < (medium - 0.01):
+            if threshold > 0 and line.price_unit < (threshold - 0.01):
                 violating.append(
                     f"{line.product_id.display_name} "
-                    f"(Precio: {line.price_unit:.2f}, Medio: {medium:.2f})"
+                    f"(Precio: {line.price_unit:.2f}, {threshold_label}: {threshold:.2f})"
                 )
 
         return violating
@@ -513,7 +556,7 @@ class SaleOrder(models.Model):
                 raise UserError(
                     f"🚫 ACCIÓN BLOQUEADA - PRECIOS NO AUTORIZADOS\n\n"
                     f"No puede {action_name} la orden {order.name}.\n"
-                    f"Productos con precios menores al permitido:\n"
+                    f"Productos con precios por debajo del nivel permitido para su rol:\n"
                     f"• {chr(10).join(violating)}\n\n"
                     f"Solicite autorización de precio primero."
                 )
@@ -714,18 +757,14 @@ class SaleOrder(models.Model):
         self._compute_exchange_rate()
 
         currency_name = self.pricelist_id.currency_id.name or 'USD'
+        Product = self.env['product.template']
 
         for line in self.order_line:
             if not line.product_id or line.x_price_selector == 'custom':
                 continue
 
             tmpl = line.product_id.product_tmpl_id
-            new_price = 0.0
-
-            if currency_name == 'MXN':
-                new_price = tmpl.x_price_mxn_1 if line.x_price_selector == 'high' else tmpl.x_price_mxn_2
-            else:
-                new_price = tmpl.x_price_usd_1 if line.x_price_selector == 'high' else tmpl.x_price_usd_2
+            new_price = Product._get_price_level_value(tmpl, line.x_price_selector, currency_name)
 
             if new_price > 0:
                 line.price_unit = new_price
@@ -736,6 +775,8 @@ class SaleOrder(models.Model):
         if self.state not in ['draft', 'sent']:
             return
 
+        Product = self.env['product.template']
+        threshold_level = Product._get_user_threshold_level()
         currency_code = self.pricelist_id.currency_id.name or 'USD'
         product_prices = {}
         product_groups = {}
@@ -746,9 +787,9 @@ class SaleOrder(models.Model):
                 continue
 
             tmpl = line.product_id.product_tmpl_id
-            medium = tmpl.x_price_mxn_2 if currency_code == 'MXN' else tmpl.x_price_usd_2
+            threshold = Product._get_price_level_value(tmpl, threshold_level, currency_code)
 
-            if medium > 0 and line.price_unit < (medium - 0.01):
+            if threshold > 0 and line.price_unit < (threshold - 0.01):
                 has_low = True
                 pid_str = str(line.product_id.id)
                 product_prices[pid_str] = line.price_unit
@@ -763,7 +804,7 @@ class SaleOrder(models.Model):
                 product_groups[pid_str]['total_quantity'] += line.product_uom_qty
 
         if not has_low:
-            raise UserError("No se detectaron precios por debajo del nivel medio.")
+            raise UserError("No se detectaron precios por debajo del nivel permitido para su rol.")
 
         auth = self.env['price.authorization'].create({
             'seller_id': self.env.user.id,
@@ -785,8 +826,7 @@ class SaleOrder(models.Model):
 
         for pid_str, group in product_groups.items():
             product = self.env['product.product'].browse(int(pid_str))
-            medium = product.product_tmpl_id.x_price_mxn_2 if currency_code == 'MXN' else product.product_tmpl_id.x_price_usd_2
-            minimum = product.product_tmpl_id.x_price_mxn_3 if currency_code == 'MXN' else product.product_tmpl_id.x_price_usd_3
+            tmpl = product.product_tmpl_id
 
             self.env['price.authorization.line'].create({
                 'authorization_id': auth.id,
@@ -795,8 +835,10 @@ class SaleOrder(models.Model):
                 'lot_count': 0,
                 'requested_price': product_prices[pid_str],
                 'authorized_price': product_prices[pid_str],
-                'medium_price': medium,
-                'minimum_price': minimum,
+                'medium_price': Product._get_price_level_value(tmpl, 'medium', currency_code),
+                'minimum_price': Product._get_price_level_value(tmpl, 'minimum', currency_code),
+                'level_4_price': Product._get_price_level_value(tmpl, 'level_4', currency_code),
+                'level_5_price': Product._get_price_level_value(tmpl, 'level_5', currency_code),
             })
 
         return {
@@ -864,7 +906,9 @@ class SaleOrder(models.Model):
 
         for prod_id, data in grouped_items.items():
             product = data['product_obj']
-            price_unit = product.product_tmpl_id.x_price_mxn_1 if currency_code == 'MXN' else product.product_tmpl_id.x_price_usd_1
+            price_unit = self.env['product.template']._get_price_level_value(
+                product.product_tmpl_id, 'high', currency_code,
+            )
 
             lines_to_create.append({
                 'order_id': self.id,

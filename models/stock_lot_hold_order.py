@@ -279,19 +279,29 @@ class StockLotHoldOrder(models.Model):
         """
         Devuelve líneas de apartado manual que requieren autorización.
 
-        Misma política comercial que el carrito:
-        - Vendedor: puede elegir Precio 1, Precio 2 o capturar precio personalizado.
-          Solo requiere autorización cuando el precio final queda debajo de Precio 2.
-        - Precio 3 sigue restringido a autorizadores. Si un vendedor lo alcanza por
-          vista heredada, también cae en autorización por estar debajo del Precio 2.
-        - Autorizador: puede usar Precio 3. Solo requiere autorización si captura
-          un precio por debajo de Precio 3.
+        Política comercial (3 roles):
+        - Vendedor regular: solo ve Precios 1 y 2. Requiere autorización si el precio
+          final queda por debajo del Precio 2. Si por vista heredada llega a usar un
+          selector 3/4/5, también cae en autorización.
+        - Vendedor mayorista: ve Precios 1..5. Requiere autorización solo si el precio
+          queda por debajo del Precio 4.
+        - Autorizador: ve Precios 1..5. Requiere autorización solo si el precio
+          queda por debajo del Precio 5 (precio mínimo absoluto).
         - Servicios: no participan en la escalera ni en autorización de precio.
         """
         self.ensure_one()
 
         violations = []
-        is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
+        Product = self.env['product.template']
+        role = Product._get_user_price_role()
+        threshold_level = Product._get_user_threshold_level()
+        threshold_label_map = {
+            'medium': 'Precio 2',
+            'minimum': 'Precio 3',
+            'level_4': 'Precio 4',
+            'level_5': 'Precio 5',
+        }
+        threshold_label = threshold_label_map.get(threshold_level, threshold_level)
 
         for line in self.line_ids:
             if not line.product_id or line.product_id.type == 'service':
@@ -302,40 +312,34 @@ class StockLotHoldOrder(models.Model):
             )
             tmpl = line.product_id.product_tmpl_id
 
-            if currency_code == 'MXN':
-                medium_price = tmpl.x_price_mxn_2 or 0.0
-                minimum_price = tmpl.x_price_mxn_3 or 0.0
-            else:
-                medium_price = tmpl.x_price_usd_2 or 0.0
-                minimum_price = tmpl.x_price_usd_3 or 0.0
+            medium_price = Product._get_price_level_value(tmpl, 'medium', currency_code)
+            minimum_price = Product._get_price_level_value(tmpl, 'minimum', currency_code)
+            level_4_price = Product._get_price_level_value(tmpl, 'level_4', currency_code)
+            level_5_price = Product._get_price_level_value(tmpl, 'level_5', currency_code)
+            threshold = Product._get_price_level_value(tmpl, threshold_level, currency_code)
 
             requested_price = float(line.precio_unitario or 0.0)
             selector = line.x_price_selector or 'custom'
             reason = False
 
-            if is_authorizer:
-                if minimum_price > 0 and requested_price < (minimum_price - 0.01):
+            # Vendedor regular: no debe usar selector 3/4/5 directamente.
+            if role == 'seller' and selector in ('minimum', 'level_4', 'level_5'):
+                reason = (
+                    f"selector {selector} requiere autorización para vendedor regular "
+                    f"(umbral {threshold_label}: {threshold:.2f})"
+                )
+
+            if not reason and threshold > 0 and requested_price < (threshold - 0.01):
+                if selector == 'custom':
                     reason = (
-                        f"precio {requested_price:.2f} menor al Precio 3 "
-                        f"{minimum_price:.2f}"
+                        f"precio personalizado {requested_price:.2f} menor al "
+                        f"{threshold_label} {threshold:.2f}"
                     )
-            else:
-                if medium_price > 0 and requested_price < (medium_price - 0.01):
-                    if selector == 'custom':
-                        reason = (
-                            f"precio personalizado {requested_price:.2f} menor al Precio 2 "
-                            f"{medium_price:.2f}"
-                        )
-                    elif selector == 'minimum':
-                        reason = (
-                            f"Precio 3 requiere autorización para vendedor "
-                            f"(Precio 2: {medium_price:.2f})"
-                        )
-                    else:
-                        reason = (
-                            f"precio {requested_price:.2f} menor al Precio 2 "
-                            f"{medium_price:.2f}"
-                        )
+                else:
+                    reason = (
+                        f"precio {requested_price:.2f} menor al {threshold_label} "
+                        f"{threshold:.2f}"
+                    )
 
             if reason:
                 violations.append({
@@ -344,6 +348,8 @@ class StockLotHoldOrder(models.Model):
                     'requested_price': requested_price,
                     'medium_price': medium_price,
                     'minimum_price': minimum_price,
+                    'level_4_price': level_4_price,
+                    'level_5_price': level_5_price,
                 })
 
         return violations
@@ -431,10 +437,10 @@ class StockLotHoldOrder(models.Model):
             },
         })
 
+        Product = self.env['product.template']
         for pid_str, group in product_groups.items():
             product = self.env['product.product'].browse(int(pid_str))
-            medium = product.product_tmpl_id.x_price_mxn_2 if currency_code == 'MXN' else product.product_tmpl_id.x_price_usd_2
-            minimum = product.product_tmpl_id.x_price_mxn_3 if currency_code == 'MXN' else product.product_tmpl_id.x_price_usd_3
+            tmpl = product.product_tmpl_id
 
             self.env['price.authorization.line'].create({
                 'authorization_id': auth.id,
@@ -443,8 +449,10 @@ class StockLotHoldOrder(models.Model):
                 'lot_count': len(group['lots']),
                 'requested_price': product_prices[pid_str],
                 'authorized_price': product_prices[pid_str],
-                'medium_price': medium,
-                'minimum_price': minimum,
+                'medium_price': Product._get_price_level_value(tmpl, 'medium', currency_code),
+                'minimum_price': Product._get_price_level_value(tmpl, 'minimum', currency_code),
+                'level_4_price': Product._get_price_level_value(tmpl, 'level_4', currency_code),
+                'level_5_price': Product._get_price_level_value(tmpl, 'level_5', currency_code),
             })
 
         self.message_post(
@@ -830,6 +838,8 @@ class StockLotHoldOrderLine(models.Model):
         ('high', 'Precio 1'),
         ('medium', 'Precio 2'),
         ('minimum', 'Precio 3'),
+        ('level_4', 'Precio 4'),
+        ('level_5', 'Precio 5'),
         ('custom', 'Precio Personalizado'),
     ], string='Nivel de Precio', default='high')
 
@@ -847,6 +857,18 @@ class StockLotHoldOrderLine(models.Model):
 
     x_price_3_value = fields.Float(
         string='Monto Precio 3',
+        compute='_compute_price_level_values',
+        digits='Product Price',
+    )
+
+    x_price_4_value = fields.Float(
+        string='Monto Precio 4',
+        compute='_compute_price_level_values',
+        digits='Product Price',
+    )
+
+    x_price_5_value = fields.Float(
+        string='Monto Precio 5',
         compute='_compute_price_level_values',
         digits='Product Price',
     )
@@ -899,12 +921,14 @@ class StockLotHoldOrderLine(models.Model):
         El precio personalizado debe estar disponible desde el formulario manual,
         igual que en el carrito. La autorización se decide al confirmar.
 
-        Precio 3 se mantiene visible únicamente para autorizadores.
+        Los Precios 3, 4 y 5 se exponen para vendedores mayoristas y autorizadores.
+        El vendedor regular solo puede usar Precio 1 y Precio 2.
         """
-        can_use_minimum = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
+        role = self.env['product.template']._get_user_price_role()
+        can_use_mayorista = role in ('authorizer', 'mayorista')
         for line in self:
             line.x_can_use_custom_price = True
-            line.x_can_use_minimum_price = can_use_minimum
+            line.x_can_use_minimum_price = can_use_mayorista
 
     def _get_currency_code(self):
         self.ensure_one()
@@ -930,14 +954,20 @@ class StockLotHoldOrderLine(models.Model):
                 line.x_price_1_value = tmpl.x_price_mxn_1
                 line.x_price_2_value = tmpl.x_price_mxn_2
                 line.x_price_3_value = tmpl.x_price_mxn_3
+                line.x_price_4_value = tmpl.x_price_mxn_4
+                line.x_price_5_value = tmpl.x_price_mxn_5
             elif tmpl:
                 line.x_price_1_value = tmpl.x_price_usd_1
                 line.x_price_2_value = tmpl.x_price_usd_2
                 line.x_price_3_value = tmpl.x_price_usd_3
+                line.x_price_4_value = tmpl.x_price_usd_4
+                line.x_price_5_value = tmpl.x_price_usd_5
             else:
                 line.x_price_1_value = 0.0
                 line.x_price_2_value = 0.0
                 line.x_price_3_value = 0.0
+                line.x_price_4_value = 0.0
+                line.x_price_5_value = 0.0
 
             line.x_price_level_currency = currency_code
 
@@ -952,27 +982,15 @@ class StockLotHoldOrderLine(models.Model):
         if not product.exists():
             return 'custom'
 
+        Product = self.env['product.template']
         tmpl = product.product_tmpl_id
-
-        if currency_code == 'MXN':
-            high = tmpl.x_price_mxn_1 or 0.0
-            medium = tmpl.x_price_mxn_2 or 0.0
-            minimum = tmpl.x_price_mxn_3 or 0.0
-        else:
-            high = tmpl.x_price_usd_1 or 0.0
-            medium = tmpl.x_price_usd_2 or 0.0
-            minimum = tmpl.x_price_usd_3 or 0.0
 
         price = float(price or 0.0)
 
-        if high and abs(price - high) <= 0.01:
-            return 'high'
-
-        if medium and abs(price - medium) <= 0.01:
-            return 'medium'
-
-        if minimum and abs(price - minimum) <= 0.01:
-            return 'minimum'
+        for level in ('high', 'medium', 'minimum', 'level_4', 'level_5'):
+            level_price = Product._get_price_level_value(tmpl, level, currency_code)
+            if level_price and abs(price - level_price) <= 0.01:
+                return level
 
         return 'custom'
 
@@ -985,23 +1003,10 @@ class StockLotHoldOrderLine(models.Model):
         currency_code = self._get_currency_code()
         tmpl = self.product_id.product_tmpl_id
 
-        if currency_code == 'MXN':
-            price_high = tmpl.x_price_mxn_1 or 0.0
-            price_medium = tmpl.x_price_mxn_2 or 0.0
-            price_minimum = tmpl.x_price_mxn_3 or 0.0
-        else:
-            price_high = tmpl.x_price_usd_1 or 0.0
-            price_medium = tmpl.x_price_usd_2 or 0.0
-            price_minimum = tmpl.x_price_usd_3 or 0.0
-
-        if self.x_price_selector == 'high':
-            return price_high
-
-        if self.x_price_selector == 'medium':
-            return price_medium
-
-        if self.x_price_selector == 'minimum':
-            return price_minimum
+        if self.x_price_selector in ('high', 'medium', 'minimum', 'level_4', 'level_5'):
+            return self.env['product.template']._get_price_level_value(
+                tmpl, self.x_price_selector, currency_code,
+            )
 
         return self.precio_unitario or 0.0
 
@@ -1167,3 +1172,4 @@ class StockLotHoldOrderLine(models.Model):
                 line.with_context(skip_hold_line_quantity_sync=True).write({
                     'cantidad_m2': qty,
                 })
+                

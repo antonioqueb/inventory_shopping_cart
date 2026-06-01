@@ -757,16 +757,11 @@ class StockQuant(models.Model):
             },
         })
 
+        Product = self.env['product.template']
         for product_id_key, group in product_groups.items():
             product_id = int(product_id_key)
             product = self.env['product.product'].browse(product_id)
-
-            if currency_code == 'USD':
-                medium_price = product.product_tmpl_id.x_price_usd_2
-                minimum_price = product.product_tmpl_id.x_price_usd_3
-            else:
-                medium_price = product.product_tmpl_id.x_price_mxn_2
-                minimum_price = product.product_tmpl_id.x_price_mxn_3
+            tmpl = product.product_tmpl_id
 
             requested_price = float(product_prices.get(str(product_id), 0.0))
 
@@ -777,8 +772,10 @@ class StockQuant(models.Model):
                 'lot_count': len(group['lots']),
                 'requested_price': requested_price,
                 'authorized_price': requested_price,
-                'medium_price': medium_price,
-                'minimum_price': minimum_price,
+                'medium_price': Product._get_price_level_value(tmpl, 'medium', currency_code),
+                'minimum_price': Product._get_price_level_value(tmpl, 'minimum', currency_code),
+                'level_4_price': Product._get_price_level_value(tmpl, 'level_4', currency_code),
+                'level_5_price': Product._get_price_level_value(tmpl, 'level_5', currency_code),
             })
 
         return {

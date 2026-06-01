@@ -514,13 +514,25 @@ class PriceAuthorizationLine(models.Model):
     )
 
     medium_price = fields.Float(
-        string='Precio Medio',
+        string='Precio 2 (Medio)',
         readonly=True,
         digits='Product Price',
     )
 
     minimum_price = fields.Float(
-        string='Precio Mínimo',
+        string='Precio 3',
+        readonly=True,
+        digits='Product Price',
+    )
+
+    level_4_price = fields.Float(
+        string='Precio 4',
+        readonly=True,
+        digits='Product Price',
+    )
+
+    level_5_price = fields.Float(
+        string='Precio 5 (Mínimo)',
         readonly=True,
         digits='Product Price',
     )
@@ -566,11 +578,9 @@ class PriceAuthorizationLine(models.Model):
             elif 'authorized_price' in vals:
                 vals['authorized_price'] = math.ceil(vals['authorized_price'])
 
-            if 'medium_price' in vals:
-                vals['medium_price'] = math.ceil(vals['medium_price'])
-
-            if 'minimum_price' in vals:
-                vals['minimum_price'] = math.ceil(vals['minimum_price'])
+            for level_field in ('medium_price', 'minimum_price', 'level_4_price', 'level_5_price'):
+                if level_field in vals and vals[level_field] is not None:
+                    vals[level_field] = math.ceil(vals[level_field])
 
         return super().create(vals_list)
 
@@ -581,10 +591,8 @@ class PriceAuthorizationLine(models.Model):
         if 'authorized_price' in vals:
             vals['authorized_price'] = math.ceil(vals['authorized_price'])
 
-        if 'medium_price' in vals:
-            vals['medium_price'] = math.ceil(vals['medium_price'])
-
-        if 'minimum_price' in vals:
-            vals['minimum_price'] = math.ceil(vals['minimum_price'])
+        for level_field in ('medium_price', 'minimum_price', 'level_4_price', 'level_5_price'):
+            if level_field in vals and vals[level_field] is not None:
+                vals[level_field] = math.ceil(vals[level_field])
 
         return super().write(vals)

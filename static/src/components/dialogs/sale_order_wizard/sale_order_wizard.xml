@@ -525,7 +525,7 @@
                         
                         <div class="alert alert-info mb-3">
                             <i class="fa fa-info-circle me-2"></i>
-                            Agrega servicios como fletes, maniobras, seguros u otros cargos. Puedes continuar sin agregarlos.
+                            Agrega servicios como manejo de materiales, maniobras, seguros u otros cargos. Puedes continuar sin agregarlos.
                         </div>
                         
                         <div class="card border mb-3">
@@ -659,16 +659,16 @@
                             <div class="d-flex align-items-start">
                                 <i class="fa fa-exclamation-triangle fa-2x me-3"></i>
                                 <div>
-                                    <h6 class="mb-2 fw-bold">Precios por debajo del nivel medio</h6>
+                                    <h6 class="mb-2 fw-bold">Precios por debajo del nivel autorizado</h6>
                                     <p class="mb-2">
-                                        Los siguientes productos tienen precio menor al nivel medio. Como autorizador, puede continuar sin restricción:
+                                        Los siguientes productos tienen precio menor al umbral permitido por su rol. Como autorizador/vendedor mayorista, puede continuar sin restricción:
                                     </p>
                                     <ul class="mb-0">
                                         <t t-foreach="state.lowPriceWarningProducts" t-as="item" t-key="item_index">
                                             <li>
-                                                <strong t-esc="item.name"></strong>: 
-                                                Precio <t t-esc="formatNumber(item.price)"/> 
-                                                Medio: <t t-esc="formatNumber(item.medium)"/>
+                                                <strong t-esc="item.name"></strong>:
+                                                Precio <t t-esc="formatNumber(item.price)"/>
+                                                <t t-esc="item.threshold_label || 'Umbral'"/>: <t t-esc="formatNumber(item.medium)"/>
                                                 <t t-esc="state.selectedCurrency"/>
                                             </li>
                                         </t>

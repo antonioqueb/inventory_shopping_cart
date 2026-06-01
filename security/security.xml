@@ -3,8 +3,14 @@
     <record id="group_price_authorizer" model="res.groups">
         <field name="name">Autorizador de Precios Mínimos</field>
     </record>
-    
+
     <record id="group_seller" model="res.groups">
         <field name="name">Vendedor con Precios Limitados</field>
+    </record>
+
+    <record id="group_seller_mayorista" model="res.groups">
+        <field name="name">Vendedor Mayorista (Niveles 3, 4 y 5)</field>
+        <field name="implied_ids" eval="[(4, ref('inventory_shopping_cart.group_seller'))]"/>
+        <field name="comment">Vendedores mayoristas autorizados a ver los Precios 3, 4 y 5 sin solicitud previa. Solo requieren autorización cuando capturan un precio por debajo del Precio 4.</field>
     </record>
 </odoo>

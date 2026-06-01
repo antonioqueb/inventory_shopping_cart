@@ -35,9 +35,11 @@
                 <field name="x_fixed_price" string="Precio Fijo"
                        invisible="pricing_mode != 'fixed'"
                        optional="show"/>
-                <field name="x_utilidad" string="% Ut. Alta"/>
-                <field name="x_utilidad_media" string="% Ut. Media"/>
-                <field name="x_utilidad_minima" string="% Ut. Mínima"/>
+                <field name="x_utilidad" string="% Ut. Nivel 1"/>
+                <field name="x_utilidad_media" string="% Ut. Nivel 2"/>
+                <field name="x_utilidad_minima" string="% Ut. Nivel 3"/>
+                <field name="x_utilidad_4" string="% Ut. Nivel 4" optional="show"/>
+                <field name="x_utilidad_5" string="% Ut. Nivel 5" optional="show"/>
                 <field name="x_arancel_pct" string="% Arancel"/>
                 <field name="product_count" string="# Prod."/>
                 <button name="action_apply_to_products" type="object"
@@ -91,7 +93,17 @@
                             <label for="x_utilidad_minima"/>
                             <div class="o_row">
                                 <field name="x_utilidad_minima"/>
-                                <span class="text-muted">% Mínima (Nivel 3)</span>
+                                <span class="text-muted">% Nivel 3</span>
+                            </div>
+                            <label for="x_utilidad_4"/>
+                            <div class="o_row">
+                                <field name="x_utilidad_4"/>
+                                <span class="text-muted">% Nivel 4 (Mayorista)</span>
+                            </div>
+                            <label for="x_utilidad_5"/>
+                            <div class="o_row">
+                                <field name="x_utilidad_5"/>
+                                <span class="text-muted">% Mínima (Nivel 5)</span>
                             </div>
                         </group>
                         <group string="Arancel">
@@ -104,7 +116,8 @@
                     </group>
                     <div class="alert alert-info" role="alert">
                         <strong>Modo Calculado:</strong> Precio Nivel N = Costo ALL-IN / (1 - %Utilidad N)<br/>
-                        <strong>Modo Fijo:</strong> Nivel 1 = Precio Fijo. Niveles 2 y 3 = Precio Fijo × (1 - %Utilidad)
+                        <strong>Modo Fijo:</strong> Nivel 1 = Precio Fijo. Niveles 2 a 5 = Precio Fijo × (1 - %Utilidad).<br/>
+                        <strong>Visibilidad:</strong> Niveles 1 y 2 son visibles para todos los vendedores; Niveles 3, 4 y 5 solo para vendedores mayoristas y autorizadores.
                     </div>
                 </sheet>
             </form>

@@ -80,6 +80,8 @@
                                     <!-- ✅ COLUMNAS VISIBLES SOLO PARA AUTORIZADORES -->
                                     <field name="medium_price" groups="inventory_shopping_cart.group_price_authorizer" readonly="1"/>
                                     <field name="minimum_price" groups="inventory_shopping_cart.group_price_authorizer" readonly="1"/>
+                                    <field name="level_4_price" groups="inventory_shopping_cart.group_price_authorizer" readonly="1" optional="show"/>
+                                    <field name="level_5_price" groups="inventory_shopping_cart.group_price_authorizer" readonly="1" optional="show"/>
                                     
                                     <!-- ✅ PRECIO SOLICITADO POR EL VENDEDOR (SIEMPRE VISIBLE Y READONLY) -->
                                     <field name="requested_price" string="Precio Prometido" readonly="1" 
@@ -103,9 +105,12 @@
                                 <ul class="mb-0">
                                     <li><strong>Precio Prometido:</strong> Es el precio que el vendedor ofreció al cliente</li>
                                     <li><strong>Precio Autorizado:</strong> Puede modificarlo si lo considera necesario</li>
-                                    <li class="text-success">✓ Verde: Precio igual o mayor al medio</li>
-                                    <li class="text-warning">⚠ Amarillo: Precio entre mínimo y medio</li>
-                                    <li class="text-danger">✗ Rojo: Precio debajo del mínimo</li>
+                                    <li><strong>Precios 2 / 3 / 4 / 5:</strong> Niveles configurados para el producto.
+                                        Vendedor regular requiere autorización bajo Precio 2;
+                                        Vendedor mayorista bajo Precio 4; Autorizador bajo Precio 5.</li>
+                                    <li class="text-success">✓ Verde: Precio igual o mayor al medio (Precio 2)</li>
+                                    <li class="text-warning">⚠ Amarillo: Precio entre Precio 3 y Precio 2</li>
+                                    <li class="text-danger">✗ Rojo: Precio por debajo del Precio 3</li>
                                 </ul>
                             </div>
                         </page>

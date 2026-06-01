@@ -36,8 +36,14 @@ class ProductCategoryPricing(models.Model):
                               help="Margen de utilidad para el Precio Alto (Nivel 1).")
     x_utilidad_media = fields.Float(string='% Utilidad Media', default=35.0,
                                     help="Margen de utilidad para el Precio Medio (Nivel 2).")
-    x_utilidad_minima = fields.Float(string='% Utilidad Mínima', default=30.0,
-                                     help="Margen de utilidad para el Precio Mínimo (Nivel 3).")
+    x_utilidad_minima = fields.Float(string='% Utilidad Nivel 3', default=30.0,
+                                     help="Margen de utilidad para el Precio Nivel 3.")
+    x_utilidad_4 = fields.Float(string='% Utilidad Nivel 4', default=25.0,
+                                help="Margen de utilidad para el Precio Nivel 4. "
+                                     "Visible para vendedores mayoristas y autorizadores.")
+    x_utilidad_5 = fields.Float(string='% Utilidad Mínima (Nivel 5)', default=20.0,
+                                help="Margen de utilidad para el Precio Mínimo (Nivel 5). "
+                                     "Visible solo para autorizadores.")
 
     # === ARANCEL ===
     x_arancel_pct = fields.Float(string='Arancel (%)', default=0.0,
@@ -71,6 +77,8 @@ class ProductCategoryPricing(models.Model):
             'x_utilidad': self.x_utilidad,
             'x_utilidad_media': self.x_utilidad_media,
             'x_utilidad_minima': self.x_utilidad_minima,
+            'x_utilidad_4': self.x_utilidad_4,
+            'x_utilidad_5': self.x_utilidad_5,
             'x_arancel_pct': self.x_arancel_pct,
             'x_pricing_mode': self.pricing_mode,
         }

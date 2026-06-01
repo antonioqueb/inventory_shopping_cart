@@ -151,8 +151,12 @@
             <xpath expr="//field[@name='order_line']/list//field[@name='price_unit']" position="before">
                 <field name="x_price_1_value" column_invisible="1"/>
                 <field name="x_price_2_value" column_invisible="1"/>
+                <field name="x_price_3_value" column_invisible="1"/>
+                <field name="x_price_4_value" column_invisible="1"/>
+                <field name="x_price_5_value" column_invisible="1"/>
                 <field name="x_price_level_currency" column_invisible="1"/>
                 <field name="x_can_use_custom_price" column_invisible="1"/>
+                <field name="x_can_use_minimum_price" column_invisible="1"/>
 
                 <field name="x_price_selector"
                        widget="price_level_selector"
