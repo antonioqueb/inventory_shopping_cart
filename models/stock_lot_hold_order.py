@@ -745,6 +745,14 @@ class StockLotHoldOrder(models.Model):
             else:
                 vals[name] = value
 
+        # cantidad_m2 es un campo computed-store (definido en el módulo base),
+        # por lo que el loop genérico lo omite. Para el material adicional
+        # (línea sin placas) es la cantidad capturada manualmente y DEBE
+        # preservarse al recrear la línea tras desprenderla en la confirmación;
+        # de lo contrario el material adicional nace en 0 m² en el hold mixto.
+        if 'cantidad_m2' in line._fields:
+            vals['cantidad_m2'] = line.cantidad_m2
+
         return vals
 
     def action_confirm(self):
@@ -975,6 +983,41 @@ class StockLotHoldOrderLine(models.Model):
     def _compute_x_subtotal(self):
         for line in self:
             line.x_subtotal = (line.cantidad_m2 or 0.0) * (line.precio_unitario or 0.0)
+
+    @api.depends('lot_ids', 'product_id')
+    def _compute_cantidad_m2(self):
+        """
+        Sobrescribe el cómputo del módulo base.
+
+        El base, para una línea de producto físico SIN placas, forzaba
+        `cantidad_m2 = 0.0`. Pero ese es exactamente el caso del "material
+        adicional" (material por pedir, capturado manualmente desde el carrito):
+        debe CONSERVAR la cantidad que indicó el usuario (p. ej. 100 m²), no
+        reiniciarla a cero.
+
+        - Con placas: se recalcula desde el inventario (igual que el base).
+        - Servicio: 1.0 por defecto si está vacío.
+        - Material adicional (físico sin placas): se conserva lo capturado.
+        """
+        for line in self:
+            if line.lot_ids:
+                total = 0.0
+                for lot in line.lot_ids:
+                    quant = self.env['stock.quant'].search([
+                        ('lot_id', '=', lot.id),
+                        ('quantity', '>', 0),
+                        ('location_id.usage', '=', 'internal'),
+                    ], limit=1)
+                    total += quant.quantity if quant else 0.0
+                line.cantidad_m2 = total
+            elif line.product_id and line.product_id.type == 'service':
+                if not line.cantidad_m2:
+                    line.cantidad_m2 = 1.0
+            else:
+                # Material adicional / backorder: conservar la cantidad
+                # capturada manualmente; solo poner 0 si aún no hay valor.
+                if not line.cantidad_m2:
+                    line.cantidad_m2 = 0.0
 
     @api.model
     def _selector_from_price(self, product_id, currency_code, price):
