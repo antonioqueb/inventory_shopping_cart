@@ -132,10 +132,22 @@ patch(InventoryVisualController.prototype, {
     
     /**
      * Verifica si un lote está bloqueado para selección.
-     * Bloqueado si tiene hold activo o está en una orden de venta confirmada.
+     * Bloqueado si:
+     *  - tiene hold activo (apartado comercial),
+     *  - está en una orden de venta confirmada (committed),
+     *  - está en taller / en producción (en_taller: ubicación de producción
+     *    o lote ligado a una OT en proceso, aunque siga físicamente en stock),
+     *  - está en tránsito (is_transit).
+     * En todos estos casos la placa está bloqueada en ese momento y no debe
+     * poder seleccionarse.
      */
     _isLotBlocked(detail) {
-        return !!(detail.tiene_hold || detail.en_orden_venta);
+        return !!(
+            detail.tiene_hold ||
+            detail.en_orden_venta ||
+            detail.en_taller ||
+            detail.is_transit
+        );
     },
 
     /**
@@ -167,6 +179,14 @@ patch(InventoryVisualController.prototype, {
             }
             if (detail.en_orden_venta) {
                 this.notification.add("Este lote está asignado a una orden de venta confirmada", { type: "warning" });
+                return;
+            }
+            if (detail.en_taller) {
+                this.notification.add("Este lote está en taller / producción y no puede seleccionarse mientras se procesa", { type: "warning" });
+                return;
+            }
+            if (detail.is_transit) {
+                this.notification.add("Este lote está en tránsito y no puede seleccionarse", { type: "warning" });
                 return;
             }
         }

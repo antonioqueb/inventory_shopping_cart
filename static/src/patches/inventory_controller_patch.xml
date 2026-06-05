@@ -42,13 +42,13 @@
                         type="checkbox"
                         class="form-check-input cart-checkbox"
                         t-att-checked="props.isInCart ? (props.isInCart(detail.id) ? 'checked' : undefined) : undefined"
-                        t-att-disabled="(detail.tiene_hold or detail.en_orden_venta) and !(props.cart and props.cart.canSelectBlocked)"
+                        t-att-disabled="(detail.tiene_hold or detail.en_orden_venta or detail.en_taller or detail.is_transit) and !(props.cart and props.cart.canSelectBlocked)"
                         t-on-click.stop="() => props.toggleCartSelection ? props.toggleCartSelection(detail) : null"
-                        t-att-title="(props.cart and props.cart.canSelectBlocked and (detail.tiene_hold or detail.en_orden_venta)) ? (detail.tiene_hold ? 'Lote apartado — disponible solo para movimiento/etiquetas' : 'Lote en orden de venta — disponible solo para movimiento/etiquetas') : (detail.tiene_hold ? 'Lote con apartado activo' : (detail.en_orden_venta ? 'Lote en orden de venta confirmada' : ''))"
+                        t-att-title="(props.cart and props.cart.canSelectBlocked and (detail.tiene_hold or detail.en_orden_venta or detail.en_taller or detail.is_transit)) ? (detail.tiene_hold ? 'Lote apartado — disponible solo para movimiento/etiquetas' : (detail.en_orden_venta ? 'Lote en orden de venta — disponible solo para movimiento/etiquetas' : (detail.en_taller ? 'Lote en taller/producción — disponible solo para movimiento/etiquetas' : 'Lote en tránsito — disponible solo para movimiento/etiquetas'))) : (detail.tiene_hold ? 'Lote con apartado activo' : (detail.en_orden_venta ? 'Lote en orden de venta confirmada' : (detail.en_taller ? 'Lote en taller / producción' : (detail.is_transit ? 'Lote en tránsito' : ''))))"
                     />
 
                     <!-- Input adicional para Formato y Pieza (permite parcialidades), NO para Placa -->
-                    <t t-if="detail.tipo and (detail.tipo === 'formato' or detail.tipo === 'Formato' or detail.tipo === 'pieza' or detail.tipo === 'Pieza') and !detail.tiene_hold and !detail.en_orden_venta">
+                    <t t-if="detail.tipo and (detail.tipo === 'formato' or detail.tipo === 'Formato' or detail.tipo === 'pieza' or detail.tipo === 'Pieza') and !detail.tiene_hold and !detail.en_orden_venta and !detail.en_taller and !detail.is_transit">
                         <div class="d-flex align-items-center gap-1">
                             <input 
                                 type="number"
