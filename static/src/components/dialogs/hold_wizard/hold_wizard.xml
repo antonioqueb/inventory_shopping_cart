@@ -17,7 +17,7 @@
                             <div class="isc-eyebrow">Apartado múltiple</div>
                             <h3 class="isc-modal-title">Crear Apartado</h3>
                             <p class="isc-modal-subtitle">
-                                Configura cliente, proyecto, arquitecto, precios, pedidos adicionales, servicios y confirmación del apartado.
+                                Configura cliente, proyecto, arquitecto, precios, material adicional, servicios y confirmación del apartado.
                             </p>
                             <div class="isc-hero-metrics">
                                 <span class="isc-chip">
@@ -68,7 +68,7 @@
 
                             <div class="step-item" t-att-class="{ active: state.currentStep >= 5, completed: state.currentStep > 5 }">
                                 <div class="step-number">5</div>
-                                <div class="step-label">Pedidos</div>
+                                <div class="step-label">Material adicional</div>
                             </div>
                             <div class="step-line" t-att-class="{ active: state.currentStep > 5 }"></div>
                             
@@ -334,11 +334,11 @@
                         </t>
                     </div>
 
-                    <!-- PASO 5: PEDIDOS SIN EXISTENCIA -->
+                    <!-- PASO 5: MATERIAL ADICIONAL (SIN EXISTENCIA) -->
                     <div class="step-content" t-if="state.currentStep === 5">
                         <h5>
                             <i class="fa fa-cart-plus text-secondary"></i>
-                            Agregar Pedidos sin Existencia
+                            Agregar Material Adicional
                         </h5>
                         
                         <div class="alert alert-info mb-3">
@@ -374,7 +374,7 @@
                         
                         <div class="card border" t-if="state.selectedBackorderItems.length > 0">
                             <div class="card-body">
-                                <h6 class="card-title mb-3">Pedidos Agregados</h6>
+                                <h6 class="card-title mb-3">Material Adicional Agregado</h6>
                                 <div class="table-responsive">
                                     <table class="table table-sm">
                                         <thead class="table-light">
@@ -398,7 +398,17 @@
                                                         <input type="number" class="form-control form-control-sm text-center" t-model.number="item.quantity" t-on-change="(ev) => this.updateBackorderQuantity(item_index, ev.target.value)" min="0.01" step="0.01" style="width: 90px; display: inline-block;"/>
                                                     </td>
                                                     <td class="text-end">
-                                                        <input type="number" class="form-control form-control-sm text-end" t-model.number="item.price_unit" t-on-change="(ev) => this.updateBackorderPrice(item_index, ev.target.value)" min="0" step="0.01" style="width: 100px; display: inline-block;"/>
+                                                        <select t-if="item.priceOptions and item.priceOptions.length > 0" class="form-select form-select-sm text-end" t-model.number="item.price_unit" t-on-change="(ev) => this.updateBackorderPrice(item_index, ev.target.value)" style="width: 150px; display: inline-block;">
+                                                            <t t-foreach="item.priceOptions" t-as="option" t-key="option_index">
+                                                                <option t-att-value="option.value">
+                                                                    <t t-esc="option.label"/> - <t t-esc="formatNumber(option.value)"/>
+                                                                </option>
+                                                            </t>
+                                                        </select>
+                                                        <span t-else="" class="fw-bold">
+                                                            <t t-esc="formatNumber(item.price_unit)"/>
+                                                            <small class="text-muted ms-1" t-esc="state.selectedCurrency"/>
+                                                        </span>
                                                     </td>
                                                     <td class="text-end">
                                                         <strong t-esc="formatNumber(item.quantity * item.price_unit)"></strong>
@@ -413,7 +423,7 @@
                                         </tbody>
                                         <tfoot class="table-light">
                                             <tr>
-                                                <th colspan="3">TOTAL PEDIDOS</th>
+                                                <th colspan="3">TOTAL MATERIAL ADICIONAL</th>
                                                 <th class="text-end">
                                                     <strong class="text-primary">
                                                         <t t-esc="formatNumber(getTotalBackorders())"/>
@@ -430,7 +440,7 @@
 
                         <div class="alert alert-light mt-3" t-if="state.selectedBackorderItems.length === 0">
                             <i class="fa fa-info-circle me-2"></i>
-                            No has agregado pedidos sin existencia. Puedes continuar.
+                            No has agregado material adicional. Puedes continuar.
                         </div>
                     </div>
 
@@ -614,7 +624,7 @@
 
                         <div class="card border mb-3" t-if="state.selectedBackorderItems.length > 0">
                             <div class="card-header">
-                                <strong>Pedidos sin Existencia</strong>
+                                <strong>Material Adicional</strong>
                             </div>
                             <div class="card-body p-0">
                                 <table class="table table-sm mb-0">

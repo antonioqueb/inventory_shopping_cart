@@ -406,25 +406,44 @@ export class HoldWizard extends Component {
         }
     }
 
-    addBackorderItem(product) {
+    async addBackorderItem(product) {
         const exists = this.state.selectedBackorderItems.find(b => b.product_id === product.id);
         if (exists) {
-            this.notification.add("Este producto ya está en la lista de pedidos", { type: "warning" });
+            this.notification.add("Este producto ya está en la lista de material adicional", { type: "warning" });
             return;
         }
-        
-        // Obtener precio según moneda seleccionada si es posible
-        // Nota: list_price base es en moneda de compañía, aquí asumimos conversión simple o base
-        // Idealmente usaríamos get_custom_prices pero por rendimiento usamos list_price como base
-        
+
+        // Cargar el listado de precios del producto (escalera comercial) para que
+        // el vendedor SELECCIONE el nivel, no escriba el precio libremente.
+        let priceOptions = [];
+        try {
+            priceOptions = await this.orm.call(
+                "product.template",
+                "get_custom_prices",
+                [],
+                {
+                    product_id: product.id,
+                    currency_code: this.state.selectedCurrency,
+                }
+            );
+        } catch (error) {
+            console.error(`Error cargando precios para material adicional ${product.id}:`, error);
+            priceOptions = [];
+        }
+
+        const defaultPrice = priceOptions.length > 0
+            ? priceOptions[0].value
+            : (product.list_price || 0);
+
         this.state.selectedBackorderItems.push({
             product_id: product.id,
             display_name: product.display_name,
             quantity: 1, // m² por defecto
-            price_unit: product.list_price,
+            price_unit: defaultPrice,
+            priceOptions: priceOptions,
             uom_name: product.uom_id[1]
         });
-        
+
         this.state.searchBackorderTerm = '';
         this.state.availableBackorderProducts = [];
     }
@@ -502,12 +521,19 @@ export class HoldWizard extends Component {
                 price_unit: s.price_unit
             }));
 
-            // Agregar items de backorder
-            const backorders = this.state.selectedBackorderItems.map(b => ({
-                product_id: b.product_id,
-                quantity: b.quantity,
-                price_unit: b.price_unit
-            }));
+            // Agregar items de backorder (material adicional).
+            // Saneamos cantidad/precio: un input vacío deja NaN en el estado y
+            // JSON.stringify(NaN) -> null, que en el backend se vuelve 0.0.
+            // Eso provocaba que la cantidad llegara en cero al apartado.
+            const backorders = this.state.selectedBackorderItems.map(b => {
+                const qty = Number(b.quantity);
+                const price = Number(b.price_unit);
+                return {
+                    product_id: b.product_id,
+                    quantity: Number.isFinite(qty) && qty > 0 ? qty : 1,
+                    price_unit: Number.isFinite(price) && price >= 0 ? price : 0,
+                };
+            });
 
             const result = await this.orm.call(
                 "stock.quant",
@@ -538,7 +564,7 @@ export class HoldWizard extends Component {
 
             if (result.success > 0 || hasNonLotItems) {
                 this.notification.add(
-                    `${result.success} lotes y ${backorders.length} pedidos creados`,
+                    `${result.success} lotes y ${backorders.length} material adicional creados`,
                     { type: "success" }
                 );
 
