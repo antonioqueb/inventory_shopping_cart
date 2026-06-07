@@ -138,20 +138,6 @@
                         </group>
                     </group>
 
-                    <div class="alert alert-info" role="status">
-                        <strong>Regla comercial:</strong>
-                        el apartado manual usa la escalera comercial del producto.
-                        <br/>
-                        <strong>Vendedores regulares:</strong> ven <strong>Precio 1</strong> y <strong>Precio 2</strong>.
-                        Si capturan un precio por debajo del <strong>Precio 2</strong> se solicita autorización.
-                        <br/>
-                        <strong>Vendedores mayoristas:</strong> ven <strong>Precios 1 a 5</strong>. Solo se solicita
-                        autorización si el precio queda por debajo del <strong>Precio 4</strong>.
-                        <br/>
-                        <strong>Autorizadores:</strong> ven <strong>Precios 1 a 5</strong>. Solo se solicita
-                        autorización si el precio queda por debajo del <strong>Precio 5</strong>.
-                    </div>
-
                     <notebook>
                         <page string="Placas Reservadas">
                             <field name="hold_line_ids"
@@ -191,7 +177,7 @@
 
                                     <field name="cantidad_m2"
                                            string="m²"
-                                           readonly="1"
+                                           readonly="lot_count != 0"
                                            force_save="1"/>
 
                                     <field name="x_price_selector"
@@ -232,7 +218,7 @@
 
                                             <field name="cantidad_m2"
                                                    string="m²"
-                                                   readonly="1"
+                                                   readonly="lot_count != 0"
                                                    force_save="1"/>
 
                                             <field name="lot_id" invisible="1"/>
