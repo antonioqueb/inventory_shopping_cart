@@ -99,6 +99,14 @@ export class HoldStoneExpandButton extends Component {
         return this._extractMany2OneName(this.props.record.data.product_id);
     }
 
+    getHoldOrderId() {
+        // Id de la reserva en BD para permitir que sus propias placas sigan
+        // apareciendo en el selector. En una reserva nueva (sin guardar) no hay
+        // id y se excluyen todas las placas con hold activo.
+        const root = this.props.record.model && this.props.record.model.root;
+        return (root && root.resId) || false;
+    }
+
     getCurrentLotIds() {
         const rawLots = this.props.record.data.lot_ids;
 
@@ -395,63 +403,26 @@ export class HoldStoneExpandButton extends Component {
     }
 
     async _loadQuants(productId, filters = {}) {
-        const domain = [
-            ["product_id", "=", productId],
-            ["location_id.usage", "=", "internal"],
-            ["quantity", ">", 0],
-        ];
-
-        if (filters.lotName) {
-            domain.push(["lot_id.name", "ilike", filters.lotName]);
-        }
-
-        if (filters.locationName) {
-            domain.push(["location_id.complete_name", "ilike", filters.locationName]);
-        }
-
-        let fields = [
-            "id",
-            "lot_id",
-            "location_id",
-            "quantity",
-            "reserved_quantity",
-        ];
-
-        /*
-         * Estos campos normalmente vienen de stock_lot_dimensions.
-         * Si alguno no existe en la BD, hacemos fallback a campos mínimos.
-         */
-        const optionalFields = [
-            "x_bloque",
-            "x_atado",
-            "x_alto",
-            "x_ancho",
-            "x_grosor",
-            "x_tipo",
-            "x_color",
-        ];
+        // El selector NO debe ofrecer placas comprometidas (reservadas en otra
+        // SO/entrega o en otro hold activo). El filtrado vive en el servidor para
+        // reutilizar la misma lógica que valida la conversión a SO.
+        const holdOrderId = this.getHoldOrderId();
 
         try {
-            return await this.orm.searchRead(
-                "stock.quant",
-                domain,
-                [...fields, ...optionalFields],
-                {
-                    limit: 500,
-                    order: "lot_id",
-                }
+            return await this.orm.call(
+                "stock.lot.hold.order.line",
+                "get_available_stone_quants",
+                [
+                    productId,
+                    holdOrderId,
+                    filters.lotName || false,
+                    filters.locationName || false,
+                ],
+                {}
             );
         } catch (error) {
-            console.warn("[HOLD STONE] Fallback sin campos extendidos:", error);
-            return await this.orm.searchRead(
-                "stock.quant",
-                domain,
-                fields,
-                {
-                    limit: 500,
-                    order: "lot_id",
-                }
-            );
+            console.error("[HOLD STONE] Error obteniendo placas disponibles:", error);
+            return [];
         }
     }
 

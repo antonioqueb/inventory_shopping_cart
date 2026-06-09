@@ -1092,6 +1092,62 @@ class StockLotHoldOrderLine(models.Model):
                         'precio_unitario': price,
                     })
 
+    @api.model
+    def get_available_stone_quants(self, product_id, hold_order_id=False,
+                                   lot_name=False, location_name=False, limit=500):
+        """Placas seleccionables para el selector del apartado.
+
+        Excluye exactamente lo que `_assert_quants_can_be_used` rechazaría al
+        convertir la reserva en SO, para no ofrecer placas ya comprometidas:
+        - Lotes con reserva nativa activa en otra SO / orden de entrega.
+        - Lotes en un hold activo distinto al que se está editando.
+
+        Devuelve la misma forma que el `search_read` anterior (lot_id y
+        location_id como [id, nombre]) para no romper el render del widget.
+        """
+        if not product_id:
+            return []
+
+        Quant = self.env['stock.quant'].sudo()
+        SaleOrder = self.env['sale.order']
+
+        domain = [
+            ('product_id', '=', product_id),
+            ('location_id.usage', '=', 'internal'),
+            ('quantity', '>', 0),
+        ]
+        if lot_name:
+            domain.append(('lot_id.name', 'ilike', lot_name))
+        if location_name:
+            domain.append(('location_id.complete_name', 'ilike', location_name))
+
+        quants = Quant.search(domain, limit=limit, order='lot_id')
+
+        available = Quant.browse()
+        for quant in quants:
+            if not quant.lot_id:
+                continue
+
+            # Hold activo de OTRA reserva: la placa ya está apartada.
+            if getattr(quant, 'x_tiene_hold', False) and quant.x_hold_activo_id:
+                if not hold_order_id or quant.x_hold_activo_id.id != hold_order_id:
+                    continue
+
+            # Reserva nativa activa en otra SO / entrega. Solo puede existir si el
+            # quant tiene cantidad reservada, así evitamos una búsqueda por placa libre.
+            if quant.reserved_quantity > 0 and SaleOrder._get_native_reservation_blockers(quant):
+                continue
+
+            available |= quant
+
+        optional_fields = [
+            'x_bloque', 'x_atado', 'x_alto', 'x_ancho', 'x_grosor', 'x_tipo', 'x_color',
+        ]
+        read_fields = ['id', 'lot_id', 'location_id', 'quantity', 'reserved_quantity']
+        read_fields += [f for f in optional_fields if f in Quant._fields]
+
+        return available.read(read_fields)
+
     def _get_quantity_from_lots(self):
         self.ensure_one()
 
