@@ -1040,10 +1040,19 @@ class SaleOrder(models.Model):
                 # la cantidad manual y solicita marcar la línea para envío a
                 # compra. El campo solo existe si stock_transit_allocation está
                 # instalado, por eso la comprobación es defensiva.
-                if pd.get('to_be_purchased') and 'auto_transit_assign' in self.env['sale.order.line']._fields:
+                want_to_purchase = bool(pd.get('to_be_purchased'))
+                if want_to_purchase and 'auto_transit_assign' in self.env['sale.order.line']._fields:
                     line_vals['auto_transit_assign'] = True
 
-                self.env['sale.order.line'].create(line_vals)
+                new_line = self.env['sale.order.line'].create(line_vals)
+                _logger.info(
+                    "[CART→SO] Línea creada product=%s qty=%s to_be_purchased(payload)=%s "
+                    "auto_transit_assign(line)=%s",
+                    rec.display_name,
+                    new_line.product_uom_qty,
+                    want_to_purchase,
+                    getattr(new_line, 'auto_transit_assign', 'N/A'),
+                )
 
             for sd in (services or []):
                 rec = self.env['product.product'].browse(sd['product_id'])

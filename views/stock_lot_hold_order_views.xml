@@ -55,7 +55,7 @@
                             type="object"
                             class="btn-success"
                             invisible="state != 'confirmed' or sale_order_id"
-                            confirm="¿Convertir esta reserva en orden de venta? Se liberarán los apartados automáticamente."/>
+                            confirm="¿Convertir esta reserva en orden de venta?"/>
 
                     <button name="action_renew"
                             string="Renovar 5 Días"
