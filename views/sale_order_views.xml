@@ -41,7 +41,7 @@
                             <div
                                 style="width: 52px; height: 52px; min-width: 52px; border-radius: 50%; background: #c62828; color: #ffffff; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 16px rgba(198, 40, 40, 0.18); font-size: 20px;"
                             >
-                                <i class="fa fa-shield"/>
+                                <i class="fa fa-shield" title="Control de precios" role="img"/>
                             </div>
 
                             <div style="flex: 1;">
@@ -86,7 +86,7 @@
                         <div
                             style="width: 42px; height: 42px; min-width: 42px; border-radius: 50%; background: #d39e00; color: #ffffff; display: flex; align-items: center; justify-content: center; font-size: 16px;"
                         >
-                            <i class="fa fa-key"/>
+                            <i class="fa fa-key" title="Autorización de precios" role="img"/>
                         </div>
 
                         <div style="flex: 1;">

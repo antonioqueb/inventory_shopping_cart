@@ -21,7 +21,7 @@
         'security/ir.model.access.csv',
         'data/ir_sequence.xml',
         'data/email_templates.xml',
-        'data/ir_cron.xml',
+        'data/ir_cron.xml',cla
         'views/product_template_views.xml',
         'views/price_authorization_views.xml',
         'views/sale_order_views.xml',

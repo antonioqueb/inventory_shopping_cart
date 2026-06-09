@@ -46,8 +46,8 @@
                         <h1><field name="name" readonly="1"/></h1>
                     </div>
                     
-                    <div class="alert alert-success" invisible="state != 'approved' or not sale_order_id">
-                        <i class="fa fa-check-circle me-2"></i>
+                    <div class="alert alert-success" role="status" invisible="state != 'approved' or not sale_order_id">
+                        <i class="fa fa-check-circle me-2" title="Orden generada" role="img"></i>
                         <strong>Orden Generada:</strong>
                         <field name="sale_order_id" readonly="1"/>
                     </div>
