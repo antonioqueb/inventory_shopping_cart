@@ -1022,7 +1022,7 @@ class SaleOrder(models.Model):
                     for l in pd.get('lots_breakdown', [])
                 } if pd.get('lots_breakdown') else {}
 
-                self.env['sale.order.line'].create({
+                line_vals = {
                     'order_id': sale_order.id,
                     'name': rec.get_product_multiline_description_sale() or rec.name,
                     'product_id': rec.id,
@@ -1034,7 +1034,16 @@ class SaleOrder(models.Model):
                     'x_lot_breakdown_json': breakdown_json,
                     'company_id': company_id,
                     'x_price_selector': 'custom',
-                })
+                }
+
+                # Material sin existencia / "mandar a pedir": la reserva propaga
+                # la cantidad manual y solicita marcar la línea para envío a
+                # compra. El campo solo existe si stock_transit_allocation está
+                # instalado, por eso la comprobación es defensiva.
+                if pd.get('to_be_purchased') and 'auto_transit_assign' in self.env['sale.order.line']._fields:
+                    line_vals['auto_transit_assign'] = True
+
+                self.env['sale.order.line'].create(line_vals)
 
             for sd in (services or []):
                 rec = self.env['product.product'].browse(sd['product_id'])
