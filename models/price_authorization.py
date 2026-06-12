@@ -292,6 +292,12 @@ class PriceAuthorization(models.Model):
                 'quantity': group['total_quantity'],
                 'price_unit': float(product_prices.get(product_id_str, 0)),
                 'selected_lots': [lot['id'] for lot in group['lots']],
+                'lots_breakdown': {
+                    str(lot['id']): float(lot.get('quantity') or 0.0)
+                    for lot in group['lots']
+                    if lot.get('quantity')
+                },
+                'to_be_purchased': bool(group.get('to_be_purchased')),
             })
 
         services = temp_data.get('services', [])
@@ -324,6 +330,8 @@ class PriceAuthorization(models.Model):
             'pricelist_id': pricelist.id,
             'company_id': company_id,
             'x_price_authorization_id': self.id,
+            'x_project_id': self.project_id.id if self.project_id else False,
+            'x_architect_id': temp_data.get('architect_id') or False,
         })
 
         for product in products:
@@ -334,16 +342,24 @@ class PriceAuthorization(models.Model):
             else:
                 tax_ids = [(5, 0, 0)]
 
-            self.env['sale.order.line'].with_company(company_id).sudo().create({
+            line_vals = {
                 'order_id': sale_order.id,
                 'product_id': product['product_id'],
                 'product_uom_qty': product['quantity'],
                 'price_unit': product['price_unit'],
                 'tax_ids': tax_ids,
                 'x_selected_lots': [(6, 0, product['selected_lots'])],
+                'x_lot_breakdown_json': product.get('lots_breakdown') or {},
                 'x_price_selector': 'custom',
                 'company_id': company_id,
-            })
+            }
+
+            # Material sin existencia ("mandar a pedir"); el campo solo existe
+            # si stock_transit_allocation está instalado.
+            if product.get('to_be_purchased') and 'auto_transit_assign' in self.env['sale.order.line']._fields:
+                line_vals['auto_transit_assign'] = True
+
+            self.env['sale.order.line'].with_company(company_id).sudo().create(line_vals)
 
         if services:
             for service in services:

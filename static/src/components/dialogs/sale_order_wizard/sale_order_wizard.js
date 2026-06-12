@@ -565,11 +565,21 @@ export class SaleOrderWizard extends Component {
             // MANEJAR CASO DE AUTORIZACIÓN REQUERIDA (solo para vendedores)
             if (result.needs_authorization) {
                 this.notification.add(
-                    `${result.message}\n\nPuede ver el estado en "Autorizaciones de Precio"`, 
+                    `${result.message}\n\nPuede ver el estado en "Autorizaciones de Precio"`,
                     { type: "warning", sticky: true }
                 );
                 this.props.onSuccess();
                 this.props.close();
+
+                if (result.authorization_id) {
+                    this.action.doAction({
+                        type: 'ir.actions.act_window',
+                        res_model: 'price.authorization',
+                        res_id: result.authorization_id,
+                        views: [[false, 'form']],
+                        target: 'current',
+                    });
+                }
                 return;
             }
             

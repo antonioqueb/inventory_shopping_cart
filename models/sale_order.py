@@ -951,6 +951,99 @@ class SaleOrder(models.Model):
         return addr.get('invoice', partner_id), addr.get('delivery', partner_id)
 
     @api.model
+    def _create_cart_price_authorization(
+        self,
+        partner_id,
+        products,
+        services,
+        notes,
+        currency_code,
+        apply_tax,
+        project_id=None,
+        architect_id=None,
+    ):
+        """
+        Crea la solicitud de autorización de precio para una venta desde el
+        carrito. Al aprobarse, price.authorization._process_approved_authorization
+        crea y confirma la orden de venta a partir de temp_data.
+        """
+        Quant = self.env['stock.quant'].sudo()
+        Product = self.env['product.template']
+
+        product_groups = {}
+        product_prices = {}
+
+        for pd in (products or []):
+            product = self.env['product.product'].browse(pd['product_id'])
+
+            if not product.exists():
+                continue
+
+            pid_str = str(pd['product_id'])
+            product_prices[pid_str] = float(pd.get('price_unit') or 0.0)
+
+            breakdown = {
+                str(l['id']): float(l['quantity'])
+                for l in pd.get('lots_breakdown', [])
+            }
+
+            lots = []
+            for quant_id in pd.get('selected_lots', []):
+                quant = Quant.browse(int(quant_id))
+
+                if not quant.exists():
+                    continue
+
+                lots.append({
+                    'id': quant.id,
+                    'lot_name': quant.lot_id.name if quant.lot_id else '',
+                    'quantity': breakdown.get(str(quant.id), quant.quantity or 0.0),
+                })
+
+            product_groups[pid_str] = {
+                'name': product.display_name,
+                'lots': lots,
+                'total_quantity': float(pd.get('quantity') or 0.0),
+                'to_be_purchased': bool(pd.get('to_be_purchased')),
+            }
+
+        auth = self.env['price.authorization'].create({
+            'seller_id': self.env.user.id,
+            'operation_type': 'sale',
+            'partner_id': partner_id,
+            'project_id': project_id,
+            'currency_code': currency_code,
+            'notes': notes or '',
+            'temp_data': {
+                'source': 'cart',
+                'product_groups': product_groups,
+                'services': services or [],
+                'apply_tax': apply_tax,
+                'architect_id': architect_id,
+            },
+        })
+
+        for pid_str, group in product_groups.items():
+            product = self.env['product.product'].browse(int(pid_str))
+            tmpl = product.product_tmpl_id
+            requested_price = product_prices.get(pid_str, 0.0)
+
+            self.env['price.authorization.line'].create({
+                'authorization_id': auth.id,
+                'product_id': int(pid_str),
+                'quantity': group['total_quantity'],
+                'lot_count': len(group['lots']),
+                'requested_price': requested_price,
+                'authorized_price': requested_price,
+                'medium_price': Product._get_price_level_value(tmpl, 'medium', currency_code),
+                'minimum_price': Product._get_price_level_value(tmpl, 'minimum', currency_code),
+                'level_4_price': Product._get_price_level_value(tmpl, 'level_4', currency_code),
+                'level_5_price': Product._get_price_level_value(tmpl, 'level_5', currency_code),
+            })
+
+        return auth
+
+    @api.model
     def create_from_shopping_cart(
         self,
         partner_id=None,
@@ -979,6 +1072,13 @@ class SaleOrder(models.Model):
                 for p in (products or [])
             }
 
+            # Validar lotes antes de cualquier otra cosa para no crear una
+            # solicitud de autorización sobre lotes que ya no se pueden usar.
+            self._assert_product_payload_quants_can_be_used(
+                products,
+                partner_id=partner_id,
+            )
+
             is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
 
             if not self.env.context.get('skip_auth_check') and not is_authorizer:
@@ -988,15 +1088,27 @@ class SaleOrder(models.Model):
                 )
 
                 if auth_result.get('needs_authorization'):
+                    auth = self._create_cart_price_authorization(
+                        partner_id=partner_id,
+                        products=products,
+                        services=services,
+                        notes=notes,
+                        currency_code=currency_code,
+                        apply_tax=apply_tax,
+                        project_id=project_id,
+                        architect_id=architect_id,
+                    )
+
                     return {
                         'needs_authorization': True,
-                        'message': 'Se detectaron precios por debajo del nivel medio. Se requiere autorización.',
+                        'authorization_id': auth.id,
+                        'authorization_name': auth.name,
+                        'message': (
+                            f'Se detectaron precios por debajo del nivel permitido. '
+                            f'Se creó la solicitud {auth.name}. La orden de venta se '
+                            f'generará automáticamente cuando sea aprobada.'
+                        ),
                     }
-
-            self._assert_product_payload_quants_can_be_used(
-                products,
-                partner_id=partner_id,
-            )
 
             company_id = self.env.company.id
             invoice_id, shipping_id = self._resolve_partner_addresses(self.env, partner_id)
