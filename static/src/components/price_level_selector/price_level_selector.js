@@ -63,8 +63,8 @@ export class PriceLevelSelectorField extends Component {
     formatPrice(value) {
         const num = Number(value) || 0;
         const formatted = num.toLocaleString("es-MX", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
         });
         return `$${formatted} ${this.currency}`;
     }
@@ -90,23 +90,23 @@ export class PriceLevelSelectorField extends Component {
             })
             .map(([val, label]) => {
                 if (val === "high") {
-                    return [val, `${label} — ${this.formatPrice(price1)}`];
+                    return [val, `${label} ${this.formatPrice(price1)}`];
                 }
 
                 if (val === "medium") {
-                    return [val, `${label} — ${this.formatPrice(price2)}`];
+                    return [val, `${label} ${this.formatPrice(price2)}`];
                 }
 
                 if (val === "minimum") {
-                    return [val, `${label} — ${this.formatPrice(price3)}`];
+                    return [val, `${label} ${this.formatPrice(price3)}`];
                 }
 
                 if (val === "level_4") {
-                    return [val, `${label} — ${this.formatPrice(price4)}`];
+                    return [val, `${label} ${this.formatPrice(price4)}`];
                 }
 
                 if (val === "level_5") {
-                    return [val, `${label} — ${this.formatPrice(price5)}`];
+                    return [val, `${label} ${this.formatPrice(price5)}`];
                 }
 
                 return [val, label];
