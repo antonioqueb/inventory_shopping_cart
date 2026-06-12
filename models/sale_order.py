@@ -31,10 +31,10 @@ class SaleOrderLine(models.Model):
 
     x_price_selector = fields.Selection([
         ('high', 'N1'),
-        ('medium', 'NN2'),
-        ('minimum', 'NN3'),
-        ('level_4', 'NN4'),
-        ('level_5', 'NN5'),
+        ('medium', 'N2'),
+        ('minimum', 'N3'),
+        ('level_4', 'N4'),
+        ('level_5', 'N5'),
         ('custom', 'Precio Personalizado'),
     ], string='Nivel de Precio', default='high',
        help="Seleccione el nivel de precio.")
