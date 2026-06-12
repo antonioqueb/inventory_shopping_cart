@@ -362,7 +362,7 @@
                                                 <br/>
                                                 <small class="text-muted">
                                                     <t t-if="product.qty_available > 0">Stock: <t t-esc="formatNumber(product.qty_available)"/></t>
-                                                    <t t-else="">Mandar Pedir</t>
+                                                    <t t-else="">Pedir</t>
                                                 </small>
                                             </div>
                                             <i class="fa fa-plus-circle text-primary"></i>
