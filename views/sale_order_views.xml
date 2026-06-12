@@ -14,7 +14,7 @@
                         string="Solicitar Autorización de Precio"
                         type="object"
                         class="btn-warning"
-                        invisible="state not in ['draft', 'sent']"
+                        invisible="state == 'cancel' or not x_has_low_prices"
                         groups="inventory_shopping_cart.group_seller"/>
             </xpath>
 
@@ -24,7 +24,13 @@
             </xpath>
 
             <xpath expr="//header/button[@name='action_confirm']" position="attributes">
-                <attribute name="invisible">state not in ['draft', 'sent'] or x_has_low_prices</attribute>
+                <attribute name="invisible">state != 'sent' or x_has_low_prices</attribute>
+            </xpath>
+
+            <!-- El header trae DOS botones Confirmar (draft y sent); el xpath
+                 anterior solo cubría el primero. -->
+            <xpath expr="(//header/button[@name='action_confirm'])[2]" position="attributes">
+                <attribute name="invisible">state != 'draft' or x_has_low_prices</attribute>
             </xpath>
 
             <!-- ===================== BANNERS DE CONTROL DE PRECIO ===================== -->

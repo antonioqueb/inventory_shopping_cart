@@ -256,8 +256,11 @@ class PriceAuthorization(models.Model):
         if not order.exists():
             raise UserError(f"La orden de venta ID {order_id} ya no existe.")
 
-        if order.state not in ['draft', 'sent']:
-            raise UserError(f"La orden {order.name} ya no está en estado borrador.")
+        if order.state not in ['draft', 'sent', 'sale']:
+            raise UserError(
+                f"La orden {order.name} está cancelada o bloqueada; "
+                f"no se pueden aplicar los precios autorizados."
+            )
 
         for line in self.line_ids:
             order_lines = order.order_line.filtered(

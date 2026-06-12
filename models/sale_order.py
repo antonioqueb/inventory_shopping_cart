@@ -772,8 +772,14 @@ class SaleOrder(models.Model):
     def action_request_authorization(self):
         self.ensure_one()
 
-        if self.state not in ['draft', 'sent']:
-            return
+        # Aplica en cotizaciones Y en órdenes confirmadas: el vendedor debe
+        # poder guardar siempre y solicitar autorización en cualquier estado
+        # activo de la orden.
+        if self.state not in ['draft', 'sent', 'sale']:
+            raise UserError(
+                "Solo se puede solicitar autorización de precios en "
+                "cotizaciones u órdenes de venta activas."
+            )
 
         Product = self.env['product.template']
         threshold_level = Product._get_user_threshold_level()
