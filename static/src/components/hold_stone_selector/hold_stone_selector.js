@@ -615,7 +615,7 @@ export class HoldStoneExpandButton extends Component {
                             <th>Bloque</th>
                             <th>Atado</th>
                             <th class="text-end">Alto</th>
-                            <th class="text-end">Ancho</th>
+                            <th class="text-end">Largo</th>
                             <th class="text-end">Esp.</th>
                             <th class="text-end">M²</th>
                             <th>Tipo</th>
