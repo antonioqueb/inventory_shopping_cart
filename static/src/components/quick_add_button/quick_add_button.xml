@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="inventory_shopping_cart.SaleQuickAddButton">
+        <div class="o_sale_quick_add d-flex justify-content-start mb-2">
+            <button type="button"
+                    class="btn btn-primary"
+                    title="Agregar producto"
+                    t-on-click="onClick">
+                <i class="fa fa-plus me-1"/> Agregar producto
+            </button>
+        </div>
+    </t>
+
+</templates>
