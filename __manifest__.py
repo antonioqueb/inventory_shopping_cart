@@ -39,6 +39,7 @@
             'inventory_shopping_cart/static/src/components/price_level_selector/price_level_selector.js',
             'inventory_shopping_cart/static/src/components/hold_stone_selector/hold_stone_selector.js',
 
+            'inventory_shopping_cart/static/src/components/quick_add_button/quick_add_button.scss',
             'inventory_shopping_cart/static/src/components/quick_add_button/quick_add_button.js',
             'inventory_shopping_cart/static/src/components/quick_add_button/quick_add_button.xml',
 

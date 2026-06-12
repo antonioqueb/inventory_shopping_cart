@@ -149,7 +149,7 @@
             </xpath>
 
             <!-- ===================== BOTÓN + AGREGAR PRODUCTO ===================== -->
-            <xpath expr="//field[@name='order_line']" position="before">
+            <xpath expr="//field[@name='order_line']" position="after">
                 <widget name="sale_quick_add_button"
                         invisible="state == 'cancel' or locked"/>
             </xpath>
