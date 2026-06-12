@@ -332,7 +332,7 @@ class StockLotHoldOrder(models.Model):
             if not reason and threshold > 0 and requested_price < (threshold - 0.01):
                 if selector == 'custom':
                     reason = (
-                        f"precio personalizado {requested_price:.2f} menor al "
+                        f"Personalizado {requested_price:.2f} menor al "
                         f"{threshold_label} {threshold:.2f}"
                     )
                 else:
@@ -848,7 +848,7 @@ class StockLotHoldOrderLine(models.Model):
         ('minimum', 'N3'),
         ('level_4', 'N4'),
         ('level_5', 'N5'),
-        ('custom', 'Precio Personalizado'),
+        ('custom', 'Personalizado'),
     ], string='Nivel de Precio', default='high')
 
     x_price_1_value = fields.Float(
@@ -887,7 +887,7 @@ class StockLotHoldOrderLine(models.Model):
     )
 
     x_can_use_custom_price = fields.Boolean(
-        string='Puede usar precio personalizado',
+        string='Puede usar Personalizado',
         compute='_compute_x_price_permission_flags',
     )
 
@@ -926,7 +926,7 @@ class StockLotHoldOrderLine(models.Model):
     @api.depends_context('uid')
     def _compute_x_price_permission_flags(self):
         """
-        El precio personalizado debe estar disponible desde el formulario manual,
+        El Personalizado debe estar disponible desde el formulario manual,
         igual que en el carrito. La autorización se decide al confirmar.
 
         Los Precios 3, 4 y 5 se exponen para vendedores mayoristas y autorizadores.

@@ -35,7 +35,7 @@ class SaleOrderLine(models.Model):
         ('minimum', 'N3'),
         ('level_4', 'N4'),
         ('level_5', 'N5'),
-        ('custom', 'Precio Personalizado'),
+        ('custom', 'Personalizado'),
     ], string='Nivel de Precio', default='high',
        help="Seleccione el nivel de precio.")
 
@@ -75,7 +75,7 @@ class SaleOrderLine(models.Model):
     )
 
     x_can_use_custom_price = fields.Boolean(
-        string='Puede usar precio personalizado',
+        string='Puede usar Personalizado',
         compute='_compute_x_price_permission_flags',
     )
 
