@@ -148,12 +148,6 @@
                        invisible="not x_is_usd"/>
             </xpath>
 
-            <!-- ===================== BOTÓN + AGREGAR PRODUCTO ===================== -->
-            <xpath expr="//field[@name='order_line']" position="after">
-                <widget name="sale_quick_add_button"
-                        invisible="state == 'cancel' or locked"/>
-            </xpath>
-
             <!-- ===================== ORDER LINES: PRICE SELECTOR ===================== -->
             <xpath expr="//field[@name='order_line']/list/field[@name='product_uom_qty']" position="after">
                 <field name="x_price_selector"
