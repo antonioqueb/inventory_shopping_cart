@@ -843,11 +843,11 @@ class StockLotHoldOrderLine(models.Model):
     _inherit = 'stock.lot.hold.order.line'
 
     x_price_selector = fields.Selection([
-        ('high', 'Precio 1'),
-        ('medium', 'Precio 2'),
-        ('minimum', 'Precio 3'),
-        ('level_4', 'Precio 4'),
-        ('level_5', 'Precio 5'),
+        ('high', 'N1'),
+        ('medium', 'N2'),
+        ('minimum', 'N3'),
+        ('level_4', 'N4'),
+        ('level_5', 'N5'),
         ('custom', 'Precio Personalizado'),
     ], string='Nivel de Precio', default='high')
 
