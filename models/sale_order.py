@@ -1079,9 +1079,10 @@ class SaleOrder(models.Model):
                 partner_id=partner_id,
             )
 
-            is_authorizer = self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
-
-            if not self.env.context.get('skip_auth_check') and not is_authorizer:
+            # No se exenta a los autorizadores: check_price_authorization_needed
+            # aplica el umbral según el rol (vendedor: P2, mayorista: P4,
+            # autorizador: P5). Debajo de su umbral, todos requieren solicitud.
+            if not self.env.context.get('skip_auth_check'):
                 auth_result = self.env['product.template'].check_price_authorization_needed(
                     prices_map,
                     currency_code,
