@@ -68,6 +68,33 @@ class StockLotHoldOrder(models.Model):
         currency_field='currency_id',
     )
 
+    # -------------------------------------------------------------------------
+    # Control de renovaciones (revivir apartado)
+    # -------------------------------------------------------------------------
+    x_renew_count = fields.Integer(
+        string='Veces renovado',
+        default=0,
+        copy=False,
+        readonly=True,
+        help='Número de veces que se ha revivido (renovado) este apartado.',
+    )
+
+    x_can_renew = fields.Boolean(
+        string='Puede renovar',
+        compute='_compute_x_can_renew',
+        help='Los autorizadores de precios pueden revivir el apartado sin '
+             'límite; un vendedor solo puede hacerlo una vez. Después debe '
+             'crear un apartado nuevo desde cero.',
+    )
+
+    @api.depends('x_renew_count')
+    def _compute_x_can_renew(self):
+        is_authorizer = self.env.user.has_group(
+            'inventory_shopping_cart.group_price_authorizer'
+        )
+        for order in self:
+            order.x_can_renew = is_authorizer or order.x_renew_count < 1
+
     @api.model
     def _default_hold_currency_id(self):
         usd = self.env['res.currency'].search([('name', '=', 'USD')], limit=1)
@@ -837,6 +864,36 @@ class StockLotHoldOrder(models.Model):
             order._stone_apply_hold_payload_to_sale_order(sale_order, payload)
 
         return result
+
+    def action_renew(self):
+        """Revivir (renovar) el apartado con control por rol.
+
+        - Autorizador de precios (group_price_authorizer): sin límite.
+        - Vendedor (normal o mayorista): solo una vez. Después debe crear
+          un apartado nuevo desde cero.
+
+        La validación es server-side (no solo ocultar el botón) para que el
+        límite no se pueda saltar desde otra vista o por RPC.
+        """
+        is_authorizer = self.env.user.has_group(
+            'inventory_shopping_cart.group_price_authorizer'
+        )
+        if not is_authorizer:
+            for order in self:
+                if order.x_renew_count >= 1:
+                    raise UserError(
+                        'Solo puede revivir este apartado una vez. '
+                        'Para volver a apartar este material debe crear un '
+                        'apartado nuevo desde cero.'
+                    )
+
+        res = super().action_renew()
+
+        # super() ya validó el estado y renovó los holds; contamos la renovación.
+        for order in self:
+            order.x_renew_count += 1
+
+        return res
 
 
 class StockLotHoldOrderLine(models.Model):

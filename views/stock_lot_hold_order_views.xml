@@ -61,7 +61,7 @@
                             string="Renovar 5 Días"
                             type="object"
                             class="btn-warning"
-                            invisible="state != 'confirmed' or sale_order_id"/>
+                            invisible="state != 'confirmed' or sale_order_id or not x_can_renew"/>
 
                     <button name="action_done"
                             string="Finalizar"
@@ -78,6 +78,7 @@
 
                 <sheet>
                     <field name="sale_order_id" invisible="1"/>
+                    <field name="x_can_renew" invisible="1"/>
 
                     <div class="oe_button_box" name="button_box">
                         <button name="%(sale.act_res_partner_2_sale_order)d"
