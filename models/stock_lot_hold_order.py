@@ -959,6 +959,13 @@ class StockLotHoldOrderLine(models.Model):
         default=0.0,
     )
 
+    product_uom_id = fields.Many2one(
+        'uom.uom',
+        string='Unidad de Medida',
+        related='product_id.uom_id',
+        readonly=True,
+    )
+
     precio_unitario = fields.Float(
         string='Precio/m²',
         digits='Product Price',

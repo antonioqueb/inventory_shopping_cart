@@ -172,9 +172,12 @@
                                     <field name="lot_count" column_invisible="1"/>
 
                                     <field name="cantidad_m2"
-                                           string="m²"
+                                           string="Cantidad"
                                            readonly="lot_count != 0"
                                            force_save="1"/>
+
+                                    <field name="product_uom_id"
+                                           string="Unidad de Medida"/>
 
                                     <field name="x_price_selector"
                                            string="Nivel de Precio"
@@ -213,9 +216,12 @@
                                                    readonly="1"/>
 
                                             <field name="cantidad_m2"
-                                                   string="m²"
+                                                   string="Cantidad"
                                                    readonly="lot_count != 0"
                                                    force_save="1"/>
+
+                                            <field name="product_uom_id"
+                                                   string="Unidad de Medida"/>
 
                                             <field name="lot_id" invisible="1"/>
                                             <field name="quant_id" invisible="1"/>
