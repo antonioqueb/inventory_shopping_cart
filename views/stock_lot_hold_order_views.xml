@@ -194,6 +194,11 @@
                                            widget="monetary"
                                            readonly="1"/>
 
+                                    <field name="x_tax_amount"
+                                           string="Impuestos"
+                                           widget="monetary"
+                                           readonly="1"/>
+
                                     <!-- Campos técnicos / legacy -->
                                     <field name="lot_ids" column_invisible="1"/>
                                     <field name="lot_id" column_invisible="1"/>
@@ -252,6 +257,11 @@
 
                                             <field name="precio_total"
                                                    string="Total"
+                                                   widget="monetary"
+                                                   readonly="1"/>
+
+                                            <field name="x_tax_amount"
+                                                   string="Impuestos"
                                                    widget="monetary"
                                                    readonly="1"/>
                                         </group>

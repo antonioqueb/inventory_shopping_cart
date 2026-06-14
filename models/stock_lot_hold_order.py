@@ -1037,6 +1037,53 @@ class StockLotHoldOrderLine(models.Model):
         currency_field='currency_id',
     )
 
+    x_tax_amount = fields.Monetary(
+        string='Impuestos',
+        compute='_compute_x_tax_amount',
+        store=True,
+        currency_field='currency_id',
+        help='Impuesto de la línea según los impuestos de venta del producto '
+             '(mapeados por la posición fiscal del cliente).',
+    )
+
+    @api.depends(
+        'product_id',
+        'product_id.taxes_id',
+        'cantidad_m2',
+        'precio_unitario',
+        'currency_id',
+        'order_id.partner_id',
+        'order_id.partner_id.property_account_position_id',
+        'order_id.company_id',
+    )
+    def _compute_x_tax_amount(self):
+        for line in self:
+            qty = line.cantidad_m2 or 0.0
+            price = line.precio_unitario or 0.0
+            company = line.order_id.company_id or self.env.company
+            currency = line.currency_id or company.currency_id
+
+            taxes = self.env['account.tax']
+            if line.product_id:
+                taxes = line.product_id.taxes_id.filtered(
+                    lambda t: t.company_id == company
+                )
+                fpos = line.order_id.partner_id.property_account_position_id
+                if fpos:
+                    taxes = fpos.map_tax(taxes)
+
+            if taxes and qty and price:
+                res = taxes.compute_all(
+                    price,
+                    currency=currency,
+                    quantity=qty,
+                    product=line.product_id,
+                    partner=line.order_id.partner_id,
+                )
+                line.x_tax_amount = res['total_included'] - res['total_excluded']
+            else:
+                line.x_tax_amount = 0.0
+
     @api.depends_context('uid')
     def _compute_x_price_permission_flags(self):
         """
