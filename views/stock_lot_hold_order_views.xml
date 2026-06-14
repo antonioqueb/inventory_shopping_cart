@@ -260,10 +260,21 @@
                             </field>
 
                             <group class="oe_subtotal_footer">
-                                <field name="total_con_precio"
-                                       readonly="1"
+                                <field name="x_amount_total"
+                                       string="Subtotal"
                                        widget="monetary"
-                                       string="Total Apartado"/>
+                                       readonly="1"/>
+
+                                <field name="x_amount_tax"
+                                       string="Impuestos"
+                                       widget="monetary"
+                                       readonly="1"/>
+
+                                <field name="x_amount_total_taxed"
+                                       string="Total $"
+                                       widget="monetary"
+                                       readonly="1"
+                                       class="oe_subtotal_footer_separator"/>
                             </group>
                         </page>
 

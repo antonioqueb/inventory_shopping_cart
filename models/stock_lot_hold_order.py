@@ -62,6 +62,20 @@ class StockLotHoldOrder(models.Model):
     )
 
     x_amount_total = fields.Monetary(
+        string='Subtotal',
+        compute='_compute_hold_totals',
+        store=True,
+        currency_field='currency_id',
+    )
+
+    x_amount_tax = fields.Monetary(
+        string='Impuestos',
+        compute='_compute_hold_totals',
+        store=True,
+        currency_field='currency_id',
+    )
+
+    x_amount_total_taxed = fields.Monetary(
         string='Total',
         compute='_compute_hold_totals',
         store=True,
@@ -156,18 +170,54 @@ class StockLotHoldOrder(models.Model):
         'line_ids.cantidad_m2',
         'line_ids.precio_unitario',
         'line_ids.x_subtotal',
+        'line_ids.product_id',
+        'line_ids.product_id.taxes_id',
+        'partner_id',
+        'partner_id.property_account_position_id',
+        'currency_id',
     )
     def _compute_hold_totals(self):
         for order in self:
             total_m2 = 0.0
-            amount_total = 0.0
+            amount_untaxed = 0.0
+            amount_tax = 0.0
+
+            company = order.company_id or self.env.company
+            currency = order.currency_id or company.currency_id
+            fpos = order.partner_id.property_account_position_id
 
             for line in order.line_ids:
-                total_m2 += line.cantidad_m2 or 0.0
-                amount_total += line.x_subtotal or 0.0
+                qty = line.cantidad_m2 or 0.0
+                price = line.precio_unitario or 0.0
+                total_m2 += qty
+
+                # Impuestos reales configurados en el producto (taxes de venta),
+                # filtrados por compañía y mapeados por la posición fiscal del cliente.
+                taxes = self.env['account.tax']
+                if line.product_id:
+                    taxes = line.product_id.taxes_id.filtered(
+                        lambda t: t.company_id == company
+                    )
+                    if fpos:
+                        taxes = fpos.map_tax(taxes)
+
+                if taxes:
+                    res = taxes.compute_all(
+                        price,
+                        currency=currency,
+                        quantity=qty,
+                        product=line.product_id,
+                        partner=order.partner_id,
+                    )
+                    amount_untaxed += res['total_excluded']
+                    amount_tax += res['total_included'] - res['total_excluded']
+                else:
+                    amount_untaxed += qty * price
 
             order.x_total_m2 = total_m2
-            order.x_amount_total = amount_total
+            order.x_amount_total = amount_untaxed
+            order.x_amount_tax = amount_tax
+            order.x_amount_total_taxed = amount_untaxed + amount_tax
 
     def _compute_x_days_to_expiration(self):
         now = fields.Datetime.now()
