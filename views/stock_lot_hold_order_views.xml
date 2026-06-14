@@ -109,33 +109,27 @@
                             <field name="arquitecto_id" string="Arquitecto"/>
                         </group>
 
-                        <group string="Información">
-                            <field name="user_id" string="Vendedor" readonly="1"/>
-                            <field name="fecha_orden" string="Fecha de Orden" readonly="1" force_save="1"/>
-                            <field name="fecha_expiracion" string="Fecha de Expiración" readonly="1" force_save="1"/>
-                            <field name="dias_restantes" string="Días Restantes" readonly="1"/>
+                        <group string="Configuración">
                             <field name="currency_id" string="Moneda" required="1"/>
-
-                            <separator/>
-
-                            <field name="x_hold_business_days"
-                                   string="Días hábiles"
-                                   readonly="1"
-                                   force_save="1"/>
-
-                            <field name="total_placas"
-                                   string="Total Placas"
-                                   readonly="1"/>
-
-                            <field name="total_m2"
-                                   string="Total m²"
-                                   readonly="1"/>
-
-                            <field name="total_con_precio"
-                                   string="Total General"
-                                   widget="monetary"
-                                   readonly="1"/>
                         </group>
+                    </group>
+
+                    <!-- ===================================================== -->
+                    <!-- Campos NO editables (automáticos/calculados): se      -->
+                    <!-- mantienen en la vista como invisibles para conservar  -->
+                    <!-- sus valores, force_save y cálculos, pero no se        -->
+                    <!-- muestran. Los totales siguen visibles en el pie de    -->
+                    <!-- las líneas (página "Placas Reservadas").              -->
+                    <!-- ===================================================== -->
+                    <group invisible="1">
+                        <field name="user_id" readonly="1"/>
+                        <field name="fecha_orden" readonly="1" force_save="1"/>
+                        <field name="fecha_expiracion" readonly="1" force_save="1"/>
+                        <field name="dias_restantes" readonly="1"/>
+                        <field name="x_hold_business_days" readonly="1" force_save="1"/>
+                        <field name="total_placas" readonly="1"/>
+                        <field name="total_m2" readonly="1"/>
+                        <field name="total_con_precio" readonly="1"/>
                     </group>
 
                     <notebook>
