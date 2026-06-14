@@ -166,9 +166,10 @@
                                            string="Producto"
                                            required="1"/>
 
-                                    <field name="lot_count"
-                                           string="Placas"
-                                           readonly="1"/>
+                                    <!-- Contador de placas: oculto como columna pero se
+                                         mantiene en la vista porque 'm²' lo usa en su
+                                         modificador readonly. -->
+                                    <field name="lot_count" column_invisible="1"/>
 
                                     <field name="cantidad_m2"
                                            string="m²"
@@ -253,14 +254,6 @@
                             </field>
 
                             <group class="oe_subtotal_footer">
-                                <field name="total_placas"
-                                       readonly="1"
-                                       string="Total Placas"/>
-
-                                <field name="total_m2"
-                                       readonly="1"
-                                       string="Total m²"/>
-
                                 <field name="total_con_precio"
                                        readonly="1"
                                        widget="monetary"
