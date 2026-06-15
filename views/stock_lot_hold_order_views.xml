@@ -103,6 +103,11 @@
                     <group>
                         <group string="Cliente">
                             <field name="partner_id" string="Cliente" required="1"/>
+                            <field name="available_delivery_partner_ids" invisible="1"/>
+                            <field name="delivery_partner_id"
+                                   string="Contacto de Entrega"
+                                   invisible="not available_delivery_partner_ids"
+                                   options="{'no_create': True, 'no_open': True}"/>
                             <field name="delivery_address"
                                    string="Dirección de Entrega"
                                    placeholder="Dirección de entrega..."/>
