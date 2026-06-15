@@ -739,6 +739,10 @@ class StockLotHoldOrder(models.Model):
 
             # Para formatos/piezas, conservar cantidad seleccionada.
             # stone_select soporta breakdown por lot_id y algunos flujos viejos por quant_id.
+            line_breakdown = {}
+            if 'x_lot_breakdown_json' in line._fields:
+                line_breakdown = line.x_lot_breakdown_json or {}
+
             for lot in lots:
                 tipo = str(getattr(lot, 'x_tipo', '') or 'placa').lower()
                 if tipo not in ('formato', 'pieza'):
@@ -746,9 +750,16 @@ class StockLotHoldOrder(models.Model):
 
                 qty = 0.0
 
-                if len(lots) == 1 and 'cantidad_m2' in line._fields:
+                # 1) Parcialidad guardada explícitamente en la línea de apartado
+                #    (lo seleccionado desde el carrito o el selector visual).
+                if str(lot.id) in line_breakdown:
+                    qty = float(line_breakdown.get(str(lot.id)) or 0.0)
+
+                # 2) Línea de un solo lote: la cantidad de la línea ES la del lote.
+                if qty <= 0 and len(lots) == 1 and 'cantidad_m2' in line._fields:
                     qty = float(line.cantidad_m2 or 0.0)
 
+                # 3) Último recurso: cantidad del quant (lote completo).
                 if qty <= 0 and quants:
                     lot_quants = quants.filtered(lambda q: q.lot_id.id == lot.id)
                     qty = sum(lot_quants.mapped('quantity')) if lot_quants else 0.0
@@ -1068,6 +1079,16 @@ class StockLotHoldOrderLine(models.Model):
         default=0.0,
     )
 
+    x_lot_breakdown_json = fields.Json(
+        string='Desglose de Cantidades por Lote',
+        copy=True,
+        help='JSON {str(lot_id): cantidad} con la parcialidad seleccionada por '
+             'lote, para FORMATOS y PIEZAS (fraccionables). Para PLACAS no se '
+             'usa: siempre se toma el lote completo. Espeja el campo del mismo '
+             'nombre en sale.order.line para preservar las parcialidades del '
+             'apartado igual que en la orden de venta.',
+    )
+
     product_uom_id = fields.Many2one(
         'uom.uom',
         string='Unidad de Medida',
@@ -1204,7 +1225,7 @@ class StockLotHoldOrderLine(models.Model):
         for line in self:
             line.x_subtotal = (line.cantidad_m2 or 0.0) * (line.precio_unitario or 0.0)
 
-    @api.depends('lot_ids', 'product_id')
+    @api.depends('lot_ids', 'product_id', 'x_lot_breakdown_json')
     def _compute_cantidad_m2(self):
         """
         Sobrescribe el cómputo del módulo base.
@@ -1215,14 +1236,25 @@ class StockLotHoldOrderLine(models.Model):
         debe CONSERVAR la cantidad que indicó el usuario (p. ej. 100 m²), no
         reiniciarla a cero.
 
-        - Con placas: se recalcula desde el inventario (igual que el base).
+        - Con placas:
+            * Si la línea tiene desglose de parcialidades (x_lot_breakdown_json),
+              p. ej. FORMATOS/PIEZAS donde se aparta solo parte de un lote, se
+              respeta la cantidad parcial por lote (no el quant completo).
+            * Para los lotes sin entrada en el desglose (p. ej. PLACAS enteras),
+              se toma la cantidad completa del quant, igual que el base.
         - Servicio: 1.0 por defecto si está vacío.
         - Material adicional (físico sin placas): se conserva lo capturado.
         """
         for line in self:
             if line.lot_ids:
+                breakdown = line.x_lot_breakdown_json or {}
                 total = 0.0
                 for lot in line.lot_ids:
+                    key = str(lot.id)
+                    if key in breakdown:
+                        # Parcialidad explícita seleccionada para este lote.
+                        total += float(breakdown.get(key) or 0.0)
+                        continue
                     quant = self.env['stock.quant'].search([
                         ('lot_id', '=', lot.id),
                         ('quantity', '>', 0),

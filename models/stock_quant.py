@@ -610,7 +610,23 @@ class StockQuant(models.Model):
                     cantidad_m2 = sum(item['quantity'] for item in group['items'])
                     first_quant = group['items'][0]['quant']
 
-                    line_model.with_context(skip_hold_line_quantity_sync=True).create({
+                    # Desglose de parcialidades por lote (FORMATOS / PIEZAS).
+                    # Para PLACAS no se guarda: siempre es el lote completo.
+                    # Esto preserva la cantidad parcial exacta seleccionada en el
+                    # carrito, igual que x_lot_breakdown_json en sale.order.line,
+                    # para que el apartado no la interprete como el 100% del lote.
+                    breakdown = {}
+                    for item in group['items']:
+                        lot = item['quant'].lot_id
+                        if not lot:
+                            continue
+                        tipo = str(getattr(lot, 'x_tipo', '') or 'placa').lower()
+                        if tipo not in ('formato', 'pieza'):
+                            continue
+                        key = str(lot.id)
+                        breakdown[key] = breakdown.get(key, 0.0) + float(item['quantity'] or 0.0)
+
+                    line_vals = {
                         'order_id': order.id,
                         'product_id': pid,
                         'lot_ids': [(6, 0, group['lot_ids'])],
@@ -623,7 +639,11 @@ class StockQuant(models.Model):
                             currency_code,
                             precio_unitario,
                         ),
-                    })
+                    }
+                    if breakdown and 'x_lot_breakdown_json' in line_model._fields:
+                        line_vals['x_lot_breakdown_json'] = breakdown
+
+                    line_model.with_context(skip_hold_line_quantity_sync=True).create(line_vals)
 
                     success_count += len(group['lot_ids'])
 

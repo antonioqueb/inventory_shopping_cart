@@ -211,6 +211,7 @@
                                     <field name="quant_id" column_invisible="1"/>
                                     <field name="hold_ids" column_invisible="1"/>
                                     <field name="hold_id" column_invisible="1"/>
+                                    <field name="x_lot_breakdown_json" column_invisible="1"/>
                                 </list>
 
                                 <form>
@@ -239,6 +240,7 @@
                                             <field name="quant_id" invisible="1"/>
                                             <field name="hold_ids" invisible="1"/>
                                             <field name="hold_id" invisible="1"/>
+                                            <field name="x_lot_breakdown_json" invisible="1"/>
                                         </group>
 
                                         <group string="Precio">
