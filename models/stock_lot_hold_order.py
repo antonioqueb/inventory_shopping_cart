@@ -1403,9 +1403,6 @@ class StockLotHoldOrderLine(models.Model):
     def _get_quantity_from_lots(self):
         self.ensure_one()
 
-        if self.quant_id:
-            return self.quant_id.quantity or 0.0
-
         lots = self.env['stock.lot']
 
         if self.lot_ids:
@@ -1413,6 +1410,31 @@ class StockLotHoldOrderLine(models.Model):
 
         if self.lot_id:
             lots |= self.lot_id
+
+        # Con desglose de parcialidades (FORMATOS/PIEZAS) se respeta la cantidad
+        # parcial por lote; los lotes sin entrada en el desglose usan el quant
+        # completo. Así el guardado no pisa la parcialidad seleccionada.
+        breakdown = {}
+        if 'x_lot_breakdown_json' in self._fields:
+            breakdown = self.x_lot_breakdown_json or {}
+
+        if breakdown and lots:
+            total = 0.0
+            for lot in lots:
+                key = str(lot.id)
+                if key in breakdown:
+                    total += float(breakdown.get(key) or 0.0)
+                    continue
+                quant = self.env['stock.quant'].search([
+                    ('lot_id', '=', lot.id),
+                    ('location_id.usage', '=', 'internal'),
+                    ('quantity', '>', 0),
+                ], limit=1)
+                total += quant.quantity if quant else 0.0
+            return total
+
+        if self.quant_id:
+            return self.quant_id.quantity or 0.0
 
         if not lots:
             return 0.0
