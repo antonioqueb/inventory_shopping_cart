@@ -54,6 +54,65 @@ class StockLotHoldOrder(models.Model):
         default=lambda self: self._default_hold_currency_id(),
     )
 
+    # -------------------------------------------------------------------------
+    # Selección del contacto de entrega (cuando el cliente tiene varios)
+    # -------------------------------------------------------------------------
+    delivery_partner_id = fields.Many2one(
+        'res.partner',
+        string='Contacto de Entrega',
+        domain="[('id', 'in', available_delivery_partner_ids)]",
+        tracking=True,
+        help='Contacto de entrega del cliente. Si el cliente tiene varios '
+             'contactos de entrega/dirección, aquí eliges cuál usar.',
+    )
+    available_delivery_partner_ids = fields.Many2many(
+        'res.partner',
+        string='Contactos de entrega disponibles',
+        compute='_compute_available_delivery_partner_ids',
+    )
+
+    @api.depends('partner_id')
+    def _compute_available_delivery_partner_ids(self):
+        for order in self:
+            order.available_delivery_partner_ids = order._get_delivery_partners(
+                order.partner_id
+            )
+
+    def _get_delivery_partners(self, partner):
+        """Contactos hijos del cliente de tipo entrega/dirección entre los que
+        el usuario puede elegir. Recordset vacío si no hay ninguno."""
+        if not partner:
+            return self.env['res.partner']
+        return partner.child_ids.filtered(lambda c: c.type in ('delivery', 'other'))
+
+    @api.onchange('partner_id')
+    def _onchange_partner_id(self):
+        """Override: al cambiar el cliente, preselecciona el contacto de
+        entrega (el que resuelve address_get) y rellena la dirección. Si hay
+        varios, el usuario puede cambiar el contacto en el selector."""
+        available = self._get_delivery_partners(self.partner_id)
+        default = self._resolve_delivery_partner(self.partner_id)
+        if default and default in available:
+            self.delivery_partner_id = default
+        elif available:
+            self.delivery_partner_id = available[:1]
+        else:
+            self.delivery_partner_id = False
+        self._apply_delivery_address()
+
+    @api.onchange('delivery_partner_id')
+    def _onchange_delivery_partner_id(self):
+        self._apply_delivery_address()
+
+    def _apply_delivery_address(self):
+        """Rellena el texto de Dirección de Entrega desde el contacto elegido."""
+        if self.delivery_partner_id:
+            self.delivery_address = self._format_partner_address(
+                self.delivery_partner_id
+            )
+        else:
+            self.delivery_address = ''
+
     x_total_m2 = fields.Float(
         string='Total m²',
         compute='_compute_hold_totals',
