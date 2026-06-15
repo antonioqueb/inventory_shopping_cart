@@ -1045,6 +1045,22 @@ class ProductTemplate(models.Model):
 class ProductProduct(models.Model):
     _inherit = 'product.product'
 
+    @api.model
+    def _name_search(self, name='', domain=None, operator='ilike', limit=None, order=None):
+        """En el selector de producto del apartado (hold), los servicios
+        (p. ej. anticipos) NO se listan por defecto al abrir el desplegable,
+        pero SÍ aparecen cuando el usuario escribe algo para buscarlos.
+
+        Se activa solo cuando el campo pasa el contexto 'hold_hide_services_default'
+        y la búsqueda está vacía (desplegable recién abierto).
+        """
+        if self.env.context.get('hold_hide_services_default') and not name:
+            domain = list(domain or []) + [('type', '!=', 'service')]
+        return super()._name_search(
+            name=name, domain=domain, operator=operator,
+            limit=limit, order=order,
+        )
+
     def write(self, vals):
         res = super(ProductProduct, self).write(vals)
 

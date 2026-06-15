@@ -169,7 +169,8 @@
 
                                     <field name="product_id"
                                            string="Producto"
-                                           required="1"/>
+                                           required="1"
+                                           context="{'hold_hide_services_default': 1}"/>
 
                                     <!-- Contador de placas: oculto como columna pero se
                                          mantiene en la vista porque 'm²' lo usa en su
@@ -215,7 +216,8 @@
                                 <form>
                                     <group>
                                         <group string="Material">
-                                            <field name="product_id" required="1"/>
+                                            <field name="product_id" required="1"
+                                                   context="{'hold_hide_services_default': 1}"/>
 
                                             <field name="lot_ids"
                                                    widget="hold_stone_button"
