@@ -438,19 +438,65 @@ export class HoldStoneExpandButton extends Component {
         return quant.location_id ? quant.location_id[1] : "";
     }
 
+    _getTipoFromQuant(quant) {
+        return String((quant && quant.x_tipo) || "placa").toLowerCase();
+    }
+
+    // FORMATOS y PIEZAS son fraccionables: se puede apartar solo una parte del
+    // lote, por eso permiten elegir la cantidad. Las PLACAS siempre van enteras.
+    _isFraccionableQuant(quant) {
+        const tipo = this._getTipoFromQuant(quant);
+        return tipo === "formato" || tipo === "pieza";
+    }
+
+    _getUnitLabelFromQuant(quant) {
+        return this._getTipoFromQuant(quant) === "pieza" ? "pzas" : "m²";
+    }
+
+    // Desglose de parcialidades ya guardado en la línea ({str(lot_id): cantidad}),
+    // para reabrir el selector conservando lo elegido en formatos/piezas.
+    getExistingBreakdown() {
+        const raw = this.props.record.data.x_lot_breakdown_json;
+        return raw && typeof raw === "object" ? raw : {};
+    }
+
+    _clampQuantity(value, max) {
+        let num = Number(value);
+        if (!isFinite(num) || num < 0) {
+            num = 0;
+        }
+        if (isFinite(max) && max > 0 && num > max) {
+            num = max;
+        }
+        return num;
+    }
+
     async _renderPopup(productId) {
         const currentLotIds = new Set(this.getCurrentLotIds());
+        const existingBreakdown = this.getExistingBreakdown();
 
         const state = {
             quants: [],
             selectedLotIds: new Set(currentLotIds),
             selectedQuantByLot: new Map(),
+            // Cantidad elegida por lote para FORMATOS/PIEZAS (parcialidades).
+            // Para PLACAS no se usa: siempre toman el quant completo.
+            qtyByLot: new Map(),
             filters: {
                 lotName: "",
                 locationName: "",
             },
             isLoading: true,
         };
+
+        // Precargar parcialidades ya guardadas en la línea para los lotes
+        // actualmente seleccionados (al reabrir el selector).
+        for (const [lotKey, qty] of Object.entries(existingBreakdown)) {
+            const lotId = parseInt(lotKey, 10);
+            if (lotId) {
+                state.qtyByLot.set(lotId, Number(qty) || 0);
+            }
+        }
 
         const productName = this.getProductName();
         const root = this._popupRoot;
@@ -544,13 +590,24 @@ export class HoldStoneExpandButton extends Component {
         const filterLot = root.querySelector("#hs-filter-lot");
         const filterLocation = root.querySelector("#hs-filter-location");
 
+        const getChosenQty = (quant, lotId) => {
+            const full = Number(quant.quantity || 0);
+            if (!this._isFraccionableQuant(quant)) {
+                return full;
+            }
+            const chosen = state.qtyByLot.has(lotId)
+                ? state.qtyByLot.get(lotId)
+                : full;
+            return this._clampQuantity(chosen, full);
+        };
+
         const updateTotals = () => {
             let total = 0;
 
             for (const quant of state.quants) {
                 const lotId = this._getLotIdFromQuant(quant);
                 if (lotId && state.selectedLotIds.has(lotId)) {
-                    total += Number(quant.quantity || 0);
+                    total += getChosenQty(quant, lotId);
                 }
             }
 
@@ -583,6 +640,35 @@ export class HoldStoneExpandButton extends Component {
                     state.selectedQuantByLot.set(lotId, quant);
                 }
 
+                const fraccionable = this._isFraccionableQuant(quant);
+                const fullQty = Number(quant.quantity || 0);
+
+                // M²: las placas muestran el lote completo (no fraccionable).
+                // Formatos/piezas seleccionados muestran un input para elegir
+                // cuánto de ese lote se aparta (parcialidad), como "por fuera".
+                let qtyCell = `<strong>${this._formatNumber(quant.quantity)}</strong>`;
+                if (selected && fraccionable) {
+                    const chosen = this._clampQuantity(
+                        state.qtyByLot.has(lotId) ? state.qtyByLot.get(lotId) : fullQty,
+                        fullQty
+                    );
+                    qtyCell = `
+                        <div style="display:inline-flex;align-items:center;gap:4px;justify-content:flex-end;">
+                            <input type="number"
+                                   class="hold-stone-qty-input form-control form-control-sm text-end"
+                                   style="width:78px;height:28px;padding:2px 6px;"
+                                   data-lot-id="${lotId}"
+                                   value="${chosen}"
+                                   min="0"
+                                   step="0.01"
+                                   max="${fullQty}"/>
+                            <span style="font-size:10px;font-weight:700;color:#64748b;">
+                                / ${this._formatNumber(fullQty)} ${this._getUnitLabelFromQuant(quant)}
+                            </span>
+                        </div>
+                    `;
+                }
+
                 rows += `
                     <tr data-lot-id="${lotId || ""}"
                         data-quant-id="${quant.id}"
@@ -598,7 +684,7 @@ export class HoldStoneExpandButton extends Component {
                         <td class="text-end">${this._escapeHtml(quant.x_alto || "-")}</td>
                         <td class="text-end">${this._escapeHtml(quant.x_ancho || "-")}</td>
                         <td class="text-end">${this._escapeHtml(quant.x_grosor || "-")}</td>
-                        <td class="text-end"><strong>${this._formatNumber(quant.quantity)}</strong></td>
+                        <td class="text-end">${qtyCell}</td>
                         <td>${this._escapeHtml(quant.x_tipo || "Placa")}</td>
                         <td>${this._escapeHtml(quant.x_color || "-")}</td>
                         <td>${this._escapeHtml(locationName || "-")}</td>
@@ -645,10 +731,52 @@ export class HoldStoneExpandButton extends Component {
                         state.selectedLotIds.add(lotId);
                         if (quant) {
                             state.selectedQuantByLot.set(lotId, quant);
+                            // Al seleccionar un fraccionable, predeterminar la
+                            // cantidad al lote completo si no había parcialidad.
+                            if (this._isFraccionableQuant(quant) && !state.qtyByLot.has(lotId)) {
+                                state.qtyByLot.set(lotId, Number(quant.quantity || 0));
+                            }
                         }
                     }
 
                     renderTable();
+                });
+            });
+
+            // Inputs de parcialidad (formatos/piezas): editar la cantidad NO debe
+            // alternar la selección de la fila, por eso se detiene la propagación.
+            body.querySelectorAll(".hold-stone-qty-input").forEach((input) => {
+                const stop = (event) => event.stopPropagation();
+                input.addEventListener("click", stop);
+                input.addEventListener("mousedown", stop);
+
+                input.addEventListener("input", (event) => {
+                    event.stopPropagation();
+                    const lotId = parseInt(input.dataset.lotId || "0", 10);
+                    if (!lotId) {
+                        return;
+                    }
+                    const quant = state.selectedQuantByLot.get(lotId)
+                        || state.quants.find((item) => this._getLotIdFromQuant(item) === lotId);
+                    const fullQty = quant ? Number(quant.quantity || 0) : Infinity;
+                    state.qtyByLot.set(lotId, this._clampQuantity(input.value, fullQty));
+                    updateTotals();
+                });
+
+                // Al salir del campo, normalizar el valor mostrado (clamp).
+                input.addEventListener("change", (event) => {
+                    event.stopPropagation();
+                    const lotId = parseInt(input.dataset.lotId || "0", 10);
+                    if (!lotId) {
+                        return;
+                    }
+                    const quant = state.selectedQuantByLot.get(lotId)
+                        || state.quants.find((item) => this._getLotIdFromQuant(item) === lotId);
+                    const fullQty = quant ? Number(quant.quantity || 0) : Infinity;
+                    const clamped = this._clampQuantity(input.value, fullQty);
+                    state.qtyByLot.set(lotId, clamped);
+                    input.value = clamped;
+                    updateTotals();
                 });
             });
 
@@ -694,6 +822,9 @@ export class HoldStoneExpandButton extends Component {
             let totalQty = 0;
             let firstLot = false;
             let firstQuant = false;
+            // Desglose de parcialidades por lote (solo FORMATOS/PIEZAS). Las
+            // placas no se incluyen: siempre se aparta el lote completo.
+            const breakdown = {};
 
             for (const lotId of lotIds) {
                 const quant = state.selectedQuantByLot.get(lotId)
@@ -714,13 +845,24 @@ export class HoldStoneExpandButton extends Component {
                     ];
                 }
 
-                totalQty += Number(quant.quantity || 0);
+                const qty = getChosenQty(quant, lotId);
+                if (this._isFraccionableQuant(quant)) {
+                    breakdown[String(lotId)] = qty;
+                }
+                totalQty += qty;
             }
 
             const updateVals = {
                 lot_ids: [[6, 0, lotIds]],
                 cantidad_m2: totalQty,
             };
+
+            // Persistir el desglose para que el backend respete la parcialidad
+            // (espeja x_lot_breakdown_json de sale.order.line). Se asigna aunque
+            // quede vacío para limpiar parcialidades previas si ya no aplican.
+            if ("x_lot_breakdown_json" in this.props.record.data) {
+                updateVals.x_lot_breakdown_json = breakdown;
+            }
 
             if (firstLot) {
                 updateVals.lot_id = firstLot;
