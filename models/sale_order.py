@@ -4,6 +4,8 @@
 import math
 import logging
 
+from markupsafe import Markup
+
 from odoo import models, fields, api
 from odoo.exceptions import UserError, ValidationError
 
@@ -223,6 +225,36 @@ class SaleOrder(models.Model):
     x_is_usd = fields.Boolean(
         string='Es USD',
         compute='_compute_is_usd',
+    )
+
+    # =========================================================================
+    # AUTORIZACIÓN DE DESCUENTOS ALTOS
+    # Si el valor del descuento de la orden (en MXN) alcanza el umbral
+    # (por defecto 2,000 MXN), la orden queda BLOQUEADA hasta que un
+    # "Autorizador de Precios Mínimos" la autorice. Aplica igual al descuento
+    # manual por línea y al excedente "no cobrado" (free) desde Transit Allocation.
+    # =========================================================================
+    x_discount_amount_mxn = fields.Float(
+        string="Descuento (MXN)",
+        compute='_compute_discount_amount_mxn',
+        store=True,
+        help="Valor total del descuento de la orden convertido a MXN.",
+    )
+    x_discount_authorized_amount = fields.Float(
+        string="Descuento Autorizado (MXN)",
+        default=0.0,
+        copy=False,
+        readonly=True,
+    )
+    x_discount_needs_auth = fields.Boolean(
+        string="Descuento Requiere Autorización",
+        compute='_compute_discount_needs_auth',
+        store=True,
+    )
+    x_discount_auth_requested = fields.Boolean(
+        string="Autorización de Descuento Solicitada",
+        default=False,
+        copy=False,
     )
 
     # -------------------------------------------------------------------------
@@ -561,8 +593,171 @@ class SaleOrder(models.Model):
                     f"Solicite autorización de precio primero."
                 )
 
+    # ─── Autorización de descuentos altos ────────────────────────────────────
+
+    def _get_discount_auth_threshold_mxn(self):
+        try:
+            return float(self.env['ir.config_parameter'].sudo().get_param(
+                'inventory_shopping_cart.discount_auth_threshold_mxn', '2000') or 2000.0)
+        except (ValueError, TypeError):
+            return 2000.0
+
+    def _discount_amount_to_mxn(self, amount):
+        """Convierte un monto en la divisa de la orden a MXN, usando el tipo de
+        cambio de la orden (Banorte) si es USD, o res.currency._convert."""
+        self.ensure_one()
+        amount = float(amount or 0.0)
+        if not amount:
+            return 0.0
+        mxn = self.env.ref('base.MXN', raise_if_not_found=False)
+        cur = self.currency_id or (self.pricelist_id.currency_id if self.pricelist_id else False)
+        if not cur or not mxn or cur.id == mxn.id or (cur.name or '') == 'MXN':
+            return amount
+        rate = self.x_exchange_rate or 0.0
+        if (cur.name or '') == 'USD' and rate > 0:
+            return amount * rate
+        try:
+            return cur._convert(amount, mxn, self.company_id or self.env.company,
+                                fields.Date.context_today(self))
+        except Exception:
+            return amount
+
+    @api.depends('order_line.discount', 'order_line.price_unit',
+                 'order_line.product_uom_qty', 'currency_id', 'pricelist_id',
+                 'x_exchange_rate')
+    def _compute_discount_amount_mxn(self):
+        for order in self:
+            total = 0.0
+            for line in order.order_line:
+                if line.display_type or not line.product_id:
+                    continue
+                disc = line.discount or 0.0
+                if disc <= 0:
+                    continue
+                total += (line.price_unit or 0.0) * (line.product_uom_qty or 0.0) * disc / 100.0
+            order.x_discount_amount_mxn = order._discount_amount_to_mxn(total)
+
+    @api.depends('x_discount_amount_mxn', 'x_discount_authorized_amount')
+    def _compute_discount_needs_auth(self):
+        for order in self:
+            threshold = order._get_discount_auth_threshold_mxn()
+            amount = order.x_discount_amount_mxn or 0.0
+            authorized = order.x_discount_authorized_amount or 0.0
+            order.x_discount_needs_auth = bool(
+                amount >= threshold and amount > (authorized + 0.01)
+            )
+
+    def _check_discount_authorization_block(self, action_name="realizar esta acción"):
+        if self.env.user.has_group('inventory_shopping_cart.group_price_authorizer'):
+            return
+        for order in self:
+            if not order.x_discount_needs_auth:
+                continue
+            raise UserError(
+                f"🚫 ACCIÓN BLOQUEADA - DESCUENTO NO AUTORIZADO\n\n"
+                f"No puede {action_name} la orden {order.name}.\n"
+                f"El descuento aplicado (≈ {order.x_discount_amount_mxn:,.2f} MXN) "
+                f"supera el umbral de {order._get_discount_auth_threshold_mxn():,.2f} MXN "
+                f"y requiere autorización de un Autorizador de Precios.\n\n"
+                f"Use el botón 'Solicitar autorización de descuento'."
+            )
+
+    def _notify_discount_authorizers(self):
+        self.ensure_one()
+        group = self.env.ref('inventory_shopping_cart.group_price_authorizer', raise_if_not_found=False)
+        if not group:
+            return
+        note = (
+            f"La orden {self.name} (cliente {self.partner_id.display_name or ''}) "
+            f"tiene un descuento de ≈ {self.x_discount_amount_mxn:,.2f} MXN que "
+            f"supera el umbral de {self._get_discount_auth_threshold_mxn():,.2f} MXN "
+            f"y requiere tu autorización. La orden está BLOQUEADA hasta autorizar."
+        )
+        for user in group.users.filtered(lambda u: u.id != self.env.user.id):
+            self.activity_schedule(
+                'mail.mail_activity_data_todo',
+                user_id=user.id,
+                summary=f"Autorizar descuento: {self.name}",
+                note=note,
+            )
+
+    def _notify_discount_seller(self, approved=True):
+        self.ensure_one()
+        seller = self.user_id or self.env.user
+        if approved:
+            summary = f"Descuento autorizado: {self.name}"
+            note = (f"El descuento de ≈ {self.x_discount_amount_mxn:,.2f} MXN fue "
+                    f"AUTORIZADO por {self.env.user.name}. La orden ya no está bloqueada.")
+        else:
+            summary = f"Descuento rechazado: {self.name}"
+            note = (f"El descuento de la orden {self.name} fue RECHAZADO por "
+                    f"{self.env.user.name}. Ajusta el descuento o el precio.")
+        self.activity_schedule(
+            'mail.mail_activity_data_todo',
+            user_id=seller.id,
+            summary=summary,
+            note=note,
+        )
+
+    def _discount_auth_mark_activities_done(self):
+        self.ensure_one()
+        acts = self.activity_ids.filtered(
+            lambda a: (a.summary or '').startswith('Autorizar descuento')
+        )
+        for act in acts:
+            try:
+                act.action_feedback(feedback="Atendido")
+            except Exception:
+                act.unlink()
+
+    def action_request_discount_authorization(self):
+        self.ensure_one()
+        if not self.x_discount_needs_auth:
+            raise UserError("Esta orden no tiene un descuento que requiera autorización.")
+        self.x_discount_auth_requested = True
+        self._notify_discount_authorizers()
+        self.message_post(body=Markup(
+            f"<p>🔐 <b>Solicitud de autorización de descuento</b> "
+            f"(≈ {self.x_discount_amount_mxn:,.2f} MXN) enviada a los autorizadores. "
+            f"La orden está bloqueada hasta ser autorizada.</p>"
+        ))
+        return True
+
+    def action_authorize_discount(self):
+        self.ensure_one()
+        if not self.env.user.has_group('inventory_shopping_cart.group_price_authorizer'):
+            raise UserError("Solo un Autorizador de Precios puede autorizar descuentos.")
+        self.x_discount_authorized_amount = self.x_discount_amount_mxn
+        self.x_discount_auth_requested = False
+        self._discount_auth_mark_activities_done()
+        self.message_post(body=Markup(
+            f"<p>✅ <b>Descuento autorizado</b> (≈ {self.x_discount_amount_mxn:,.2f} MXN) "
+            f"por {self.env.user.name}. La orden ya no está bloqueada.</p>"
+        ))
+        self._notify_discount_seller(approved=True)
+        return True
+
+    def action_reject_discount(self):
+        self.ensure_one()
+        if not self.env.user.has_group('inventory_shopping_cart.group_price_authorizer'):
+            raise UserError("Solo un Autorizador de Precios puede rechazar descuentos.")
+        self.x_discount_auth_requested = False
+        self._discount_auth_mark_activities_done()
+        self.message_post(body=Markup(
+            f"<p>❌ <b>Descuento rechazado</b> por {self.env.user.name}. "
+            f"La orden sigue bloqueada hasta ajustar el descuento.</p>"
+        ))
+        self._notify_discount_seller(approved=False)
+        return True
+
+    def _create_invoices(self, *args, **kwargs):
+        if not self.env.context.get('skip_auth_check'):
+            self._check_discount_authorization_block("facturar")
+        return super()._create_invoices(*args, **kwargs)
+
     def action_quotation_send(self):
         self._check_seller_low_price_block("enviar")
+        self._check_discount_authorization_block("enviar")
         return super().action_quotation_send()
 
     def _sync_lot_ids_from_selected_lots(self):
@@ -691,6 +886,7 @@ class SaleOrder(models.Model):
         """
         if not self.env.context.get('skip_auth_check'):
             self._check_seller_low_price_block("confirmar")
+            self._check_discount_authorization_block("confirmar")
 
         for order in self:
             selected_quants = order._get_selected_quants_from_order()

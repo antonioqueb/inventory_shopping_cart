@@ -16,21 +16,41 @@
                         class="btn-warning"
                         invisible="state == 'cancel' or not x_has_low_prices"
                         groups="inventory_shopping_cart.group_seller"/>
+
+                <!-- Autorización de DESCUENTOS altos -->
+                <button name="action_request_discount_authorization"
+                        string="Solicitar autorización de descuento"
+                        type="object"
+                        class="btn-warning"
+                        invisible="state == 'cancel' or not x_discount_needs_auth or x_discount_auth_requested"
+                        groups="inventory_shopping_cart.group_seller"/>
+                <button name="action_authorize_discount"
+                        string="Autorizar descuento"
+                        type="object"
+                        class="btn-success"
+                        invisible="state == 'cancel' or not x_discount_needs_auth"
+                        groups="inventory_shopping_cart.group_price_authorizer"/>
+                <button name="action_reject_discount"
+                        string="Rechazar descuento"
+                        type="object"
+                        class="btn-secondary"
+                        invisible="state == 'cancel' or not x_discount_needs_auth"
+                        groups="inventory_shopping_cart.group_price_authorizer"/>
             </xpath>
 
             <!-- ===================== OCULTAR BOTONES CUANDO HAY PRECIOS BAJOS ===================== -->
             <xpath expr="//header/button[@name='action_quotation_send']" position="attributes">
-                <attribute name="invisible">state not in ['draft', 'sent'] or x_has_low_prices</attribute>
+                <attribute name="invisible">state not in ['draft', 'sent'] or x_has_low_prices or x_discount_needs_auth</attribute>
             </xpath>
 
             <xpath expr="//header/button[@name='action_confirm']" position="attributes">
-                <attribute name="invisible">state != 'sent' or x_has_low_prices</attribute>
+                <attribute name="invisible">state != 'sent' or x_has_low_prices or x_discount_needs_auth</attribute>
             </xpath>
 
             <!-- El header trae DOS botones Confirmar (draft y sent); el xpath
                  anterior solo cubría el primero. -->
             <xpath expr="(//header/button[@name='action_confirm'])[2]" position="attributes">
-                <attribute name="invisible">state != 'draft' or x_has_low_prices</attribute>
+                <attribute name="invisible">state != 'draft' or x_has_low_prices or x_discount_needs_auth</attribute>
             </xpath>
 
             <!-- ===================== BANNERS DE CONTROL DE PRECIO ===================== -->
@@ -106,6 +126,55 @@
                                 style="font-size: 13px; color: #6f5a1a; line-height: 1.5;"
                             >
                                 Esta orden requiere revisión de precios. Como usuario autorizador, puede continuar con la operación sin restricción.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </xpath>
+
+            <!-- ===================== BANNERS DE AUTORIZACIÓN DE DESCUENTO ===================== -->
+            <xpath expr="//sheet" position="before">
+                <field name="x_discount_needs_auth" invisible="1"/>
+                <field name="x_discount_auth_requested" invisible="1"/>
+
+                <!-- Vendedor: orden bloqueada por descuento -->
+                <div groups="inventory_shopping_cart.group_seller"
+                     invisible="not x_discount_needs_auth or state == 'cancel'"
+                     style="margin: 0 0 16px 0; border: 1px solid #f1b5b9; border-left: 6px solid #c62828; border-radius: 14px; background: linear-gradient(135deg, #fff8f8 0%, #fdecec 100%); overflow: hidden;">
+                    <div style="padding: 16px 18px;">
+                        <div style="display:flex; align-items:center; gap:14px;">
+                            <div style="width:52px;height:52px;min-width:52px;border-radius:50%;background:#c62828;color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;">
+                                <i class="fa fa-percent" title="Descuento" role="img"/>
+                            </div>
+                            <div style="flex:1;">
+                                <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#b02a37;margin-bottom:4px;">Autorización de descuento</div>
+                                <div style="font-size:20px;font-weight:700;color:#7a1c24;line-height:1.2;margin-bottom:6px;">Orden bloqueada por descuento no autorizado</div>
+                                <div style="font-size:13px;color:#6c2b31;line-height:1.55;">
+                                    El descuento de esta orden (<strong><field name="x_discount_amount_mxn" readonly="1" class="oe_inline"/> MXN</strong>)
+                                    supera el umbral permitido. No es posible <strong>enviar</strong>, <strong>confirmar</strong> ni
+                                    <strong>facturar</strong> hasta que un autorizador lo apruebe.
+                                </div>
+                            </div>
+                        </div>
+                        <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(122,28,36,0.10);font-size:13px;color:#7a1c24;">
+                            <strong>Acción requerida:</strong> usa <strong>Solicitar autorización de descuento</strong>.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Autorizador -->
+                <div groups="inventory_shopping_cart.group_price_authorizer"
+                     invisible="not x_discount_needs_auth or state == 'cancel'"
+                     style="margin: 0 0 16px 0; border: 1px solid #ffe08a; border-left: 6px solid #d39e00; border-radius: 14px; background: linear-gradient(135deg, #fffdf6 0%, #fff7db 100%); overflow: hidden;">
+                    <div style="padding:14px 18px;display:flex;align-items:center;gap:12px;">
+                        <div style="width:42px;height:42px;min-width:42px;border-radius:50%;background:#d39e00;color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;">
+                            <i class="fa fa-key" title="Autorización" role="img"/>
+                        </div>
+                        <div style="flex:1;">
+                            <div style="font-size:15px;font-weight:700;color:#7a5a00;margin-bottom:3px;">Descuento alto pendiente de autorización</div>
+                            <div style="font-size:13px;color:#6f5a1a;line-height:1.5;">
+                                Descuento de <strong><field name="x_discount_amount_mxn" readonly="1" class="oe_inline"/> MXN</strong>.
+                                Usa <strong>Autorizar descuento</strong> para desbloquear, o <strong>Rechazar descuento</strong>.
                             </div>
                         </div>
                     </div>
