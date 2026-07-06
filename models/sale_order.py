@@ -343,12 +343,51 @@ class SaleOrder(models.Model):
             blockers = blockers.filtered(lambda ml: ml.picking_id.id not in allowed_picking_ids)
 
         if allowed_order:
+            # Una reserva NO bloquea si pertenece a la cadena logística de la
+            # propia orden. El vínculo directo (move.sale_line_id) no basta:
+            # los pickings creados por stock_transit_allocation (Asignar /
+            # Mandar a pedir — que standard_pack_som enciende por defecto)
+            # reservan el lote SIN sale_line_id y solo se ligan a la SO por
+            # group_id, sale_id del picking u origin con el nombre de la SO.
+            # Sin esta exclusión amplia, la propia orden se auto-bloqueaba con
+            # "el lote ya está reservado en otra operación activa".
+            order_names = [
+                name for name in [allowed_order.name, allowed_order.origin]
+                if name
+            ]
+
+            def _belongs_to_allowed_order(ml):
+                move = ml.move_id
+                picking = ml.picking_id
+
+                if move and move.sale_line_id and move.sale_line_id.order_id.id == allowed_order.id:
+                    return True
+
+                if (
+                    move
+                    and move.group_id
+                    and 'sale_id' in move.group_id._fields
+                    and move.group_id.sale_id
+                    and move.group_id.sale_id.id == allowed_order.id
+                ):
+                    return True
+
+                if (
+                    picking
+                    and 'sale_id' in picking._fields
+                    and picking.sale_id
+                    and picking.sale_id.id == allowed_order.id
+                ):
+                    return True
+
+                origin = (picking.origin or '') if picking else ''
+                if origin and any(name in origin for name in order_names):
+                    return True
+
+                return False
+
             blockers = blockers.filtered(
-                lambda ml: (
-                    not ml.move_id
-                    or not ml.move_id.sale_line_id
-                    or ml.move_id.sale_line_id.order_id.id != allowed_order.id
-                )
+                lambda ml: not _belongs_to_allowed_order(ml)
             )
 
         return blockers
