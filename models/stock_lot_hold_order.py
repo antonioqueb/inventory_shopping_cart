@@ -839,7 +839,11 @@ class StockLotHoldOrder(models.Model):
                     vals['x_lot_breakdown_json'] = payload['breakdown']
 
             if vals:
-                target_line.sudo().write(vals)
+                # Los lotes vienen del PROPIO hold que se está convirtiendo:
+                # validarlos contra su propio apartado sería auto-bloqueo.
+                target_line.sudo().with_context(
+                    skip_hold_validation=True,
+                ).write(vals)
 
                 _logger.info(
                     "[HOLD→STONE] SO %s línea %s sincronizada: lots=%s quants=%s",
@@ -850,7 +854,9 @@ class StockLotHoldOrder(models.Model):
                 )
 
         if sale_order.state in ('sale', 'done') and hasattr(sale_order, '_sync_lot_ids_from_selected_lots'):
-            sale_order.sudo()._sync_lot_ids_from_selected_lots()
+            sale_order.sudo().with_context(
+                skip_hold_validation=True,
+            )._sync_lot_ids_from_selected_lots()
 
     @staticmethod
     def _hold_line_is_backorder(line):
