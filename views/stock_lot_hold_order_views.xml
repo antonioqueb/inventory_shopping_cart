@@ -101,7 +101,7 @@
                     </div>
 
                     <group>
-                        <group string="Cliente">
+                        <group string="Datos del Cliente">
                             <field name="partner_id" string="Cliente" required="1"/>
                             <field name="available_delivery_partner_ids" invisible="1"/>
                             <field name="delivery_partner_id"
