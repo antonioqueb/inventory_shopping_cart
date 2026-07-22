@@ -24,6 +24,12 @@
                             <field name="x_origin_country_id"/>
                             <field name="x_pol_id" options="{'no_create': True}"/>
                             <field name="x_pod_id" options="{'no_create': True}"/>
+                            <field name="x_naviera_id"
+                                   domain="[('category_id.name', '=', 'Naviera')]"
+                                   options="{'no_create': True}"/>
+                            <field name="x_forwarder_id"
+                                   domain="[('category_id.name', '=', 'Forwarder')]"
+                                   options="{'no_create': True}"/>
                         </group>
                         <group>
                             <field name="x_container_capacity"/>
