@@ -56,6 +56,16 @@ class ProductTemplate(models.Model):
         default=0.0
     )
 
+    x_naviera_id = fields.Many2one(
+        'res.partner', string='Naviera (costeo)',
+        help="Naviera de la recepción MÁS COSTOSA registrada. Selecciona la "
+             "tarifa correcta del tarifario para el costeo.",
+    )
+    x_forwarder_id = fields.Many2one(
+        'res.partner', string='Forwarder (costeo)',
+        help="Forwarder de la recepción más costosa registrada.",
+    )
+
     # === TIPO DE CAMBIO USADO PARA COSTEO ===
 
     x_cost_exchange_rate = fields.Float(
@@ -463,12 +473,23 @@ class ProductTemplate(models.Model):
                     and record.x_pod_id
                     and record.x_container_capacity > 0
                 ):
-                    tariff = self.env['freight.tariff'].search([
+                    candidates = self.env['freight.tariff'].search([
                         ('country_id', '=', record.x_origin_country_id.id),
                         ('pol_id', '=', record.x_pol_id.id),
                         ('pod_id', '=', record.x_pod_id.id),
                         ('state', '=', 'active')
-                    ], order='create_date desc', limit=1)
+                    ], order='create_date desc')
+                    # Tarifa de la NAVIERA registrada (la más costosa recibida);
+                    # fallback a la más reciente de la ruta si no hay match.
+                    tariff = candidates[:1]
+                    if 'x_naviera_id' in record._fields and record.x_naviera_id:
+                        nav = candidates.filtered(
+                            lambda t: t.naviera_id == record.x_naviera_id)
+                        if record.x_forwarder_id:
+                            navf = nav.filtered(
+                                lambda t: t.forwarder_id == record.x_forwarder_id)
+                            nav = navf or nav
+                        tariff = nav[:1] or tariff
 
                     if tariff:
                         freight_tariff_all_in_usd = tariff.all_in or 0.0
