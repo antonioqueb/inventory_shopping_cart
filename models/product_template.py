@@ -7,6 +7,8 @@ import random
 import re
 from datetime import datetime, timedelta, time
 
+from markupsafe import Markup
+
 from odoo import models, fields, api
 
 try:
@@ -577,7 +579,10 @@ class ProductTemplate(models.Model):
                 # HISTÓRICO DE COSTOS: cada cambio real del ALL-IN queda en el
                 # chatter del producto con su contexto completo (ruta, naviera,
                 # forwarder, capacidad, arancel, TC). Nunca bloquea el cálculo.
-                if isinstance(record.id, int):
+                # Solo cambios >= 1 centavo generan entrada en el histórico
+                # (recalculos con diferencias de fracciones de centavo son
+                # ruido de redondeo, no evolución real del costo).
+                if isinstance(record.id, int) and abs(all_in_cost_mxn - old_cost) >= 0.01:
                     try:
                         delta = all_in_cost_mxn - old_cost
                         arrow = '📈' if delta > 0 else '📉'
@@ -612,7 +617,7 @@ class ProductTemplate(models.Model):
                             f"TC {usd_to_company_rate:,.4f}"
                         )
                         record.sudo().message_post(
-                            body="<br/>".join(ctx_lines),
+                            body=Markup("<br/>".join(ctx_lines)),
                             message_type='comment',
                             subtype_xmlid='mail.mt_note',
                         )
