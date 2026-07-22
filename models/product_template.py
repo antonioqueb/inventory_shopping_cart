@@ -570,9 +570,57 @@ class ProductTemplate(models.Model):
             record.x_cost_calc_summary = "\n".join(cost_summary_lines)
 
             if abs((record.x_costo_mayor or 0.0) - (all_in_cost_mxn or 0.0)) > 0.0001:
+                old_cost = record.x_costo_mayor or 0.0
                 record.sudo().write({
                     'x_costo_mayor': all_in_cost_mxn
                 })
+                # HISTÓRICO DE COSTOS: cada cambio real del ALL-IN queda en el
+                # chatter del producto con su contexto completo (ruta, naviera,
+                # forwarder, capacidad, arancel, TC). Nunca bloquea el cálculo.
+                if isinstance(record.id, int):
+                    try:
+                        delta = all_in_cost_mxn - old_cost
+                        arrow = '📈' if delta > 0 else '📉'
+                        ctx_lines = [
+                            f"<b>{arrow} Costo ALL-IN actualizado:</b> "
+                            f"${old_cost:,.2f} → <b>${all_in_cost_mxn:,.2f} MXN</b> "
+                            f"({'+' if delta > 0 else ''}{delta:,.2f})",
+                            f"• Costo base (MaxAvg compras): ${base_gross_cost_mxn:,.2f} MXN",
+                            f"• Logística: ${logistics_cost_mxn:,.2f} MXN · "
+                            f"Arancel: ${duty_cost_mxn:,.2f} MXN "
+                            f"({record.x_arancel_pct:g}%)",
+                        ]
+                        route_bits = []
+                        if record.x_origin_country_id:
+                            route_bits.append(record.x_origin_country_id.name)
+                        if record.x_pol_id:
+                            route_bits.append(record.x_pol_id.name)
+                        if record.x_pod_id:
+                            route_bits.append(record.x_pod_id.name)
+                        if route_bits:
+                            ctx_lines.append("• Ruta: " + " → ".join(route_bits))
+                        carrier_bits = []
+                        if getattr(record, 'x_naviera_id', False) and record.x_naviera_id:
+                            carrier_bits.append(f"Naviera: {record.x_naviera_id.name}")
+                        if getattr(record, 'x_forwarder_id', False) and record.x_forwarder_id:
+                            carrier_bits.append(f"Forwarder: {record.x_forwarder_id.name}")
+                        if carrier_bits:
+                            ctx_lines.append("• " + " · ".join(carrier_bits))
+                        ctx_lines.append(
+                            f"• Capacidad contenedor: {record.x_container_capacity:g} m² · "
+                            f"Tarifa All-In: ${freight_tariff_all_in_usd:,.2f} USD · "
+                            f"TC {usd_to_company_rate:,.4f}"
+                        )
+                        record.sudo().message_post(
+                            body="<br/>".join(ctx_lines),
+                            message_type='comment',
+                            subtype_xmlid='mail.mt_note',
+                        )
+                    except Exception:
+                        _logger.exception(
+                            "COSTOS: no se pudo registrar el histórico en el "
+                            "chatter de %s.", record.display_name,
+                        )
 
     def _calculate_escalera_precios(self):
         """
