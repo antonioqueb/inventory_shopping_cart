@@ -70,6 +70,18 @@ class ProductTemplate(models.Model):
 
     # === TIPO DE CAMBIO USADO PARA COSTEO ===
 
+    x_cost_eur_usd_rate = fields.Float(
+        string='TC Costeo EUR → USD',
+        digits=(12, 6),
+        readonly=True,
+        help="Tipo de cambio EUR→USD (Banco Central Europeo) usado cuando la "
+             "compra es en euros: primero EUR→USD, después USD→MXN (Banorte).",
+    )
+    x_cost_eur_usd_source = fields.Char(
+        string='Fuente TC EUR→USD',
+        readonly=True,
+    )
+
     x_cost_exchange_rate = fields.Float(
         string='TC Costeo USD → MXN',
         digits=(12, 4),
@@ -362,6 +374,40 @@ class ProductTemplate(models.Model):
         }
 
     @api.model
+    def _get_eur_to_usd_rate_for_costing(self):
+        """EUR→USD para costeo. El DOF solo publica el dólar, así que la
+        fuente del euro es el BANCO CENTRAL EUROPEO (frankfurter.app, sin
+        llave). La última tasa buena se cachea en ir.config_parameter; si el
+        servicio no responde se usa el caché y, en último caso, res.currency.
+        Flujo cuando la compra es en EUR: EUR→USD (BCE) → USD→MXN (Banorte)."""
+        ICP = self.env['ir.config_parameter'].sudo()
+        try:
+            resp = requests.get(
+                "https://api.frankfurter.app/latest?from=EUR&to=USD",
+                timeout=15,
+            )
+            rate = float(resp.json()['rates']['USD'])
+            if rate > 0:
+                ICP.set_param('som_costing.eur_usd_rate', str(rate))
+                ICP.set_param('som_costing.eur_usd_source',
+                              'BCE (frankfurter.app) %s' % resp.json().get('date', ''))
+                return rate, ICP.get_param('som_costing.eur_usd_source')
+        except Exception as e:
+            _logger.warning("COSTOS: BCE EUR→USD no disponible (%s); usando caché.", e)
+
+        cached = float(ICP.get_param('som_costing.eur_usd_rate', '0') or 0)
+        if cached > 0:
+            return cached, (ICP.get_param('som_costing.eur_usd_source', '') or '') + ' [caché]'
+
+        try:
+            eur = self.env.ref('base.EUR')
+            usd = self.env.ref('base.USD')
+            rate = eur._convert(1.0, usd, self.env.company, fields.Date.today())
+            return rate, 'Fallback Odoo res.currency'
+        except Exception:
+            return 0.0, 'Sin fuente'
+
+    @api.model
     def _get_usd_to_company_rate_for_costing(self, company=None):
         """
         Devuelve cuántas unidades de la moneda de la compañía equivalen a 1 USD.
@@ -398,6 +444,8 @@ class ProductTemplate(models.Model):
         company = self.env.company
         company_currency = company.currency_id
         rate_info = self._get_costing_rate_info(company=company)
+        eur_usd_rate, eur_usd_source = self._get_eur_to_usd_rate_for_costing()
+        eur_currency = self.env.ref('base.EUR', raise_if_not_found=False)
         usd_to_company_rate = rate_info.get('rate', 0.0)
 
         for record in self:
@@ -440,6 +488,7 @@ class ProductTemplate(models.Model):
                 total_qty = 0.0
                 total_val_mxn = 0.0
                 max_avg = 0.0
+                used_eur = False
 
                 for line in purchase_lines:
                     if line.product_qty <= 0:
@@ -450,7 +499,16 @@ class ProductTemplate(models.Model):
 
                     price_unit_mxn = line.price_unit
 
-                    if line_currency != company_currency:
+                    if (
+                        eur_currency and line_currency == eur_currency
+                        and eur_usd_rate > 0 and usd_to_company_rate > 0
+                    ):
+                        # Compra en EUROS: flujo explícito EUR→USD (BCE) y
+                        # después USD→MXN (Banorte), igual que el resto del
+                        # costeo en dólares.
+                        price_unit_mxn = line.price_unit * eur_usd_rate * usd_to_company_rate
+                        used_eur = True
+                    elif line_currency != company_currency:
                         price_unit_mxn = line_currency._convert(
                             line.price_unit,
                             company_currency,
@@ -542,6 +600,9 @@ class ProductTemplate(models.Model):
             duty_cost_usd = duty_cost_mxn / usd_to_company_rate if usd_to_company_rate > 0 else 0.0
             all_in_cost_usd = all_in_cost_mxn / usd_to_company_rate if usd_to_company_rate > 0 else 0.0
 
+            if has_purchases and used_eur:
+                record.x_cost_eur_usd_rate = eur_usd_rate
+                record.x_cost_eur_usd_source = eur_usd_source
             record.x_cost_base_mxn = base_gross_cost_mxn
             record.x_cost_base_usd = base_gross_cost_usd
             record.x_freight_tariff_all_in_usd = freight_tariff_all_in_usd

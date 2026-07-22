@@ -46,6 +46,8 @@
                     <group string="Tipo de Cambio Usado para Costeo"
                            groups="inventory_shopping_cart.group_price_authorizer">
                         <group>
+                            <field name="x_cost_eur_usd_rate"/>
+                            <field name="x_cost_eur_usd_source"/>
                             <field name="x_cost_exchange_rate"
                                    string="TC usado USD → MXN"
                                    readonly="1"/>
