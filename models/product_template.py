@@ -769,6 +769,13 @@ class ProductTemplate(models.Model):
             'x_fixed_price',
         ]
 
+        # skip_costing_recompute: los flujos de datos (propagación desde la
+        # OC, actualización al publicar/recibir) escriben estos campos SIN
+        # disparar el recálculo aquí — ellos deciden el momento (regla de
+        # negocio: el costo cambia SOLO al publicar o al recibir).
+        if self.env.context.get('skip_costing_recompute'):
+            return res
+
         if any(f in vals for f in triggers):
             self._compute_costo_all_in()
             self._calculate_escalera_precios()
