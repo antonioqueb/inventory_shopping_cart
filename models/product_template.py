@@ -455,10 +455,18 @@ class ProductTemplate(models.Model):
             record.x_cost_exchange_rate_source = rate_info.get('source') or ''
             record.x_cost_exchange_rate_last_sync = rate_info.get('last_sync') or False
 
-            purchase_lines = self.env['purchase.order.line'].search([
+            po_line_domain = [
                 ('product_id.product_tmpl_id', '=', record.id),
-                ('state', 'in', ['purchase', 'done'])
-            ], order='date_order asc, id asc')
+                ('state', 'in', ['purchase', 'done']),
+            ]
+            # Solo compras ACTIVADAS (publicadas o recibidas) mueven el
+            # promedio: una OC confirmada sin publicar/recibir es invisible
+            # para el costeo, sin importar quién dispare el recálculo.
+            POLine = self.env['purchase.order.line']
+            if 'som_costing_activated' in POLine._fields:
+                po_line_domain.append(('som_costing_activated', '=', True))
+            purchase_lines = POLine.search(
+                po_line_domain, order='date_order asc, id asc')
 
             has_purchases = bool(purchase_lines)
             record.x_has_purchases = has_purchases
@@ -563,9 +571,10 @@ class ProductTemplate(models.Model):
                         "valor válido ($%.2f MXN)." % (
                             reason, record.x_costo_mayor or 0.0)
                     )
+                    # Silencioso a propósito: un parámetro faltante NO es un
+                    # intento de cálculo — nada de ruido en el log.
                     record.x_logistics_calc_summary = msg
                     record.x_cost_calc_summary = msg
-                    _logger.warning("COSTOS: %s → %s", record.display_name, msg)
                     continue
 
                 if (
