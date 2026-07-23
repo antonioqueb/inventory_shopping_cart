@@ -527,6 +527,47 @@ class ProductTemplate(models.Model):
                 base_gross_cost_mxn = max_avg
                 record.x_max_avg_cost_mxn = max_avg
 
+                # ═══ COMPUERTA DE PARÁMETROS (regla de negocio) ═══
+                # Con compras confirmadas, el ALL-IN exige la configuración
+                # logística COMPLETA y una tarifa activa. Si falta algo, NO se
+                # intenta el cálculo (nada de costos con logística en $0):
+                # el costo conserva su último valor válido y el resumen
+                # explica exactamente qué falta.
+                missing_params = []
+                if not record.x_origin_country_id:
+                    missing_params.append('país de origen')
+                if not record.x_pol_id:
+                    missing_params.append('puerto de carga (POL)')
+                if not record.x_pod_id:
+                    missing_params.append('puerto destino (POD)')
+                if (record.x_container_capacity or 0.0) <= 1.0:
+                    missing_params.append('capacidad de contenedor (> 1 m²)')
+
+                gate_tariff = None
+                if not missing_params:
+                    gate_tariff = self.env['freight.tariff'].search([
+                        ('country_id', '=', record.x_origin_country_id.id),
+                        ('pol_id', '=', record.x_pol_id.id),
+                        ('pod_id', '=', record.x_pod_id.id),
+                        ('state', '=', 'active'),
+                    ], limit=1)
+
+                if missing_params or not gate_tariff:
+                    reason = (
+                        'faltan parámetros: ' + ', '.join(missing_params)
+                        if missing_params
+                        else 'no hay tarifa ACTIVA en el tarifario para País/POL/POD'
+                    )
+                    msg = (
+                        "⛔ CÁLCULO OMITIDO — %s. El costo conserva el último "
+                        "valor válido ($%.2f MXN)." % (
+                            reason, record.x_costo_mayor or 0.0)
+                    )
+                    record.x_logistics_calc_summary = msg
+                    record.x_cost_calc_summary = msg
+                    _logger.warning("COSTOS: %s → %s", record.display_name, msg)
+                    continue
+
                 if (
                     record.x_origin_country_id
                     and record.x_pol_id
