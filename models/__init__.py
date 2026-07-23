@@ -8,4 +8,5 @@ from . import price_authorization
 from . import stock_picking
 from . import ir_actions_report
 from . import product_category_pricing
-from . import banorte_rate_logfrom . import project_client
+from . import banorte_rate_log
+from . import project_client
