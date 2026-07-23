@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Formulario del proyecto: cliente + botones de ventas/cotizaciones -->
+    <record id="view_project_form_som_client" model="ir.ui.view">
+        <field name="name">project.project.form.som.client</field>
+        <field name="model">project.project</field>
+        <field name="inherit_id" ref="project.edit_project"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <button name="action_som_view_sales" type="object"
+                        class="oe_stat_button" icon="fa-usd"
+                        invisible="not som_sale_count">
+                    <field name="som_sale_count" widget="statinfo" string="Ventas"/>
+                </button>
+                <button name="action_som_view_quotations" type="object"
+                        class="oe_stat_button" icon="fa-file-text-o"
+                        invisible="not som_quotation_count">
+                    <field name="som_quotation_count" widget="statinfo" string="Cotizaciones"/>
+                </button>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Lista ejecutiva: proyectos por cliente con montos -->
+    <record id="view_project_list_som_client" model="ir.ui.view">
+        <field name="name">project.project.list.som.client</field>
+        <field name="model">project.project</field>
+        <field name="arch" type="xml">
+            <list default_order="partner_id, name" create="1">
+                <field name="name" string="Proyecto"/>
+                <field name="partner_id" string="Cliente"/>
+                <field name="som_sale_count" string="Ventas"/>
+                <field name="som_quotation_count" string="Cotizaciones"/>
+                <field name="som_currency_id" column_invisible="1"/>
+                <field name="som_amount_sold" string="Monto vendido" sum="Total vendido"/>
+                <field name="som_amount_quoted" string="Monto cotizado" sum="Total cotizado" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_project_search_som_client" model="ir.ui.view">
+        <field name="name">project.project.search.som.client</field>
+        <field name="model">project.project</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="partner_id"/>
+                <filter name="filter_with_sales" string="Con ventas"
+                        domain="[('som_sale_order_ids', '!=', False)]"/>
+                <filter name="group_partner" string="Cliente"
+                        context="{'group_by': 'partner_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_som_client_projects" model="ir.actions.act_window">
+        <field name="name">Proyectos de Clientes</field>
+        <field name="res_model">project.project</field>
+        <field name="view_mode">list,form</field>
+        <field name="view_id" ref="view_project_list_som_client"/>
+        <field name="search_view_id" ref="view_project_search_som_client"/>
+        <field name="context">{'search_default_group_partner': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Sin proyectos todavía</p>
+            <p>Cada proyecto pertenece a un cliente; sus ventas y cotizaciones se concentran aquí.</p>
+        </field>
+    </record>
+
+    <!-- Análisis: ventas por proyecto/cliente en pivote y gráfica -->
+    <record id="action_som_project_sales_analysis" model="ir.actions.act_window">
+        <field name="name">Análisis por Proyecto</field>
+        <field name="res_model">sale.order</field>
+        <field name="view_mode">pivot,graph,list</field>
+        <field name="domain">[('x_project_id', '!=', False)]</field>
+        <field name="context">{
+            'group_by': ['partner_id', 'x_project_id'],
+        }</field>
+    </record>
+
+    <menuitem id="menu_som_client_projects"
+              name="Proyectos"
+              parent="sale.sale_menu_root"
+              action="action_som_client_projects"
+              sequence="30"/>
+    <menuitem id="menu_som_project_sales_analysis"
+              name="Análisis por Proyecto"
+              parent="sale.menu_sale_report"
+              action="action_som_project_sales_analysis"
+              sequence="25"/>
+
+</odoo>

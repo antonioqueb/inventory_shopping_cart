@@ -189,7 +189,9 @@
                  notebook). Siguen SIEMPRE llenas a nivel de datos: vaciarlas rompe
                  las reglas fiscales/de entrega de Odoo. -->
             <xpath expr="//group[@name='partner_details']" position="inside">
-                <field name="x_project_id" string="Job Name / Proyecto"/>
+                <field name="x_project_id" string="Job Name / Proyecto"
+                       domain="['|', ('partner_id', '=', False), ('partner_id', 'child_of', partner_id)]"
+                       context="{'default_partner_id': partner_id}"/>
 
                 <field name="x_architect_id"
                        string="Arquitecto"

@@ -185,7 +185,21 @@ class SaleOrder(models.Model):
     x_project_id = fields.Many2one(
         'project.project',
         string='Proyecto',
+        help='Proyecto del CLIENTE de esta orden. Un cliente tiene muchos '
+             'proyectos; una orden pertenece a uno. Crear un proyecto desde '
+             'aquí lo registra a nombre del cliente.',
     )
+
+    @api.onchange('partner_id')
+    def _onchange_partner_som_project(self):
+        """Relación cliente→proyectos: al cambiar de cliente, un proyecto
+        de OTRO cliente no puede quedarse en la orden."""
+        for order in self:
+            proj = order.x_project_id
+            if not proj or not proj.partner_id or not order.partner_id:
+                continue
+            if proj.partner_id.commercial_partner_id != order.partner_id.commercial_partner_id:
+                order.x_project_id = False
 
     x_architect_id = fields.Many2one(
         'res.partner',

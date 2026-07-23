@@ -111,7 +111,9 @@
                             <field name="delivery_address"
                                    string="Dirección de Entrega"
                                    placeholder="Dirección de entrega..."/>
-                            <field name="project_id" string="Proyecto"/>
+                            <field name="project_id" string="Proyecto"
+                                   domain="['|', ('partner_id', '=', False), ('partner_id', 'child_of', partner_id)]"
+                                   context="{'default_partner_id': partner_id}"/>
                             <field name="arquitecto_id" string="Arquitecto"/>
                         </group>
 

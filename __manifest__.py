@@ -1,7 +1,7 @@
 # ./__manifest__.py
 {
     'name': 'Carrito de Compra para Inventario Visual',
-    'version': '19.0.2.7.1',
+    'version': '19.0.2.8.0',
     'category': 'Inventory/Inventory',
     'summary': 'Sistema de carrito de compra y apartado múltiple desde inventario visual',
     'author': 'Alphaqueb Consulting SAS',
@@ -15,6 +15,7 @@
         'mail',
         'purchase',
         'logistica_tarifario',
+        'project',
     ],
     'data': [
         'security/security.xml',
@@ -23,6 +24,7 @@
         'data/email_templates.xml',
         'data/ir_cron.xml',
         'views/product_template_views.xml',
+        'views/project_client_views.xml',
         'views/price_authorization_views.xml',
         'views/sale_order_views.xml',
         'views/stock_lot_hold_order_views.xml',
