@@ -1578,7 +1578,7 @@ class SaleOrder(models.Model):
 
                         remaining -= reserve
 
-                        _logger.info(
+                        _logger.debug(
                             "[ASSIGN_LOTS] Lote %s: %s %s desde %s (tipo=%s)",
                             quant.lot_id.name,
                             reserve,
