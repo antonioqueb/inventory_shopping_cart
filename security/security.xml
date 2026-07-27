@@ -1,16 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <record id="group_price_authorizer" model="res.groups">
-        <field name="name">Autorizador de Precios Mínimos</field>
+    <!-- Categoría propia: saca estos permisos de "Permisos adicionales" y los
+         muestra como sección con SELECTORES en el formulario del usuario
+         (mismo patrón que Control Interno de Efectivo). -->
+    <record id="module_category_price_authorization" model="ir.module.category">
+        <field name="name">Precios y Autorizaciones</field>
+        <field name="description">Niveles de venta por precios y autorización de
+            precios mínimos en el carrito de inventario.</field>
+        <field name="sequence">88</field>
+    </record>
+
+    <!-- Selector 1: nivel del vendedor (Limitado → Mayorista). -->
+    <record id="privilege_seller_level" model="res.groups.privilege">
+        <field name="name">Nivel de Vendedor</field>
+        <field name="category_id" ref="module_category_price_authorization"/>
+        <field name="sequence">10</field>
+    </record>
+
+    <!-- Selector 2: autorizador de precios mínimos. -->
+    <record id="privilege_price_authorizer" model="res.groups.privilege">
+        <field name="name">Autorización de Precios Mínimos</field>
+        <field name="category_id" ref="module_category_price_authorization"/>
+        <field name="sequence">20</field>
     </record>
 
     <record id="group_seller" model="res.groups">
         <field name="name">Vendedor con Precios Limitados</field>
+        <field name="privilege_id" ref="privilege_seller_level"/>
     </record>
 
     <record id="group_seller_mayorista" model="res.groups">
         <field name="name">Vendedor Mayorista (Niveles 3, 4 y 5)</field>
+        <field name="privilege_id" ref="privilege_seller_level"/>
         <field name="implied_ids" eval="[(4, ref('inventory_shopping_cart.group_seller'))]"/>
         <field name="comment">Vendedores mayoristas autorizados a ver los Precios 3, 4 y 5 sin solicitud previa. Solo requieren autorización cuando capturan un precio por debajo del Precio 4.</field>
+    </record>
+
+    <record id="group_price_authorizer" model="res.groups">
+        <field name="name">Autorizador de Precios Mínimos</field>
+        <field name="privilege_id" ref="privilege_price_authorizer"/>
     </record>
 </odoo>
