@@ -70,15 +70,38 @@ class ShoppingCart(models.Model):
         """Agregar item al carrito o actualizar cantidad si ya existe"""
         if not all([quant_id, lot_id, product_id, quantity is not None]):
             return {'success': False, 'message': 'Faltan parámetros'}
-        
+
+        # Validación temprana (antes solo reventaba hasta crear la cotización):
+        # - placa completamente reservada en otra operación: NO entra al carrito;
+        # - placa con hold: entra (puede ser para el mismo cliente, que aún no
+        #   se conoce aquí) pero con AVISO de para quién está apartada.
+        warning = ''
+        quant = self.env['stock.quant'].sudo().browse(int(quant_id)).exists()
+        if quant:
+            free_qty = (quant.quantity or 0.0) - (quant.reserved_quantity or 0.0)
+            if free_qty <= 0:
+                return {
+                    'success': False,
+                    'message': (
+                        f'La placa {quant.lot_id.name or ""} ya está reservada '
+                        'en otra operación (venta/entrega). No se puede agregar.'
+                    ),
+                }
+            if getattr(quant, 'x_tiene_hold', False) and quant.x_hold_activo_id:
+                hold_partner = quant.x_hold_activo_id.partner_id
+                warning = (
+                    f' ⚠ Ojo: apartada para {hold_partner.name}. Solo podrás '
+                    'cotizarla a ese cliente.'
+                )
+
         # Buscar si ya existe
         existing = self.search([('user_id', '=', self.env.user.id), ('quant_id', '=', quant_id)])
         
         if existing:
             # Si ya existe, actualizamos la cantidad
             existing.write({'quantity': quantity})
-            return {'success': True, 'message': 'Cantidad actualizada'}
-        
+            return {'success': True, 'message': 'Cantidad actualizada' + warning}
+
         # Si no existe, creamos
         self.create({
             'quant_id': quant_id,
@@ -87,7 +110,7 @@ class ShoppingCart(models.Model):
             'quantity': quantity,
             'location_name': location_name or ''
         })
-        return {'success': True}
+        return {'success': True, 'message': ('Agregado al carrito.' + warning) if warning else ''}
     
     @api.model
     def remove_from_cart(self, quant_id):

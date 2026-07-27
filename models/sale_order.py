@@ -6,7 +6,7 @@ import logging
 
 from markupsafe import Markup
 
-from odoo import models, fields, api
+from odoo import models, fields, api, _
 from odoo.exceptions import UserError, ValidationError
 
 _logger = logging.getLogger(__name__)
@@ -436,6 +436,17 @@ class SaleOrder(models.Model):
         2. Reservas nativas activas en otra SO/picking.
         """
         quants = quants.sudo().exists()
+
+        # CANDADO ANTI-CARRERA: dos vendedores con la misma placa en sus
+        # carritos podían confirmar simultáneamente (ninguno veía las move
+        # lines no confirmadas del otro). El lock serializa: el segundo espera
+        # aquí y, al liberarse, re-lee y SÍ ve la reserva ya confirmada.
+        if quants:
+            self.env.cr.execute(
+                "SELECT id FROM stock_quant WHERE id IN %s FOR UPDATE",
+                (tuple(quants.ids),),
+            )
+            quants.invalidate_recordset()
 
         for quant in quants:
             if not quant.lot_id:
@@ -988,7 +999,7 @@ class SaleOrder(models.Model):
                                 int(k): float(v)
                                 for k, v in line.x_lot_breakdown_json.items()
                             }
-                        except Exception as e:
+                        except (TypeError, ValueError, AttributeError) as e:
                             _logger.warning("Error parseando breakdown: %s", e)
 
                     order._assign_specific_lots(
@@ -1006,8 +1017,12 @@ class SaleOrder(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
+        # El default nativo puede llegar traducido ("Nuevo") según el idioma
+        # del cliente web; comparar solo contra 'New' dejaba pasar folios
+        # S000xx de la secuencia estándar mezclados con los COT/.
+        default_names = {'New', 'Nuevo', _('New')}
         for vals in vals_list:
-            if vals.get('name', 'New') == 'New':
+            if vals.get('name', 'New') in default_names:
                 vals['name'] = self.env['ir.sequence'].next_by_code('sale.quotation') or 'New'
 
         return super().create(vals_list)
@@ -1455,6 +1470,10 @@ class SaleOrder(models.Model):
                 'order_name': sale_order.name,
             }
 
+        except UserError:
+            # Errores de negocio legibles: propagar tal cual (antes se
+            # doble-envolvían con "Error al procesar la orden: ...").
+            raise
         except Exception as e:
             _logger.error("Error en create_from_shopping_cart: %s", str(e), exc_info=True)
             raise UserError(f"Error al procesar la orden: {str(e)}")
@@ -1497,13 +1516,25 @@ class SaleOrder(models.Model):
                 continue
 
             for move in picking.move_ids.filtered(lambda m: m.product_id.id == product.id):
-                try:
-                    if move.move_line_ids:
+                # El unlink de las líneas autoasignadas NO puede fallar en
+                # silencio: crear las líneas exactas ENCIMA de las automáticas
+                # duplica demanda y reserva en la entrega.
+                if move.move_line_ids:
+                    try:
                         move.move_line_ids.unlink()
-                except Exception:
-                    pass
+                    except Exception as e:
+                        _logger.exception(
+                            "[ASSIGN_LOTS] No se pudieron limpiar las líneas "
+                            "autoasignadas del move %s.", move.id,
+                        )
+                        raise UserError(
+                            f"No se pudo preparar la entrega de {product.display_name}: "
+                            f"las reservas automáticas no pudieron liberarse ({e}). "
+                            "Revisa el picking antes de confirmar."
+                        )
 
                 remaining = move.product_uom_qty
+                failed_lots = []
 
                 for quant in selected_quants:
                     if quant.product_id.id != product.id or remaining <= 0:
@@ -1557,12 +1588,22 @@ class SaleOrder(models.Model):
                         )
 
                     except Exception as e:
-                        _logger.error(
-                            "Error reservando lote %s desde %s: %s",
+                        _logger.exception(
+                            "Error reservando lote %s desde %s",
                             quant.lot_id.name,
                             quant.location_id.complete_name,
-                            e,
                         )
+                        failed_lots.append(f"{quant.lot_id.name} ({e})")
+
+                # Una placa que no se pudo reservar NO puede omitirse en
+                # silencio: la orden se confirmaba "bien" con la entrega
+                # incompleta y nadie se enteraba hasta el embarque.
+                if failed_lots:
+                    raise UserError(
+                        "No se pudieron reservar estas placas para la entrega de "
+                        f"{product.display_name}:\n- " + "\n- ".join(failed_lots) +
+                        "\n\nCorrige el problema y vuelve a confirmar."
+                    )
 
     def _clear_auto_assigned_lots(self):
         if PickingLotCleaner:

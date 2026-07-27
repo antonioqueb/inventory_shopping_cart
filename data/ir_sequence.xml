@@ -10,12 +10,17 @@
 
     <!-- Secuencia para Cotizaciones (Borrador).
          Sin año en el folio. padding=3 es el ancho MÍNIMO (relleno de
-         ceros): al superar 999 el número simplemente crece (1000, 1001…). -->
+         ceros): al superar 999 el número simplemente crece (1000, 1001…).
+         implementation=no_gap: el folio se asigna DENTRO de la transacción y
+         se revierte con el rollback — sin esto, cada confirmación/creación
+         fallida (p. ej. bloqueo por autorización de descuento) quemaba un
+         folio para siempre. -->
     <record id="seq_sale_quotation" model="ir.sequence">
         <field name="name">Secuencia de Cotización</field>
         <field name="code">sale.quotation</field>
         <field name="prefix">COT/</field>
         <field name="padding">3</field>
+        <field name="implementation">no_gap</field>
         <field name="company_id" eval="False"/>
     </record>
 
@@ -25,6 +30,7 @@
         <field name="code">sale.order.confirmed</field>
         <field name="prefix">V/</field>
         <field name="padding">3</field>
+        <field name="implementation">no_gap</field>
         <field name="company_id" eval="False"/>
     </record>
 </odoo>
