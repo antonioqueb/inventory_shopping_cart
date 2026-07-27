@@ -53,9 +53,12 @@ class ProductCategoryPricing(models.Model):
         string='Productos', compute='_compute_product_count',
     )
 
-    _sql_constraints = [
-        ('categ_unique', 'unique(categ_id)', 'Ya existe una configuración para esta categoría.'),
-    ]
+    # Odoo 19: models.Constraint reemplaza a _sql_constraints (que ya no se
+    # aplica: se podían crear varias configuraciones para la misma categoría).
+    _categ_unique = models.Constraint(
+        'unique(categ_id)',
+        'Ya existe una configuración para esta categoría.',
+    )
 
     @api.depends('categ_id')
     def _compute_product_count(self):

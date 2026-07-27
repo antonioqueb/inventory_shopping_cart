@@ -1102,11 +1102,10 @@ class StockLotHoldOrderLine(models.Model):
         readonly=True,
     )
 
-    precio_unitario = fields.Float(
-        string='Precio/m²',
-        digits='Product Price',
-        default=0.0,
-    )
+    # precio_unitario NO se re-declara aquí: lo define stock_lot_dimensions
+    # como Monetary(currency_field='currency_id'). Re-declararlo como Float
+    # ganaba por orden de carga y se perdía el redondeo por moneda (centavos
+    # que no cuadraban entre carrito y hold).
 
     currency_id = fields.Many2one(
         'res.currency',
