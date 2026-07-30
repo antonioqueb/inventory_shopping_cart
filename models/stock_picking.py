@@ -6,7 +6,66 @@ from collections import defaultdict
 
 class StockPicking(models.Model):
     _inherit = 'stock.picking'
-    
+
+    @api.model
+    def _release_cart_internal_reservations(self, lot_ids, reason=None):
+        """Libera traslados internos de carrito/escáner ABIERTOS que retienen
+        estos lotes.
+
+        Regla de negocio: un traslado interno creado desde el carrito o el
+        escáner móvil (origin 'Carrito - %') es solo REACOMODO DE UBICACIÓN,
+        una reserva DÉBIL. Nunca debe competir con una venta, apartado,
+        entrega, orden de taller ni con un traslado nuevo del propio carrito.
+        Cualquier flujo fuerte llama aquí antes de validar disponibilidad y
+        el traslado viejo cede: se cancela (si todos sus lotes se necesitan)
+        o se le quitan solo los lotes en conflicto ajustando la demanda.
+
+        Devuelve los pickings tocados.
+        """
+        lot_ids = [lid for lid in set(lot_ids or []) if lid]
+        touched = self.env['stock.picking'].sudo().browse()
+        if not lot_ids:
+            return touched
+
+        stale_lines = self.env['stock.move.line'].sudo().search([
+            ('lot_id', 'in', lot_ids),
+            ('state', 'not in', ('done', 'cancel')),
+            ('picking_id.picking_type_code', '=', 'internal'),
+            ('picking_id.origin', '=like', 'Carrito - %'),
+            ('picking_id.state', 'not in', ('done', 'cancel')),
+        ])
+        default_reason = (
+            'Liberado automáticamente: sus lotes se necesitan en otra '
+            'operación (venta, apartado, taller o traslado nuevo). Mover '
+            'material de ubicación no compromete el lote.'
+        )
+        for stale_picking in stale_lines.mapped('picking_id'):
+            pending = stale_picking.move_line_ids.filtered(
+                lambda ml: ml.state not in ('done', 'cancel'))
+            doomed = pending.filtered(lambda ml: ml.lot_id.id in lot_ids)
+            if not doomed:
+                continue
+            if doomed == pending:
+                # Todo el traslado viejo era de estos lotes: se cancela.
+                stale_picking.action_cancel()
+            else:
+                # Traía otros lotes: solo se liberan los conflictivos y se
+                # ajusta la demanda para no dejar faltantes fantasma.
+                for move in doomed.mapped('move_id'):
+                    move_doomed = doomed.filtered(
+                        lambda ml: ml.move_id == move)
+                    released = sum(move_doomed.mapped('quantity'))
+                    move_doomed.unlink()
+                    remaining = max(
+                        (move.product_uom_qty or 0.0) - released, 0.0)
+                    if remaining <= 0:
+                        move._action_cancel()
+                    else:
+                        move.product_uom_qty = remaining
+            stale_picking.message_post(body=reason or default_reason)
+            touched |= stale_picking
+        return touched
+
     @api.model
     def create_transfer_from_shopping_cart(self, selected_lots=None, location_dest_id=None, notes=None, partner_id=None):
         """
@@ -52,46 +111,11 @@ class StockPicking(models.Model):
             for quant in group
             if quant.lot_id
         }
-        if superseded_lot_ids:
-            stale_lines = self.env['stock.move.line'].sudo().search([
-                ('lot_id', 'in', list(superseded_lot_ids)),
-                ('state', 'not in', ('done', 'cancel')),
-                ('picking_id.picking_type_code', '=', 'internal'),
-                ('picking_id.origin', '=like', 'Carrito - %'),
-                ('picking_id.state', 'not in', ('done', 'cancel')),
-            ])
-            for stale_picking in stale_lines.mapped('picking_id'):
-                pending = stale_picking.move_line_ids.filtered(
-                    lambda ml: ml.state not in ('done', 'cancel'))
-                doomed = pending.filtered(
-                    lambda ml: ml.lot_id.id in superseded_lot_ids)
-                if not doomed:
-                    continue
-                if doomed == pending:
-                    # Todo el traslado viejo era de estos lotes: se cancela.
-                    stale_picking.action_cancel()
-                    stale_picking.message_post(body=(
-                        'Cancelado automáticamente: sus lotes se volvieron a '
-                        'mover desde el carrito/escáner en un traslado nuevo.'
-                    ))
-                else:
-                    # Traía otros lotes: solo se liberan los re-movidos y se
-                    # ajusta la demanda para no dejar faltantes fantasma.
-                    for move in doomed.mapped('move_id'):
-                        move_doomed = doomed.filtered(
-                            lambda ml: ml.move_id == move)
-                        released = sum(move_doomed.mapped('quantity'))
-                        move_doomed.unlink()
-                        remaining = max(
-                            (move.product_uom_qty or 0.0) - released, 0.0)
-                        if remaining <= 0:
-                            move._action_cancel()
-                        else:
-                            move.product_uom_qty = remaining
-                    stale_picking.message_post(body=(
-                        'Se liberaron lotes de este traslado: se volvieron a '
-                        'mover desde el carrito/escáner en un traslado nuevo.'
-                    ))
+        self._release_cart_internal_reservations(
+            list(superseded_lot_ids),
+            reason='Liberado automáticamente: sus lotes se volvieron a '
+                   'mover desde el carrito/escáner en un traslado nuevo.',
+        )
 
         picking_type = self.env['stock.picking.type'].search([
             ('code', '=', 'internal'),

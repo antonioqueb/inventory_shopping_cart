@@ -352,6 +352,20 @@ class SaleOrder(models.Model):
 
         blockers = StockMoveLine.search(domain)
 
+        # Reserva DÉBIL: un traslado interno de carrito/escáner abierto es
+        # solo reacomodo de ubicación, nunca un compromiso comercial. Los
+        # flujos fuertes ya lo liberan vía
+        # stock.picking._release_cart_internal_reservations(); este filtro es
+        # el cinturón por si la liberación corrió en otra transacción y la
+        # caché aún lo trae. OJO: solo origin 'Carrito - %' — los pickings
+        # internos multi-step de una venta (Existencias -> Salida) llevan la
+        # SO en origin y SÍ deben bloquear.
+        blockers = blockers.filtered(lambda ml: not (
+            ml.picking_id
+            and ml.picking_id.picking_type_code == 'internal'
+            and (ml.picking_id.origin or '').startswith('Carrito - ')
+        ))
+
         if allowed_pickings:
             allowed_picking_ids = set(allowed_pickings.ids)
             blockers = blockers.filtered(lambda ml: ml.picking_id.id not in allowed_picking_ids)
@@ -436,6 +450,20 @@ class SaleOrder(models.Model):
         2. Reservas nativas activas en otra SO/picking.
         """
         quants = quants.sudo().exists()
+
+        # Los traslados internos del carrito/escáner son reservas DÉBILES:
+        # mover material de ubicación no lo compromete. Antes de validar se
+        # liberan para que la venta/apartado/entrega tome el lote sin chocar
+        # con un SOM/INT abierto ("Carrito - API").
+        weak_lot_ids = [q.lot_id.id for q in quants if q.lot_id]
+        if weak_lot_ids:
+            released = self.env['stock.picking']._release_cart_internal_reservations(
+                weak_lot_ids,
+                reason='Liberado automáticamente: el lote se está usando en '
+                       'una venta o apartado.',
+            )
+            if released:
+                quants.invalidate_recordset()
 
         # CANDADO ANTI-CARRERA: dos vendedores con la misma placa en sus
         # carritos podían confirmar simultáneamente (ninguno veía las move

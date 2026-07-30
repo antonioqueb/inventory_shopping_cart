@@ -79,6 +79,22 @@ class ShoppingCart(models.Model):
         quant = self.env['stock.quant'].sudo().browse(int(quant_id)).exists()
         if quant:
             free_qty = (quant.quantity or 0.0) - (quant.reserved_quantity or 0.0)
+            if free_qty <= 0 and quant.lot_id:
+                # La reserva puede venir SOLO de un traslado interno de
+                # carrito/escáner abierto (reserva DÉBIL de reacomodo): esa
+                # no impide cotizar la placa — se libera sola al crear la
+                # venta. Se descuenta del reservado para el cálculo.
+                weak_lines = self.env['stock.move.line'].sudo().search([
+                    ('product_id', '=', quant.product_id.id),
+                    ('lot_id', '=', quant.lot_id.id),
+                    ('location_id', '=', quant.location_id.id),
+                    ('state', 'in', ('assigned', 'partially_available')),
+                    ('picking_id.picking_type_code', '=', 'internal'),
+                    ('picking_id.origin', '=like', 'Carrito - %'),
+                    ('picking_id.state', 'not in', ('done', 'cancel')),
+                ])
+                weak_reserved = sum(weak_lines.mapped('quantity'))
+                free_qty += weak_reserved
             if free_qty <= 0:
                 return {
                     'success': False,
