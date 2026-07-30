@@ -391,14 +391,31 @@ class SaleOrder(models.Model):
                 if move and move.sale_line_id and move.sale_line_id.order_id.id == allowed_order.id:
                     return True
 
-                if (
-                    move
-                    and move.group_id
-                    and 'sale_id' in move.group_id._fields
-                    and move.group_id.sale_id
-                    and move.group_id.sale_id.id == allowed_order.id
-                ):
-                    return True
+                # Odoo 19: stock.move ya NO tiene group_id (AttributeError);
+                # se consulta por nombre de campo tolerando renombres, y
+                # también vía el grupo del picking.
+                if move:
+                    for group_field in ('group_id', 'procure_group_id'):
+                        if group_field not in move._fields:
+                            continue
+                        group = move[group_field]
+                        if (
+                            group
+                            and 'sale_id' in group._fields
+                            and group.sale_id
+                            and group.sale_id.id == allowed_order.id
+                        ):
+                            return True
+                        break
+
+                if picking and 'group_id' in picking._fields and picking.group_id:
+                    group = picking.group_id
+                    if (
+                        'sale_id' in group._fields
+                        and group.sale_id
+                        and group.sale_id.id == allowed_order.id
+                    ):
+                        return True
 
                 if (
                     picking
