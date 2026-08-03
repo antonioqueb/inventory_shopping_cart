@@ -18,7 +18,9 @@ except ImportError:
 
 _logger = logging.getLogger(__name__)
 
-# ÚNICA URL usada por el módulo para Banorte
+# URL de RESPALDO del scraper Banorte (contenedor local en la red Docker).
+# La URL real se configura en el parámetro de sistema 'banorte.api_url'
+# (p. ej. https://api-banorte.recubrimientos.app/); si no existe, se usa esta.
 BANORTE_API_URL = "http://banorte_scraper:8000/"
 
 
@@ -937,7 +939,14 @@ class ProductTemplate(models.Model):
         - Después recalcula escalera de precios.
         """
         icp = self.env['ir.config_parameter'].sudo()
-        api_key = icp.get_param('API_KEY')
+        # URL configurable por parámetro de sistema; el hardcode queda solo
+        # como respaldo (despliegues con el scraper en la misma red Docker).
+        api_url = (icp.get_param('banorte.api_url') or BANORTE_API_URL).strip()
+        if not api_url.endswith('/'):
+            api_url += '/'
+        # Llave: 'banorte.api_key' es el nombre nuevo; 'API_KEY' se conserva
+        # por compatibilidad con lo ya configurado.
+        api_key = icp.get_param('banorte.api_key') or icp.get_param('API_KEY')
 
         if not api_key:
             _logger.warning("BANORTE SYNC: API_KEY no configurada")
@@ -956,7 +965,7 @@ class ProductTemplate(models.Model):
         }
 
         try:
-            response = requests.get(BANORTE_API_URL, headers=headers, timeout=90)
+            response = requests.get(api_url, headers=headers, timeout=90)
             response.raise_for_status()
 
             data = response.json()
@@ -985,7 +994,7 @@ class ProductTemplate(models.Model):
                     'rate_buy': rate_buy,
                     'rate_sell': rate_sell,
                     'raw_response': str(data),
-                    'source_url': BANORTE_API_URL,
+                    'source_url': api_url,
                     'success': True,
                 })
 
@@ -1030,7 +1039,7 @@ class ProductTemplate(models.Model):
                         'rate_buy': 0.0,
                         'rate_sell': 0.0,
                         'raw_response': '',
-                        'source_url': BANORTE_API_URL,
+                        'source_url': api_url,
                         'success': False,
                         'error_message': str(e),
                     })
