@@ -1267,12 +1267,12 @@ class StockLotHoldOrderLine(models.Model):
                         # Parcialidad explícita seleccionada para este lote.
                         total += float(breakdown.get(key) or 0.0)
                         continue
-                    quant = self.env['stock.quant'].search([
+                    quants = self.env['stock.quant'].search([
                         ('lot_id', '=', lot.id),
                         ('quantity', '>', 0),
                         ('location_id.usage', '=', 'internal'),
-                    ], limit=1)
-                    total += quant.quantity if quant else 0.0
+                    ])
+                    total += sum(quants.mapped('quantity'))
                 line.cantidad_m2 = total
             elif line.product_id and line.product_id.type == 'service':
                 if not line.cantidad_m2:
@@ -1424,52 +1424,38 @@ class StockLotHoldOrderLine(models.Model):
             lots |= self.lot_id
 
         # Con desglose de parcialidades (FORMATOS/PIEZAS) se respeta la cantidad
-        # parcial por lote; los lotes sin entrada en el desglose usan el quant
-        # completo. Así el guardado no pisa la parcialidad seleccionada.
+        # parcial por lote; los lotes sin entrada en el desglose usan TODO su
+        # stock interno. Así el guardado no pisa la parcialidad seleccionada.
         breakdown = {}
         if 'x_lot_breakdown_json' in self._fields:
             breakdown = self.x_lot_breakdown_json or {}
 
-        if breakdown and lots:
+        if lots:
+            # La cantidad SIEMPRE es la suma de lo seleccionado por lote.
+            # quant_id es solo un legacy del PRIMER lote: darle prioridad
+            # dejaba la cantidad igual a los m² de una sola placa arbitraria
+            # al editar la línea (el "número de la nada").
             total = 0.0
             for lot in lots:
                 key = str(lot.id)
                 if key in breakdown:
                     total += float(breakdown.get(key) or 0.0)
                     continue
-                quant = self.env['stock.quant'].search([
+                quants = self.env['stock.quant'].search([
                     ('lot_id', '=', lot.id),
                     ('location_id.usage', '=', 'internal'),
                     ('quantity', '>', 0),
-                ], limit=1)
-                total += quant.quantity if quant else 0.0
+                ])
+                if quants:
+                    total += sum(quants.mapped('quantity'))
+                else:
+                    total += getattr(lot, 'product_qty', 0.0) or 0.0
             return total
 
         if self.quant_id:
             return self.quant_id.quantity or 0.0
 
-        if not lots:
-            return 0.0
-
-        domain = [
-            ('lot_id', 'in', lots.ids),
-            ('location_id.usage', '=', 'internal'),
-            ('quantity', '>', 0),
-        ]
-
-        if self.product_id:
-            domain.append(('product_id', '=', self.product_id.id))
-
-        quants = self.env['stock.quant'].search(domain)
-
-        if quants:
-            return sum(quants.mapped('quantity'))
-
-        fallback_qty = 0.0
-        for lot in lots:
-            fallback_qty += getattr(lot, 'product_qty', 0.0) or 0.0
-
-        return fallback_qty
+        return 0.0
 
     @api.onchange('quant_id')
     def _onchange_quant_id_set_lot_product_quantity(self):
