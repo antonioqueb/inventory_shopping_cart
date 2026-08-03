@@ -348,6 +348,13 @@ class StockLotHoldOrder(models.Model):
         for order in self:
             order.line_ids._sync_price_from_selector()
 
+    @api.onchange('x_exchange_rate_source')
+    def _onchange_x_exchange_rate_source_sync_prices(self):
+        """Cambiar la fuente del TC (Banorte/DOF) reprecia las líneas: en MXN
+        los niveles se calculan como precio USD × TC de la fuente elegida."""
+        for order in self:
+            order.line_ids._sync_price_from_selector()
+
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
@@ -397,6 +404,10 @@ class StockLotHoldOrder(models.Model):
         if not self.env.context.get('skip_hold_order_sync'):
             if any(field in vals for field in ['fecha_orden', 'currency_id', 'x_hold_business_days']):
                 self._sync_manual_defaults_and_lines()
+            # Fuente TC guardada desde la vista o por RPC: repreciar líneas
+            # (el onchange solo cubre la edición en vivo del formulario).
+            if 'x_exchange_rate_source' in vals:
+                self.line_ids._sync_price_from_selector()
 
         return res
 
@@ -1245,18 +1256,21 @@ class StockLotHoldOrderLine(models.Model):
 
         return 'USD'
 
-    @api.depends('product_id', 'order_id.currency_id')
+    @api.depends('product_id', 'order_id.currency_id',
+                 'order_id.x_exchange_rate_source')
     def _compute_price_level_values(self):
         for line in self:
             currency_code = line._get_currency_code()
             tmpl = line.product_id.product_tmpl_id if line.product_id else False
 
             if tmpl and currency_code == 'MXN':
-                line.x_price_1_value = tmpl.x_price_mxn_1
-                line.x_price_2_value = tmpl.x_price_mxn_2
-                line.x_price_3_value = tmpl.x_price_mxn_3
-                line.x_price_4_value = tmpl.x_price_mxn_4
-                line.x_price_5_value = tmpl.x_price_mxn_5
+                # Montos del selector con el MISMO criterio que el precio
+                # aplicado: USD × TC de la fuente elegida (Banorte/DOF).
+                line.x_price_1_value = line._hold_mxn_level_price(tmpl, 'high')
+                line.x_price_2_value = line._hold_mxn_level_price(tmpl, 'medium')
+                line.x_price_3_value = line._hold_mxn_level_price(tmpl, 'minimum')
+                line.x_price_4_value = line._hold_mxn_level_price(tmpl, 'level_4')
+                line.x_price_5_value = line._hold_mxn_level_price(tmpl, 'level_5')
             elif tmpl:
                 line.x_price_1_value = tmpl.x_price_usd_1
                 line.x_price_2_value = tmpl.x_price_usd_2
@@ -1341,6 +1355,19 @@ class StockLotHoldOrderLine(models.Model):
 
         return 'custom'
 
+    def _hold_mxn_level_price(self, tmpl, level):
+        """Precio de nivel en MXN calculado EN VIVO: precio USD del nivel × el
+        TC de la fuente elegida en la orden (Banorte o DOF). Así el selector
+        de fuente realmente mueve los precios. Fallback: la escalera MXN
+        almacenada (que se calculó con Banorte al último sync)."""
+        self.ensure_one()
+        Product = self.env['product.template']
+        usd_price = Product._get_price_level_value(tmpl, level, 'USD')
+        rate = self.order_id.x_exchange_rate or 0.0
+        if usd_price > 0 and rate > 0:
+            return usd_price * rate
+        return Product._get_price_level_value(tmpl, level, 'MXN')
+
     def _get_price_from_selector(self):
         self.ensure_one()
 
@@ -1351,6 +1378,8 @@ class StockLotHoldOrderLine(models.Model):
         tmpl = self.product_id.product_tmpl_id
 
         if self.x_price_selector in ('high', 'medium', 'minimum', 'level_4', 'level_5'):
+            if currency_code == 'MXN' and self.order_id:
+                return self._hold_mxn_level_price(tmpl, self.x_price_selector)
             return self.env['product.template']._get_price_level_value(
                 tmpl, self.x_price_selector, currency_code,
             )
