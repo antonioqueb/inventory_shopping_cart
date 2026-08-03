@@ -105,8 +105,9 @@ class StockQuant(models.Model):
     @api.model
     def _normalize_services_for_hold(self, services=None, currency_code='USD', partner_id=None):
         """
-        Fuerza precios de servicios desde backend para evitar que el usuario
-        capture manualmente el precio unitario del servicio en el apartado.
+        Normaliza los servicios del apartado. El precio capturado manualmente
+        en el carrito SE RESPETA (mismo criterio que los materiales); el precio
+        de lista del backend solo entra como default cuando no se envió precio.
         """
         normalized = []
         for service in (services or []):
@@ -122,12 +123,18 @@ class StockQuant(models.Model):
             if qty <= 0:
                 qty = 1.0
 
-            price_unit = self._compute_product_sale_price(
-                product,
-                currency_code=currency_code,
-                partner_id=partner_id,
-                quantity=qty,
-            )
+            try:
+                price_unit = float(service.get('price_unit'))
+            except (TypeError, ValueError):
+                price_unit = 0.0
+
+            if price_unit <= 0:
+                price_unit = self._compute_product_sale_price(
+                    product,
+                    currency_code=currency_code,
+                    partner_id=partner_id,
+                    quantity=qty,
+                )
 
             normalized.append({
                 'product_id': product.id,

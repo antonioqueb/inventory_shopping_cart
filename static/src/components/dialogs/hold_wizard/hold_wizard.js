@@ -355,6 +355,9 @@ export class HoldWizard extends Component {
 
     async refreshSelectedServicePrices() {
         for (const service of this.state.selectedServices) {
+            // Cambio de divisa: un precio manual NO se arrastra entre divisas
+            // (mismo criterio que los materiales) — se vuelve al precio de lista.
+            service.price_manual = false;
             service.price_unit = await this.getBackendProductPrice(
                 service.product_id,
                 service.quantity || 1
@@ -389,14 +392,22 @@ export class HoldWizard extends Component {
     async updateServiceQuantity(index, value) {
         const qty = parseFloat(value) || 1;
         this.state.selectedServices[index].quantity = qty > 0 ? qty : 1;
-        this.state.selectedServices[index].price_unit = await this.getBackendProductPrice(
-            this.state.selectedServices[index].product_id,
-            this.state.selectedServices[index].quantity
-        );
+        // Solo refrescar el precio de lista si el vendedor NO lo editó a mano.
+        if (!this.state.selectedServices[index].price_manual) {
+            this.state.selectedServices[index].price_unit = await this.getBackendProductPrice(
+                this.state.selectedServices[index].product_id,
+                this.state.selectedServices[index].quantity
+            );
+        }
     }
-    
+
     updateServicePrice(index, value) {
-        this.notification.add("El precio del servicio se carga desde la lista de precios y no se modifica manualmente.", { type: "info" });
+        // Editable igual que los materiales: el precio capturado se respeta
+        // (el backend lo toma tal cual; solo usa lista si no se envía precio).
+        const price = parseFloat(value);
+        this.state.selectedServices[index].price_unit =
+            Number.isFinite(price) && price >= 0 ? price : 0;
+        this.state.selectedServices[index].price_manual = true;
     }
     
     getTotalServices() {
