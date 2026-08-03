@@ -117,10 +117,29 @@ export class SaleOrderWizard extends Component {
                     }
                 );
                 
+                // Nivel elegido con las opciones ANTERIORES (si el valor actual
+                // coincidía con una de ellas). Se captura antes de pisarlas para
+                // poder re-mapear el mismo nivel en la nueva divisa.
+                const oldOptions = this.state.productPriceOptions[productId] || [];
+                const currentValue = this.state.productPrices[productId];
+                const oldLevel = (oldOptions.find(o => o.value === currentValue) || {}).level;
+
                 this.state.productPriceOptions[productId] = prices;
-                
-                if (prices.length > 0 && !this.state.productPrices[productId]) {
+
+                if (!prices.length) {
+                    continue;
+                }
+
+                if (currentValue === undefined || currentValue === null || isNaN(currentValue)) {
+                    // Primera carga: primer nivel visible.
                     this.state.productPrices[productId] = prices[0].value;
+                } else if (oldOptions.length) {
+                    // Recarga por cambio de divisa: mismo nivel en la nueva divisa.
+                    // Un precio personalizado (sin nivel) no se arrastra entre
+                    // divisas: cae al primer nivel para que el campo SIEMPRE
+                    // refleje la divisa activa.
+                    const match = oldLevel ? prices.find(o => o.level === oldLevel) : null;
+                    this.state.productPrices[productId] = match ? match.value : prices[0].value;
                 }
             } catch (error) {
                 console.error(`Error cargando precios para producto ${productId}:`, error);
@@ -137,9 +156,8 @@ export class SaleOrderWizard extends Component {
             this.state.selectedPricelistId = pricelist.id;
         }
         
-        this.state.productPrices = {};
-        this.state.productPriceOptions = {};
-        
+        // No se resetean productPrices/productPriceOptions: loadAllProductPrices
+        // re-mapea el nivel elegido a la nueva divisa (mismo nivel, nuevo monto).
         await this.loadAllProductPrices();
     }
     
