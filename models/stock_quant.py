@@ -381,6 +381,23 @@ class StockQuant(models.Model):
         return '\n'.join(address_parts) if address_parts else ''
 
     @api.model
+    def _som_assert_project_of_partner(self, partner_id, project_id):
+        """Regla cliente→proyectos: el proyecto elegido debe ser del cliente
+        seleccionado (o no tener cliente aún). Se valida en SERVIDOR para que
+        ningún flujo del carrito (apartado, OV, autorización) la brinque."""
+        if not partner_id or not project_id:
+            return
+        project = self.env['project.project'].browse(int(project_id)).exists()
+        if not project or not project.partner_id:
+            return
+        partner = self.env['res.partner'].browse(int(partner_id)).exists()
+        if partner and project.partner_id.commercial_partner_id != partner.commercial_partner_id:
+            raise UserError(
+                "El proyecto '%s' pertenece al cliente %s. "
+                "Selecciona un proyecto del cliente elegido." % (
+                    project.name, project.partner_id.display_name))
+
+    @api.model
     def create_holds_from_cart(
         self,
         partner_id=None,
@@ -426,6 +443,8 @@ class StockQuant(models.Model):
                 'errors': 1,
                 'failed': [{'error': 'Faltan parámetros requeridos o selección de items'}]
             }
+
+        self._som_assert_project_of_partner(partner_id, project_id)
 
         selected_qty_by_quant = self._resolve_selected_quantities(
             selected_lots=selected_lots,
@@ -751,6 +770,7 @@ class StockQuant(models.Model):
         backorder_items=None,
     ):
         """Crea solicitud de autorización de precio"""
+        self._som_assert_project_of_partner(partner_id, project_id)
         if isinstance(product_prices, dict):
             product_prices = {str(k): v for k, v in product_prices.items()}
 

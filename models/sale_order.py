@@ -1388,6 +1388,9 @@ class SaleOrder(models.Model):
         if not partner_id:
             raise UserError("El cliente es obligatorio.")
 
+        # Regla cliente→proyectos: validación en servidor.
+        self.env['stock.quant']._som_assert_project_of_partner(partner_id, project_id)
+
         try:
             if not pricelist_id:
                 pricelist_id = self.env['res.partner'].browse(partner_id).property_product_pricelist.id

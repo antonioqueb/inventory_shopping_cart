@@ -99,6 +99,13 @@ class StockLotHoldOrder(models.Model):
         else:
             self.delivery_partner_id = False
         self._apply_delivery_address()
+        # Relación cliente→proyectos: un proyecto de OTRO cliente no puede
+        # quedarse en la reserva al cambiar el cliente (el dominio filtra el
+        # dropdown, pero no limpia el valor ya elegido).
+        proj = self.project_id
+        if proj and proj.partner_id and self.partner_id and \
+                proj.partner_id.commercial_partner_id != self.partner_id.commercial_partner_id:
+            self.project_id = False
 
     @api.onchange('delivery_partner_id')
     def _onchange_delivery_partner_id(self):

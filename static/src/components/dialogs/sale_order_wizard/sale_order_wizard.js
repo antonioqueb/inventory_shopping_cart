@@ -272,9 +272,17 @@ export class SaleOrderWizard extends Component {
     }
     
     selectPartner(partner) {
+        const changed = this.state.selectedPartnerId !== partner.id;
         this.state.selectedPartnerId = partner.id;
         this.state.selectedPartnerName = partner.display_name;
         this.state.showCreatePartner = false;
+        if (changed) {
+            // Proyectos son POR CLIENTE: al cambiar de cliente se limpia el
+            // proyecto elegido y los resultados de búsqueda del anterior.
+            this.state.selectedProjectId = null;
+            this.state.selectedProjectName = '';
+            this.state.projects = [];
+        }
     }
     
     toggleCreatePartner() {
@@ -339,7 +347,10 @@ export class SaleOrderWizard extends Component {
                 "stock.quant",
                 "get_projects",
                 [],
-                { search_term: this.state.searchProjectTerm.trim() }
+                {
+                    search_term: this.state.searchProjectTerm.trim(),
+                    partner_id: this.state.selectedPartnerId,
+                }
             );
             
             this.state.projects = projects;
@@ -374,7 +385,10 @@ export class SaleOrderWizard extends Component {
                 "stock.quant",
                 "create_project",
                 [],
-                { name: this.state.newProjectName.trim() }
+                {
+                    name: this.state.newProjectName.trim(),
+                    partner_id: this.state.selectedPartnerId,
+                }
             );
             
             if (result.error) {

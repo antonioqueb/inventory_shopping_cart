@@ -194,9 +194,17 @@ export class HoldWizard extends Component {
     }
     
     selectPartner(partner) {
+        const changed = this.state.selectedPartnerId !== partner.id;
         this.state.selectedPartnerId = partner.id;
         this.state.selectedPartnerName = partner.display_name;
         this.state.showCreatePartner = false;
+        if (changed) {
+            // Proyectos son POR CLIENTE: al cambiar de cliente se limpia el
+            // proyecto elegido y los resultados de búsqueda del anterior.
+            this.state.selectedProjectId = null;
+            this.state.selectedProjectName = '';
+            this.state.projects = [];
+        }
     }
     
     toggleCreatePartner() {
@@ -225,7 +233,7 @@ export class HoldWizard extends Component {
     
     async searchProjects() {
         try {
-            const projects = await this.orm.call("stock.quant", "get_projects", [], { search_term: this.state.searchProjectTerm.trim() });
+            const projects = await this.orm.call("stock.quant", "get_projects", [], { search_term: this.state.searchProjectTerm.trim(), partner_id: this.state.selectedPartnerId });
             this.state.projects = projects;
         } catch (error) { this.notification.add("Error buscando proyectos", { type: "danger" }); }
     }
@@ -244,7 +252,7 @@ export class HoldWizard extends Component {
     async createProject() {
         if (!this.state.newProjectName.trim()) { this.notification.add("Nombre requerido", { type: "warning" }); return; }
         try {
-            const result = await this.orm.call("stock.quant", "create_project", [], { name: this.state.newProjectName.trim() });
+            const result = await this.orm.call("stock.quant", "create_project", [], { name: this.state.newProjectName.trim(), partner_id: this.state.selectedPartnerId });
             if (result.success) { this.selectProject(result.project); this.notification.add("Proyecto creado", { type: "success" }); }
         } catch (error) { this.notification.add("Error creando proyecto", { type: "danger" }); }
     }
