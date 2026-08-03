@@ -119,6 +119,14 @@
 
                         <group string="Configuración">
                             <field name="currency_id" string="Moneda" required="1"/>
+                            <field name="x_is_usd" invisible="1"/>
+                            <field name="x_exchange_rate_source"
+                                   string="Fuente TC"
+                                   invisible="not x_is_usd"/>
+                            <field name="x_exchange_rate"
+                                   string="Tipo de Cambio MXN/USD"
+                                   readonly="1"
+                                   invisible="not x_is_usd"/>
                         </group>
                     </group>
 

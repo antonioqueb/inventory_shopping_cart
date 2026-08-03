@@ -55,6 +55,46 @@ class StockLotHoldOrder(models.Model):
     )
 
     # -------------------------------------------------------------------------
+    # Tipo de cambio — mismo esquema que la orden de venta: fuente elegible
+    # (Banorte/DOF) y tasa viva calculada con los MISMOS helpers de sale.order
+    # (banorte.last_rate_sell → banorte.last_rate con parser tolerante).
+    # -------------------------------------------------------------------------
+    x_exchange_rate_source = fields.Selection([
+        ('banorte', 'Banorte'),
+        ('official', 'Diario Oficial (SAT)'),
+    ], string='Fuente Tipo de Cambio', default='banorte', tracking=True)
+
+    x_exchange_rate = fields.Float(
+        string='Tipo de Cambio',
+        digits=(12, 4),
+        compute='_compute_x_exchange_rate',
+    )
+
+    x_is_usd = fields.Boolean(
+        string='Es USD',
+        compute='_compute_x_is_usd',
+    )
+
+    @api.depends('currency_id')
+    def _compute_x_is_usd(self):
+        for order in self:
+            order.x_is_usd = bool(
+                order.currency_id and order.currency_id.name == 'USD'
+            )
+
+    @api.depends('x_exchange_rate_source', 'currency_id')
+    def _compute_x_exchange_rate(self):
+        SaleOrder = self.env['sale.order']
+        banorte_rate = SaleOrder._get_banorte_rate()
+        official_rate = SaleOrder._get_official_rate()
+        for order in self:
+            order.x_exchange_rate = (
+                official_rate
+                if order.x_exchange_rate_source == 'official'
+                else banorte_rate
+            )
+
+    # -------------------------------------------------------------------------
     # Selección del contacto de entrega (cuando el cliente tiene varios)
     # -------------------------------------------------------------------------
     delivery_partner_id = fields.Many2one(
