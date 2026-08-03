@@ -18,10 +18,6 @@ except ImportError:
 
 _logger = logging.getLogger(__name__)
 
-# URL de RESPALDO del scraper Banorte (contenedor local en la red Docker).
-# La URL real se configura en el parámetro de sistema 'banorte.api_url'
-# (p. ej. https://api-banorte.recubrimientos.app/); si no existe, se usa esta.
-BANORTE_API_URL = "http://banorte_scraper:8000/"
 
 
 class ProductTemplate(models.Model):
@@ -939,14 +935,31 @@ class ProductTemplate(models.Model):
         - Después recalcula escalera de precios.
         """
         icp = self.env['ir.config_parameter'].sudo()
-        # URL configurable por parámetro de sistema; el hardcode queda solo
-        # como respaldo (despliegues con el scraper en la misma red Docker).
-        api_url = (icp.get_param('banorte.api_url') or BANORTE_API_URL).strip()
-        if not api_url.endswith('/'):
+        # La URL del scraper vive ÚNICAMENTE en el parámetro de sistema
+        # 'banorte.api_url' — sin respaldo hardcodeado: si falta, el sync
+        # no corre y queda avisado en el log.
+        api_url = (icp.get_param('banorte.api_url') or '').strip()
+        if api_url and not api_url.endswith('/'):
             api_url += '/'
         # Llave: 'banorte.api_key' es el nombre nuevo; 'API_KEY' se conserva
         # por compatibilidad con lo ya configurado.
         api_key = icp.get_param('banorte.api_key') or icp.get_param('API_KEY')
+
+        if not api_url:
+            _logger.warning(
+                "BANORTE SYNC: parámetro de sistema 'banorte.api_url' no "
+                "configurado — el tipo de cambio NO se actualizará hasta "
+                "definirlo (Ajustes > Técnico > Parámetros del sistema)."
+            )
+
+            try:
+                self._reschedule_banorte_cron_sql()
+                self.env.cr.commit()
+            except Exception:
+                self.env.cr.rollback()
+                _logger.exception("BANORTE SYNC: error reprogramando cron sin URL")
+
+            return False
 
         if not api_key:
             _logger.warning("BANORTE SYNC: API_KEY no configurada")
