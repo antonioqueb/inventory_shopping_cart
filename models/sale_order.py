@@ -585,12 +585,20 @@ class SaleOrder(models.Model):
         self._compute_exchange_rate()
 
     def _get_banorte_rate(self):
-        try:
-            rate = float(self.env['ir.config_parameter'].sudo().get_param('banorte.last_rate', '0'))
+        """TC Banorte para la orden: MISMA fuente y MISMO parser tolerante que
+        el costeo de productos (last_rate_sell → last_rate, aguanta '$'/comas).
+        Antes se leía solo last_rate con float() estricto: si el valor traía
+        formato, caía en silencio al TC oficial (DOF) aunque la etiqueta
+        siguiera diciendo 'Banorte'."""
+        icp = self.env['ir.config_parameter'].sudo()
+        Product = self.env['product.template']
+        for key in ('banorte.last_rate_sell', 'banorte.last_rate'):
+            try:
+                rate = Product._parse_money_to_float(icp.get_param(key, '0'))
+            except Exception:
+                rate = 0.0
             if rate > 0:
                 return rate
-        except (ValueError, TypeError):
-            pass
 
         return self._get_official_rate()
 
