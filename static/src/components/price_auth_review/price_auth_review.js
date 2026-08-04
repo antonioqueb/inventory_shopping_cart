@@ -50,6 +50,11 @@ export class PriceAuthReview extends Component {
         }
     }
 
+    currencyName() {
+        const map = { USD: "Dólar americano", MXN: "Peso mexicano" };
+        return map[this.d.currency] || this.d.currency || "";
+    }
+
     money(v) {
         const n = parseFloat(v || 0);
         return "$" + n.toLocaleString("es-MX", {

@@ -4,37 +4,35 @@
     <t t-name="inventory_shopping_cart.PriceAuthReview">
         <div class="pa-review" t-if="state.data">
 
-            <!-- ═══════ HERO ═══════ -->
-            <div class="pa-hero" t-att-class="'pa-hero--' + d.state">
-                <div class="pa-hero-main">
-                    <div class="pa-hero-eyebrow">Autorización de precio · <t t-esc="d.operation_label"/></div>
-                    <div class="pa-hero-title" t-esc="d.name"/>
-                    <div class="pa-hero-chips">
-                        <span class="pa-chip" t-if="d.partner">
-                            <i class="fa fa-user"/> <t t-esc="d.partner"/>
-                        </span>
-                        <span class="pa-chip" t-if="d.project">
-                            <i class="fa fa-folder-open-o"/> <t t-esc="d.project"/>
-                        </span>
-                        <span class="pa-chip">
-                            <i class="fa fa-id-badge"/> Vendedor: <strong t-esc="d.seller"/>
-                        </span>
-                        <span class="pa-chip" t-if="d.create_date">
-                            <i class="fa fa-clock-o"/> <t t-esc="d.create_date"/>
-                        </span>
+            <!-- ═══════ ENCABEZADO SOBRIO ═══════ -->
+            <div class="pa-head">
+                <div class="pa-head-left">
+                    <div class="pa-head-eyebrow">Autorización de precio · <t t-esc="d.operation_label"/></div>
+                    <div class="pa-head-title" t-esc="d.name"/>
+                    <div class="pa-head-meta">
+                        <div class="pa-meta" t-if="d.partner">
+                            <span class="pa-meta-label">Cliente</span>
+                            <span class="pa-meta-value" t-esc="d.partner"/>
+                        </div>
+                        <div class="pa-meta" t-if="d.project">
+                            <span class="pa-meta-label">Proyecto</span>
+                            <span class="pa-meta-value" t-esc="d.project"/>
+                        </div>
+                        <div class="pa-meta">
+                            <span class="pa-meta-label">Vendedor</span>
+                            <span class="pa-meta-value" t-esc="d.seller"/>
+                        </div>
+                        <div class="pa-meta" t-if="d.create_date">
+                            <span class="pa-meta-label">Solicitada</span>
+                            <span class="pa-meta-value" t-esc="d.create_date"/>
+                        </div>
                     </div>
                 </div>
-                <div class="pa-hero-side">
+                <div class="pa-head-right">
                     <span class="pa-state" t-att-class="'pa-state--' + d.state" t-esc="d.state_label"/>
-                    <div class="pa-hero-total">
-                        <span class="pa-hero-total-label">Total de la operación</span>
-                        <span class="pa-hero-total-value">
-                            <t t-esc="money(d.totals.authorized)"/>
-                            <small t-esc="d.currency"/>
-                        </span>
-                        <span class="pa-hero-total-sub">
-                            <t t-esc="num(d.totals.qty)"/> m² en <t t-esc="d.lines.length"/> producto(s)
-                        </span>
+                    <div class="pa-currency">
+                        <span class="pa-currency-code" t-esc="d.currency"/>
+                        <span class="pa-currency-name" t-esc="currencyName()"/>
                     </div>
                 </div>
             </div>
@@ -45,73 +43,79 @@
                 Orden generada: <strong t-esc="d.sale_order"/>
             </div>
 
-            <!-- ═══════ PRODUCTOS ═══════ -->
-            <div class="pa-cards">
+            <!-- ═══════ PRODUCTOS: RECTÁNGULOS A LO ANCHO ═══════ -->
+            <div class="pa-rows">
+                <!-- Encabezados de columna (solo autorizador, escritorio) -->
+                <div class="pa-rows-header" t-if="d.is_authorizer">
+                    <span class="pa-col pa-col--product">Producto</span>
+                    <span class="pa-col pa-col--qty">Cantidad</span>
+                    <span class="pa-col pa-col--level">Precio 1</span>
+                    <span class="pa-col pa-col--level">Precio 2</span>
+                    <span class="pa-col pa-col--level">Precio 3</span>
+                    <span class="pa-col pa-col--price">Prometido</span>
+                    <span class="pa-col pa-col--price">Autorizado</span>
+                    <span class="pa-col pa-col--subtotal">Subtotal</span>
+                </div>
+                <div class="pa-rows-header pa-rows-header--seller" t-else="">
+                    <span class="pa-col pa-col--product">Producto</span>
+                    <span class="pa-col pa-col--qty">Cantidad</span>
+                    <span class="pa-col pa-col--price">Prometido</span>
+                    <span class="pa-col pa-col--subtotal">Subtotal</span>
+                </div>
+
                 <t t-foreach="d.lines" t-as="line" t-key="line.id">
-                    <div class="pa-card" t-att-class="'pa-card--' + levelTone(line)">
-                        <div class="pa-card-head">
-                            <div class="pa-card-product" t-esc="line.product"/>
-                            <span class="pa-level-tag" t-att-class="'pa-level-tag--' + levelTone(line)"
-                                  t-if="d.is_authorizer" t-esc="levelLabel(line)"/>
-                        </div>
-
-                        <div class="pa-card-qty">
-                            <t t-esc="num(line.quantity)"/> <small t-esc="line.uom"/>
-                        </div>
-
-                        <!-- Los 3 niveles: solo autorizador -->
-                        <div class="pa-levels" t-if="d.is_authorizer">
-                            <div class="pa-level">
-                                <span class="pa-level-name">Precio 1</span>
-                                <span class="pa-level-value" t-esc="money(line.price_1)"/>
-                            </div>
-                            <div class="pa-level">
-                                <span class="pa-level-name">Precio 2</span>
-                                <span class="pa-level-value" t-esc="money(line.price_2)"/>
-                            </div>
-                            <div class="pa-level">
-                                <span class="pa-level-name">Precio 3</span>
-                                <span class="pa-level-value" t-esc="money(line.price_3)"/>
-                            </div>
-                        </div>
-
-                        <div class="pa-card-prices">
-                            <div class="pa-price">
-                                <span class="pa-price-label">Prometido al cliente</span>
-                                <span class="pa-price-value" t-att-class="'pa-price-value--' + levelTone(line)"
-                                      t-esc="money(line.requested_price)"/>
-                            </div>
-                            <div class="pa-price" t-if="d.is_authorizer">
-                                <span class="pa-price-label">Autorizado</span>
-                                <input t-if="d.can_authorize"
-                                       type="number" step="0.01" min="0"
-                                       class="pa-price-input"
-                                       t-att-value="line.authorized_price || line.requested_price"
-                                       t-on-change="(ev) => this.onPriceChange(line, ev)"/>
-                                <span t-else="" class="pa-price-value"
-                                      t-esc="money(line.authorized_price || line.requested_price)"/>
-                            </div>
-                        </div>
-
-                        <div class="pa-card-foot">
-                            <span class="pa-cost" t-if="d.is_authorizer and line.cost">
+                    <div class="pa-row" t-att-class="'pa-row--' + levelTone(line)">
+                        <span class="pa-col pa-col--product">
+                            <span class="pa-product-name" t-esc="line.product"/>
+                            <span class="pa-product-flag" t-if="d.is_authorizer" t-esc="levelLabel(line)"/>
+                            <span class="pa-product-cost" t-if="d.is_authorizer and line.cost">
                                 Costo destino: <t t-esc="money(line.cost)"/>
                             </span>
-                            <span class="pa-subtotal">
-                                Subtotal <strong t-esc="money(line.subtotal)"/>
-                            </span>
-                        </div>
+                        </span>
+                        <span class="pa-col pa-col--qty">
+                            <t t-esc="num(line.quantity)"/> <small t-esc="line.uom"/>
+                        </span>
+                        <t t-if="d.is_authorizer">
+                            <span class="pa-col pa-col--level" t-att-data-label="'Precio 1'" t-esc="money(line.price_1)"/>
+                            <span class="pa-col pa-col--level" t-att-data-label="'Precio 2'" t-esc="money(line.price_2)"/>
+                            <span class="pa-col pa-col--level" t-att-data-label="'Precio 3'" t-esc="money(line.price_3)"/>
+                        </t>
+                        <span class="pa-col pa-col--price" t-att-data-label="'Prometido'">
+                            <span t-att-class="'pa-amount pa-amount--' + levelTone(line)" t-esc="money(line.requested_price)"/>
+                        </span>
+                        <span class="pa-col pa-col--price" t-if="d.is_authorizer" t-att-data-label="'Autorizado'">
+                            <input t-if="d.can_authorize"
+                                   type="number" step="0.01" min="0"
+                                   class="pa-price-input"
+                                   t-att-value="line.authorized_price || line.requested_price"
+                                   t-on-change="(ev) => this.onPriceChange(line, ev)"/>
+                            <span t-else="" class="pa-amount"
+                                  t-esc="money(line.authorized_price || line.requested_price)"/>
+                        </span>
+                        <span class="pa-col pa-col--subtotal" t-att-data-label="'Subtotal'">
+                            <span class="pa-amount pa-amount--strong" t-esc="money(line.subtotal)"/>
+                            <small class="pa-cur" t-esc="d.currency"/>
+                        </span>
                     </div>
                 </t>
+
+                <!-- ═══════ TOTAL ═══════ -->
+                <div class="pa-row pa-row--total">
+                    <span class="pa-col pa-col--product">
+                        Total de la operación
+                        <span class="pa-total-sub"><t t-esc="num(d.totals.qty)"/> m² · <t t-esc="d.lines.length"/> producto(s)</span>
+                    </span>
+                    <span class="pa-col pa-col--subtotal">
+                        <span class="pa-total-amount" t-esc="money(d.totals.authorized)"/>
+                        <span class="pa-total-cur" t-esc="d.currency"/>
+                    </span>
+                </div>
             </div>
 
             <!-- ═══════ NOTAS DEL VENDEDOR ═══════ -->
             <div class="pa-notes" t-if="d.notes">
-                <i class="fa fa-comment-o"/>
-                <div>
-                    <strong>Nota del vendedor</strong>
-                    <p t-esc="d.notes"/>
-                </div>
+                <span class="pa-notes-label">Nota del vendedor</span>
+                <p t-esc="d.notes"/>
             </div>
 
             <!-- ═══════ BARRA DE DECISIÓN ═══════ -->
@@ -132,7 +136,7 @@
                 </div>
             </div>
 
-            <!-- ═══════ RESOLUCIÓN (ya decidida) ═══════ -->
+            <!-- ═══════ RESOLUCIÓN ═══════ -->
             <div class="pa-resolution" t-if="d.state !== 'pending' and d.authorizer">
                 <i t-att-class="'fa ' + (d.state === 'approved' ? 'fa-check-circle' : 'fa-times-circle')"/>
                 <span>
