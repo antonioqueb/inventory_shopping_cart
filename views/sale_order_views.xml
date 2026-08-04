@@ -222,7 +222,7 @@
                             <field name="partner_invoice_id"
                                    string="Dirección de Facturación"
                                    required="0"
-                                   context="{'default_parent_id': partner_id, 'default_type': 'invoice', 'show_address': 1, 'form_view_ref': 'base.view_partner_address_form'}"
+                                   context="{'default_parent_id': partner_id, 'default_type': 'invoice', 'show_address': 1, 'form_view_ref': 'inventory_shopping_cart.view_partner_som_address_simple_form'}"
                                    options='{"always_reload": True, "no_create": False}'
                                    domain="['|', '&amp;', ('parent_id', '=', partner_id), ('type', '=', 'invoice'), ('id', '=', partner_id)]"/>
                         </group>
@@ -230,7 +230,7 @@
                             <field name="partner_shipping_id"
                                    string="Dirección de Entrega"
                                    required="0"
-                                   context="{'default_parent_id': partner_id, 'default_type': 'delivery', 'show_address': 1, 'form_view_ref': 'base.view_partner_address_form'}"
+                                   context="{'default_parent_id': partner_id, 'default_type': 'delivery', 'show_address': 1, 'form_view_ref': 'inventory_shopping_cart.view_partner_som_address_simple_form'}"
                                    options='{"always_reload": True, "no_create": False}'
                                    domain="['|', '&amp;', ('parent_id', '=', partner_id), ('type', '=', 'delivery'), ('id', '=', partner_id)]"/>
                         </group>
@@ -279,6 +279,51 @@
                 <attribute name="force_save">1</attribute>
             </xpath>
 
+        </field>
+    </record>
+
+    <!-- ============================================================
+         Vista MÍNIMA de dirección (crear/editar desde la OV):
+         SOLO el formulario principal — sin notebook ni pestañas de la
+         ficha completa del contacto (propia del módulo: ningún inherit
+         de terceros puede meterle pestañas).
+         ============================================================ -->
+    <record id="view_partner_som_address_simple_form" model="ir.ui.view">
+        <field name="name">res.partner.som.address.simple.form</field>
+        <field name="model">res.partner</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <form string="Dirección">
+                <sheet>
+                    <group>
+                        <group string="Contacto">
+                            <field name="type" invisible="1"/>
+                            <field name="parent_id" invisible="1"/>
+                            <field name="name" string="Nombre / Referencia" required="1"/>
+                            <field name="phone" widget="phone"/>
+                            <field name="mobile" widget="phone"/>
+                            <field name="email" widget="email"/>
+                        </group>
+                        <group string="Dirección">
+                            <label for="street" string="Dirección"/>
+                            <div class="o_address_format">
+                                <field name="street" placeholder="Calle y número..." class="o_address_street"/>
+                                <field name="street2" placeholder="Colonia / interior..." class="o_address_street"/>
+                                <field name="city" placeholder="Ciudad" class="o_address_city"/>
+                                <field name="state_id" class="o_address_state" placeholder="Estado"
+                                       options="{'no_open': True, 'no_quick_create': True}"/>
+                                <field name="zip" placeholder="C.P." class="o_address_zip"/>
+                                <field name="country_id" placeholder="País" class="o_address_country"
+                                       options="{'no_open': True, 'no_quick_create': True}"/>
+                            </div>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="comment" string="Notas de entrega" nolabel="1"
+                               placeholder="Referencias del lugar, horarios, indicaciones para el chofer..."/>
+                    </group>
+                </sheet>
+            </form>
         </field>
     </record>
 
