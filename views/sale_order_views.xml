@@ -300,8 +300,8 @@
                             <field name="type" invisible="1"/>
                             <field name="parent_id" invisible="1"/>
                             <field name="name" string="Nombre / Referencia" required="1"/>
+                            <!-- Odoo 19 eliminó 'mobile' de res.partner (unificado en phone) -->
                             <field name="phone" widget="phone"/>
-                            <field name="mobile" widget="phone"/>
                             <field name="email" widget="email"/>
                         </group>
                         <group string="Dirección">
