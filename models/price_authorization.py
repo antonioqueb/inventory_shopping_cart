@@ -2,6 +2,7 @@
 import math
 from odoo import models, fields, api
 from odoo.exceptions import UserError
+from odoo.tools import html2plaintext
 
 
 class PriceAuthorization(models.Model):
@@ -237,7 +238,8 @@ class PriceAuthorization(models.Model):
             'create_date': _dt(self.create_date),
             'authorization_date': _dt(self.authorization_date),
             'sale_order': self.sale_order_id.name or '',
-            'notes': self.notes or '',
+            # Notas pueden traer HTML heredado (note de la OV): a texto plano.
+            'notes': html2plaintext(self.notes) if self.notes else '',
             'is_authorizer': is_authorizer,
             'can_authorize': is_authorizer and self.state == 'pending',
             'lines': lines,

@@ -8,6 +8,7 @@ from markupsafe import Markup
 
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, ValidationError
+from odoo.tools import html2plaintext
 
 _logger = logging.getLogger(__name__)
 
@@ -1150,7 +1151,10 @@ class SaleOrder(models.Model):
             'partner_id': self.partner_id.id,
             'project_id': self.x_project_id.id,
             'currency_code': currency_code,
-            'notes': f"Solicitud desde Orden Manual {self.name}. {self.note or ''}",
+            # note es un campo HTML: a texto plano para que las notas de la
+            # autorización no muestren <div>/&nbsp; crudos.
+            'notes': f"Solicitud desde Orden Manual {self.name}. "
+                     f"{html2plaintext(self.note) if self.note else ''}",
             'sale_order_id': self.id,
             'temp_data': {
                 'source': 'manual_order',
