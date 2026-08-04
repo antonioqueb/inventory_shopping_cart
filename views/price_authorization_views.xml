@@ -33,8 +33,11 @@
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
-                        <button name="%(sale.act_res_partner_2_sale_order)d" type="action" class="oe_stat_button" icon="fa-shopping-cart"
-                                invisible="not sale_order_id" context="{'search_default_order_id': sale_order_id}">
+                        <!-- Abre directo la orden/cotización ligada (SO o quote,
+                             sin importar su estado). -->
+                        <field name="x_linked_order_id" invisible="1"/>
+                        <button name="action_view_linked_order" type="object" class="oe_stat_button" icon="fa-shopping-cart"
+                                invisible="not x_linked_order_id">
                             <div class="o_field_widget o_stat_info">
                                 <span class="o_stat_text">Ver</span>
                                 <span class="o_stat_text">Orden</span>

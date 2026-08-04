@@ -176,6 +176,44 @@ class PriceAuthorization(models.Model):
         )
 
     # ------------------------------------------------------------------
+    # ORDEN/COTIZACIÓN VINCULADA
+    # ------------------------------------------------------------------
+    x_linked_order_id = fields.Many2one(
+        'sale.order',
+        string='Orden/Cotización Vinculada',
+        compute='_compute_x_linked_order_id',
+        help='La orden generada (sale_order_id) o, en su defecto, la '
+             'cotización de origen registrada en temp_data.',
+    )
+
+    @api.depends('sale_order_id', 'temp_data')
+    def _compute_x_linked_order_id(self):
+        Order = self.env['sale.order']
+        for rec in self:
+            order = rec.sale_order_id
+            if not order:
+                data = rec.temp_data or {}
+                order_id = data.get('sale_order_id')
+                if order_id:
+                    order = Order.browse(int(order_id)).exists()
+            rec.x_linked_order_id = order or False
+
+    def action_view_linked_order(self):
+        """Abrir la orden/cotización ligada directamente en su formulario
+        (funciona igual para cotizaciones que para órdenes confirmadas)."""
+        self.ensure_one()
+        order = self.x_linked_order_id
+        if not order:
+            raise UserError('Esta solicitud no tiene una orden o cotización vinculada.')
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'sale.order',
+            'res_id': order.id,
+            'view_mode': 'form',
+            'target': 'current',
+        }
+
+    # ------------------------------------------------------------------
     # INTERFAZ DE REVISIÓN (widget OWL price_auth_review)
     # ------------------------------------------------------------------
     def get_review_data(self):
