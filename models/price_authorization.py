@@ -174,6 +174,92 @@ class PriceAuthorization(models.Model):
             user_id=self.seller_id.id,
         )
 
+    # ------------------------------------------------------------------
+    # INTERFAZ DE REVISIÓN (widget OWL price_auth_review)
+    # ------------------------------------------------------------------
+    def get_review_data(self):
+        """Datos para la interfaz visual de revisión: por producto los 3
+        niveles de precio (P1/P2/P3) y el TOTAL de la operación — sin
+        detalle de lotes. Los niveles y el costo solo viajan al autorizador."""
+        self.ensure_one()
+        Product = self.env['product.template']
+        is_authorizer = self.env.user.has_group(
+            'inventory_shopping_cart.group_price_authorizer')
+        currency = self.currency_code or 'USD'
+
+        lines = []
+        total_requested = 0.0
+        total_authorized = 0.0
+        total_qty = 0.0
+        for line in self.line_ids:
+            tmpl = line.product_id.product_tmpl_id if line.product_id else False
+            qty = line.quantity or 0.0
+            req = line.requested_price or 0.0
+            auth = line.authorized_price or req
+            total_requested += qty * req
+            total_authorized += qty * auth
+            total_qty += qty
+            item = {
+                'id': line.id,
+                'product': line.product_id.display_name or '',
+                'quantity': qty,
+                'uom': (line.product_id.uom_id.name if line.product_id else '') or 'm²',
+                'requested_price': req,
+                'authorized_price': line.authorized_price or 0.0,
+                'price_level': line.price_level or '',
+                'subtotal': qty * auth,
+            }
+            if is_authorizer:
+                item.update({
+                    'price_1': Product._get_price_level_value(tmpl, 'high', currency) if tmpl else 0.0,
+                    'price_2': line.medium_price or 0.0,
+                    'price_3': line.minimum_price or 0.0,
+                    'cost': line.product_cost or 0.0,
+                })
+            lines.append(item)
+
+        def _dt(value):
+            if not value:
+                return ''
+            return fields.Datetime.context_timestamp(self, value).strftime('%d/%m/%Y %H:%M')
+
+        return {
+            'id': self.id,
+            'name': self.name or '',
+            'state': self.state,
+            'state_label': dict(self._fields['state'].selection).get(self.state, self.state),
+            'operation_label': dict(self._fields['operation_type'].selection).get(self.operation_type, ''),
+            'partner': self.partner_id.display_name or '',
+            'project': self.project_id.display_name or '',
+            'seller': self.seller_id.name or '',
+            'authorizer': self.authorizer_id.name or '',
+            'currency': currency,
+            'create_date': _dt(self.create_date),
+            'authorization_date': _dt(self.authorization_date),
+            'sale_order': self.sale_order_id.name or '',
+            'notes': self.notes or '',
+            'is_authorizer': is_authorizer,
+            'can_authorize': is_authorizer and self.state == 'pending',
+            'lines': lines,
+            'totals': {
+                'qty': total_qty,
+                'requested': total_requested,
+                'authorized': total_authorized,
+            },
+        }
+
+    def set_line_authorized_price(self, line_id, price):
+        """Ajuste del precio autorizado desde la interfaz de revisión."""
+        self.ensure_one()
+        if self.state != 'pending':
+            raise UserError('Solo se puede ajustar el precio en una solicitud pendiente.')
+        if not self.env.user.has_group('inventory_shopping_cart.group_price_authorizer'):
+            raise UserError('No tiene permisos para ajustar el precio autorizado.')
+        line = self.line_ids.filtered(lambda l: l.id == int(line_id))
+        if line:
+            line.write({'authorized_price': float(price or 0.0)})
+        return True
+
     def action_approve(self):
         self.ensure_one()
 

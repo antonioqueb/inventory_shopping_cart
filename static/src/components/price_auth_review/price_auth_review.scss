@@ -1,0 +1,421 @@
+// =====================================================================
+// Autorización de Precios — interfaz de revisión (branding SOM azul cielo)
+// Paleta canónica: la misma de Transit Allocation / portal proveedor.
+// =====================================================================
+
+$pa-accent:       #247fbd;
+$pa-accent-2:     #155f94;
+$pa-sky:          #5cb9f2;
+$pa-sky-2:        #4ba4f2;
+$pa-bg:           #eef8fe;
+$pa-surface:      #ffffff;
+$pa-surface-alt:  #f8fcff;
+$pa-border:       #d7e8f2;
+$pa-border-2:     #bdd7e8;
+$pa-ink:          #0f172a;
+$pa-ink-2:        #284256;
+$pa-ink-3:        #60798c;
+$pa-ok:           #0b9e4c;
+$pa-ok-soft:      #e2f7eb;
+$pa-warn:         #b45309;
+$pa-warn-soft:    #fff7e6;
+$pa-danger:       #dc2626;
+$pa-danger-soft:  #fef2f2;
+
+.pa-review {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 4px 0 12px;
+    color: $pa-ink;
+
+    &--loading {
+        align-items: center;
+        padding: 40px 0;
+        color: $pa-ink-3;
+        gap: 8px;
+        flex-direction: row;
+        justify-content: center;
+    }
+}
+
+// ═══════ HERO ═══════
+.pa-hero {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 22px 26px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, $pa-accent-2 0%, $pa-accent 55%, $pa-sky-2 100%);
+    color: #fff;
+    box-shadow: 0 10px 28px rgba(75, 164, 242, 0.35);
+
+    &--approved { background: linear-gradient(135deg, #06713a 0%, $pa-ok 60%, #2fce7c 100%); box-shadow: 0 10px 28px rgba(11, 158, 76, 0.35); }
+    &--rejected { background: linear-gradient(135deg, #8f1d1d 0%, $pa-danger 60%, #f26d6d 100%); box-shadow: 0 10px 28px rgba(220, 38, 38, 0.3); }
+}
+
+.pa-hero-eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.85;
+    margin-bottom: 4px;
+}
+
+.pa-hero-title {
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin-bottom: 12px;
+}
+
+.pa-hero-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.pa-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    font-size: 12.5px;
+    backdrop-filter: blur(2px);
+
+    strong { font-weight: 700; }
+    i { font-size: 11px; opacity: 0.85; }
+}
+
+.pa-hero-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.pa-state {
+    padding: 4px 14px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: rgba(255, 255, 255, 0.92);
+
+    &--pending  { color: $pa-accent-2; }
+    &--approved { color: $pa-ok; }
+    &--rejected { color: $pa-danger; }
+    &--draft, &--expired { color: $pa-ink-3; }
+}
+
+.pa-hero-total {
+    text-align: right;
+
+    &-label {
+        display: block;
+        font-size: 11.5px;
+        opacity: 0.85;
+    }
+    &-value {
+        display: block;
+        font-size: 30px;
+        font-weight: 800;
+        line-height: 1.15;
+        font-variant-numeric: tabular-nums;
+
+        small { font-size: 14px; font-weight: 700; margin-left: 4px; opacity: 0.9; }
+    }
+    &-sub {
+        display: block;
+        font-size: 12px;
+        opacity: 0.85;
+    }
+}
+
+// ═══════ ORDEN GENERADA ═══════
+.pa-order-ok {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: 12px;
+    background: $pa-ok;
+    color: #fff;
+    font-size: 13.5px;
+    box-shadow: 0 3px 10px rgba(11, 158, 76, 0.3);
+}
+
+// ═══════ TARJETAS DE PRODUCTO ═══════
+.pa-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 14px;
+}
+
+.pa-card {
+    background: $pa-surface;
+    border: 1px solid $pa-border;
+    border-left: 4px solid $pa-border-2;
+    border-radius: 14px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 3px 12px rgba(75, 164, 242, 0.08);
+    transition: box-shadow 0.15s ease, transform 0.15s ease;
+
+    &:hover {
+        box-shadow: 0 8px 22px rgba(75, 164, 242, 0.16);
+        transform: translateY(-1px);
+    }
+
+    &--ok     { border-left-color: $pa-ok; }
+    &--warn   { border-left-color: #f2b705; }
+    &--danger { border-left-color: $pa-danger; }
+}
+
+.pa-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.pa-card-product {
+    font-weight: 700;
+    font-size: 14px;
+    line-height: 1.3;
+    color: $pa-ink;
+}
+
+.pa-level-tag {
+    flex-shrink: 0;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+
+    &--ok     { background: $pa-ok-soft;     color: $pa-ok; }
+    &--warn   { background: $pa-warn-soft;   color: $pa-warn; }
+    &--danger { background: $pa-danger-soft; color: $pa-danger; }
+}
+
+.pa-card-qty {
+    font-size: 20px;
+    font-weight: 800;
+    color: $pa-accent-2;
+    font-variant-numeric: tabular-nums;
+
+    small { font-size: 12px; font-weight: 600; color: $pa-ink-3; margin-left: 3px; }
+}
+
+// Los 3 niveles
+.pa-levels {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+
+.pa-level {
+    background: $pa-surface-alt;
+    border: 1px solid $pa-border;
+    border-radius: 10px;
+    padding: 8px 10px;
+    text-align: center;
+
+    &-name {
+        display: block;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: $pa-ink-3;
+        margin-bottom: 2px;
+    }
+    &-value {
+        display: block;
+        font-size: 13.5px;
+        font-weight: 700;
+        color: $pa-ink-2;
+        font-variant-numeric: tabular-nums;
+    }
+}
+
+.pa-card-prices {
+    display: flex;
+    gap: 12px;
+}
+
+.pa-price {
+    flex: 1;
+    background: $pa-bg;
+    border: 1px solid $pa-border;
+    border-radius: 10px;
+    padding: 10px 12px;
+
+    &-label {
+        display: block;
+        font-size: 10.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: $pa-ink-3;
+        margin-bottom: 3px;
+    }
+    &-value {
+        font-size: 17px;
+        font-weight: 800;
+        font-variant-numeric: tabular-nums;
+        color: $pa-ink;
+
+        &--warn   { color: $pa-warn; }
+        &--danger { color: $pa-danger; }
+    }
+}
+
+.pa-price-input {
+    width: 100%;
+    border: 1.5px solid $pa-border-2;
+    border-radius: 8px;
+    padding: 5px 10px;
+    font-size: 16px;
+    font-weight: 700;
+    color: $pa-accent-2;
+    background: $pa-surface;
+    font-variant-numeric: tabular-nums;
+    outline: none;
+    transition: border-color 0.12s, box-shadow 0.12s;
+
+    &:focus {
+        border-color: $pa-accent;
+        box-shadow: 0 0 0 3px rgba(36, 127, 189, 0.18);
+    }
+}
+
+.pa-card-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px dashed $pa-border;
+    padding-top: 10px;
+    font-size: 12.5px;
+    color: $pa-ink-3;
+
+    .pa-subtotal {
+        margin-left: auto;
+        strong { color: $pa-ink; font-size: 14px; }
+    }
+}
+
+// ═══════ NOTAS ═══════
+.pa-notes {
+    display: flex;
+    gap: 12px;
+    padding: 14px 18px;
+    background: $pa-surface-alt;
+    border: 1px solid $pa-border;
+    border-radius: 12px;
+    font-size: 13px;
+    color: $pa-ink-2;
+
+    i { color: $pa-accent; margin-top: 2px; }
+    p { margin: 4px 0 0; white-space: pre-wrap; }
+}
+
+// ═══════ BARRA DE DECISIÓN ═══════
+.pa-actionbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    padding: 16px 22px;
+    border-radius: 14px;
+    background: $pa-surface;
+    border: 1px solid $pa-border-2;
+    box-shadow: 0 6px 20px rgba(75, 164, 242, 0.14);
+    position: sticky;
+    bottom: 8px;
+    z-index: 3;
+}
+
+.pa-actionbar-total {
+    display: flex;
+    flex-direction: column;
+
+    span { font-size: 11.5px; color: $pa-ink-3; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+    strong {
+        font-size: 22px;
+        font-weight: 800;
+        color: $pa-ink;
+        font-variant-numeric: tabular-nums;
+        small { font-size: 13px; color: $pa-ink-3; }
+    }
+}
+
+.pa-actionbar-btns {
+    display: flex;
+    gap: 10px;
+}
+
+.pa-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 26px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s;
+
+    &:disabled { opacity: 0.6; cursor: wait; }
+    &:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); }
+
+    &--approve {
+        background: linear-gradient(135deg, #06713a, $pa-ok);
+        color: #fff;
+        box-shadow: 0 6px 16px rgba(11, 158, 76, 0.35);
+    }
+    &--reject {
+        background: $pa-surface;
+        color: $pa-danger;
+        border: 1.5px solid rgba(220, 38, 38, 0.4);
+
+        &:hover:not(:disabled) { background: $pa-danger-soft; }
+    }
+}
+
+// ═══════ RESOLUCIÓN ═══════
+.pa-resolution {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 18px;
+    border-radius: 12px;
+    background: $pa-surface-alt;
+    border: 1px solid $pa-border;
+    font-size: 13px;
+    color: $pa-ink-2;
+
+    .fa-check-circle { color: $pa-ok; font-size: 16px; }
+    .fa-times-circle { color: $pa-danger; font-size: 16px; }
+}
+
+// Responsive
+@media (max-width: 700px) {
+    .pa-hero { flex-direction: column; }
+    .pa-hero-side { align-items: flex-start; }
+    .pa-hero-total { text-align: left; }
+    .pa-cards { grid-template-columns: 1fr; }
+    .pa-actionbar { flex-direction: column; align-items: stretch; text-align: center; }
+    .pa-actionbar-btns { justify-content: stretch; .pa-btn { flex: 1; justify-content: center; } }
+}
