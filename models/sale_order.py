@@ -22,9 +22,9 @@ class SaleOrderLine(models.Model):
     _inherit = 'sale.order.line'
 
     # ------------------------------------------------------------------
-    # IVA 16% OBLIGATORIO EN SERVICIOS
+    # IVA 16% OBLIGATORIO EN TODA VENTA (productos Y servicios)
     # ------------------------------------------------------------------
-    # Todo servicio vendido lleva IVA 16% SIEMPRE. Quitarlo requiere que
+    # Toda línea con producto lleva IVA 16% SIEMPRE. Quitarlo requiere que
     # la orden tenga aprobada la exención (x_iva_exempt_state). Se fuerza
     # silenciosamente en create/write: si alguien lo quita, se re-agrega.
 
@@ -49,7 +49,6 @@ class SaleOrderLine(models.Model):
         for line in self:
             if (
                 not line.product_id
-                or line.product_id.type != 'service'
                 or line.display_type
                 or line.state in ('done', 'cancel')
                 or line.order_id.x_iva_exempt_state == 'approved'
@@ -946,7 +945,7 @@ class SaleOrder(models.Model):
         ('requested', 'Exención solicitada'),
         ('approved', 'Exención aprobada'),
         ('rejected', 'Exención rechazada'),
-    ], string='IVA de servicios', default='none', copy=False, tracking=True)
+    ], string="IVA de la orden", default='none', copy=False, tracking=True)
 
     def _som_notify_users(self, users, summary, note):
         """Actividad + mención en el chatter (inbox/correo) para cada usuario."""
@@ -980,11 +979,11 @@ class SaleOrder(models.Model):
                 group.users,
                 f"Autorizar quitar IVA: {self.name}",
                 f"La orden {self.name} (cliente {self.partner_id.display_name or ''}, "
-                f"vendedor {self.env.user.name}) solicita QUITAR el IVA del 16% de los "
-                f"servicios. Los servicios conservan el IVA hasta que se apruebe.",
+                f"vendedor {self.env.user.name}) solicita QUITAR el IVA del 16%. "
+                f"La orden conserva el IVA hasta que se apruebe.",
             )
         self.message_post(body=Markup(
-            f"<p>🔐 <b>Solicitud para quitar IVA de servicios</b> enviada a los "
+            f"<p>🔐 <b>Solicitud para quitar IVA</b> enviada a los "
             f"Autorizadores de Precios por {self.env.user.name}.</p>"
         ))
         return True
@@ -996,9 +995,9 @@ class SaleOrder(models.Model):
         if self.x_iva_exempt_state != 'requested':
             raise UserError("No hay solicitud de exención de IVA pendiente.")
         self.x_iva_exempt_state = 'approved'
-        # Con la exención aprobada, se retira el IVA 16% de los servicios.
+        # Con la exención aprobada, se retira el IVA 16% de TODAS las líneas.
         for line in self.order_line:
-            if line.product_id and line.product_id.type == 'service' and not line.display_type:
+            if line.product_id and not line.display_type:
                 iva = line.tax_ids.filtered(
                     lambda t: t.type_tax_use == 'sale'
                     and t.amount_type == 'percent' and t.amount == 16)
@@ -1006,14 +1005,14 @@ class SaleOrder(models.Model):
                     line.with_context(som_skip_iva_force=True).tax_ids = [
                         (3, t.id) for t in iva]
         self.message_post(body=Markup(
-            f"<p>✅ <b>Exención de IVA de servicios APROBADA</b> por "
-            f"{self.env.user.name}. Se retiró el IVA 16% de los servicios.</p>"
+            f"<p>✅ <b>Exención de IVA APROBADA</b> por "
+            f"{self.env.user.name}. Se retiró el IVA 16% de la orden.</p>"
         ))
         if self.user_id:
             self._som_notify_users(
                 self.user_id,
                 f"Exención de IVA aprobada: {self.name}",
-                f"{self.env.user.name} aprobó quitar el IVA de los servicios "
+                f"{self.env.user.name} aprobó quitar el IVA "
                 f"de la orden {self.name}.",
             )
         return True
@@ -1026,15 +1025,15 @@ class SaleOrder(models.Model):
             raise UserError("No hay solicitud de exención de IVA pendiente.")
         self.x_iva_exempt_state = 'rejected'
         self.message_post(body=Markup(
-            f"<p>❌ <b>Exención de IVA de servicios RECHAZADA</b> por "
-            f"{self.env.user.name}. Los servicios conservan el IVA 16%.</p>"
+            f"<p>❌ <b>Exención de IVA RECHAZADA</b> por "
+            f"{self.env.user.name}. La orden conserva el IVA 16%.</p>"
         ))
         if self.user_id:
             self._som_notify_users(
                 self.user_id,
                 f"Exención de IVA rechazada: {self.name}",
-                f"{self.env.user.name} rechazó quitar el IVA de los servicios "
-                f"de la orden {self.name}. Los servicios conservan el IVA.",
+                f"{self.env.user.name} rechazó quitar el IVA "
+                f"de la orden {self.name}. La orden conserva el IVA.",
             )
         return True
 
