@@ -52,12 +52,27 @@ class SaleOrderLine(models.Model):
                 or line.display_type
                 or line.state in ('done', 'cancel')
                 or line.order_id.x_iva_exempt_state == 'approved'
-                or line._som_line_has_iva16()
             ):
                 continue
-            tax = line._som_get_service_iva_tax(line.company_id)
-            if tax:
-                line.with_context(som_skip_iva_force=True).tax_ids = [(4, tax.id)]
+
+            ops = []
+
+            # El IVA 0% de venta (default de algunos productos) NO debe
+            # convivir con el 16 forzado: se retira siempre que la orden
+            # no tenga exención aprobada.
+            zero_taxes = line.tax_ids.filtered(
+                lambda t: t.type_tax_use == 'sale'
+                and t.amount_type == 'percent'
+                and not t.amount)
+            ops.extend((3, t.id) for t in zero_taxes)
+
+            if not line._som_line_has_iva16():
+                tax = line._som_get_service_iva_tax(line.company_id)
+                if tax:
+                    ops.append((4, tax.id))
+
+            if ops:
+                line.with_context(som_skip_iva_force=True).tax_ids = ops
 
     @api.model_create_multi
     def create(self, vals_list):
