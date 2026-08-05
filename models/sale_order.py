@@ -842,7 +842,7 @@ class SaleOrder(models.Model):
             raise_if_not_found=False)
         if group:
             self._som_notify_users(
-                group.users,
+                self._som_group_users(group),
                 f"Re-autorizar precios: {self.name}",
                 f"{self.env.user.name} bajó precios por debajo de lo YA "
                 f"autorizado en la orden {self.name} "
@@ -938,6 +938,21 @@ class SaleOrder(models.Model):
                 f"Use el botón 'Solicitar autorización de descuento'."
             )
 
+    def _som_group_users(self, group):
+        """Usuarios de un grupo, tolerante a Odoo 19: res.groups ya no tiene
+        'users'; se resuelve por el campo que exista."""
+        Users = self.env['res.users']
+        if not group:
+            return Users
+        for fname in ('user_ids', 'users'):
+            if fname in group._fields:
+                return group[fname]
+        for fname in ('all_group_ids', 'group_ids', 'groups_id'):
+            if fname in Users._fields:
+                return Users.search([
+                    (fname, 'in', group.id), ('active', '=', True)])
+        return Users
+
     def _notify_discount_authorizers(self):
         self.ensure_one()
         group = self.env.ref('inventory_shopping_cart.group_price_authorizer', raise_if_not_found=False)
@@ -949,7 +964,7 @@ class SaleOrder(models.Model):
             f"supera el umbral de {self._get_discount_auth_threshold_mxn():,.2f} MXN "
             f"y requiere tu autorización. La orden está BLOQUEADA hasta autorizar."
         )
-        for user in group.users.filtered(lambda u: u.id != self.env.user.id):
+        for user in self._som_group_users(group).filtered(lambda u: u.id != self.env.user.id):
             self.activity_schedule(
                 'mail.mail_activity_data_todo',
                 user_id=user.id,
@@ -1065,7 +1080,7 @@ class SaleOrder(models.Model):
             raise_if_not_found=False)
         if group:
             self._som_notify_users(
-                group.users,
+                self._som_group_users(group),
                 f"Autorizar quitar IVA: {self.name}",
                 f"La orden {self.name} (cliente {self.partner_id.display_name or ''}, "
                 f"vendedor {self.env.user.name}) solicita QUITAR el IVA del 16%. "
