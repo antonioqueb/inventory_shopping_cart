@@ -58,6 +58,17 @@
                         groups="inventory_shopping_cart.group_price_authorizer"/>
             </xpath>
 
+            <!-- ===================== DIVISA EDITABLE HASTA LA ENTREGA ===================== -->
+            <!-- La confirmación NO congela la divisa: la lista de precios se
+                 puede cambiar (con remapeo de precios) mientras no haya
+                 entrega validada ni factura publicada. -->
+            <xpath expr="//field[@name='pricelist_id']" position="attributes">
+                <attribute name="readonly">x_pricelist_locked</attribute>
+            </xpath>
+            <xpath expr="//field[@name='pricelist_id']" position="before">
+                <field name="x_pricelist_locked" invisible="1"/>
+            </xpath>
+
             <!-- ===================== OCULTAR BOTONES CUANDO HAY PRECIOS BAJOS ===================== -->
             <xpath expr="//header/button[@name='action_quotation_send']" position="attributes">
                 <attribute name="invisible">state not in ['draft', 'sent'] or x_has_low_prices or x_discount_needs_auth</attribute>

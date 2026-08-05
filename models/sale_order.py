@@ -329,6 +329,64 @@ class SaleOrder(models.Model):
     )
 
     # =========================================================================
+    # DIVISA EDITABLE HASTA LA ENTREGA
+    # La confirmación NO congela la divisa/TC: mientras no haya entrega
+    # validada (ni factura publicada), la lista de precios puede cambiarse
+    # (MXN⇄USD) y los precios se remapean. El TC se CONGELA con la primera
+    # entrega validada, y queda como registro.
+    # =========================================================================
+    x_delivery_exchange_rate = fields.Float(
+        string='TC congelado en entrega',
+        digits=(12, 4),
+        copy=False,
+        readonly=True,
+        help='Tipo de cambio vigente al validar la PRIMERA entrega. A partir '
+             'de ahí la divisa de la orden ya no puede cambiarse.',
+    )
+    x_pricelist_locked = fields.Boolean(
+        string='Divisa bloqueada',
+        compute='_compute_pricelist_locked',
+    )
+
+    @api.depends(
+        'state',
+        'x_delivery_exchange_rate',
+        'picking_ids.state',
+        'picking_ids.picking_type_code',
+        'invoice_ids.state',
+    )
+    def _compute_pricelist_locked(self):
+        for order in self:
+            delivered = any(
+                p.picking_type_code == 'outgoing' and p.state == 'done'
+                for p in order.picking_ids
+            )
+            invoiced = any(
+                m.move_type == 'out_invoice' and m.state == 'posted'
+                for m in order.invoice_ids
+            )
+            order.x_pricelist_locked = bool(
+                order.state == 'cancel'
+                or order.x_delivery_exchange_rate
+                or delivered
+                or invoiced
+            )
+
+    def _som_freeze_delivery_rate(self):
+        """Congela el TC de la orden al validar su primera entrega."""
+        for order in self:
+            if order.x_delivery_exchange_rate:
+                continue
+            rate = order.x_exchange_rate or 0.0
+            order.write({'x_delivery_exchange_rate': rate})
+            order.message_post(body=Markup(
+                f"<p>🔒 <b>Tipo de cambio congelado por entrega</b>: "
+                f"{rate:.4f} MXN/USD "
+                f"(fuente: {'Banorte' if order.x_exchange_rate_source == 'banorte' else 'DOF'}). "
+                f"La divisa de la orden ya no puede cambiarse.</p>"
+            ))
+
+    # =========================================================================
     # AUTORIZACIÓN DE DESCUENTOS ALTOS
     # Si el valor del descuento de la orden (en MXN) alcanza el umbral
     # (por defecto 2,000 MXN), la orden queda BLOQUEADA hasta que un
@@ -1365,8 +1423,28 @@ class SaleOrder(models.Model):
         currency_name = self.pricelist_id.currency_id.name or 'USD'
         Product = self.env['product.template']
 
+        old_currency = (
+            self._origin.pricelist_id.currency_id.name
+            if self._origin and self._origin.pricelist_id else False
+        )
+        rate = self.x_exchange_rate or 0.0
+
         for line in self.order_line:
-            if not line.product_id or line.x_price_selector == 'custom':
+            if not line.product_id or line.display_type:
+                continue
+
+            if line.x_price_selector == 'custom':
+                # Precio personalizado: se convierte por TC al cambiar de
+                # divisa (antes se quedaba con el número tal cual, absurdo
+                # al pasar MXN⇄USD).
+                if (
+                    old_currency and old_currency != currency_name
+                    and rate > 0 and line.price_unit
+                ):
+                    if old_currency == 'USD' and currency_name == 'MXN':
+                        line.price_unit = line.price_unit * rate
+                    elif old_currency == 'MXN' and currency_name == 'USD':
+                        line.price_unit = line.price_unit / rate
                 continue
 
             tmpl = line.product_id.product_tmpl_id
@@ -1374,6 +1452,22 @@ class SaleOrder(models.Model):
 
             if new_price > 0:
                 line.price_unit = new_price
+
+    def write(self, vals):
+        # La divisa solo puede cambiarse mientras no haya entrega validada
+        # ni factura publicada (el TC se congela con la entrega).
+        if 'pricelist_id' in vals:
+            for order in self:
+                if (
+                    order.x_pricelist_locked
+                    and vals['pricelist_id'] != order.pricelist_id.id
+                ):
+                    raise UserError(
+                        f"La divisa de la orden {order.name} ya está "
+                        f"CONGELADA (hay entrega validada o factura "
+                        f"publicada) y no puede cambiarse."
+                    )
+        return super().write(vals)
 
     def action_request_authorization(self):
         self.ensure_one()

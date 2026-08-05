@@ -374,6 +374,17 @@ class StockPicking(models.Model):
     def button_validate(self):
         res = super().button_validate()
 
+        # Primera ENTREGA validada de una orden: congela su tipo de cambio
+        # (la confirmación de la orden ya no congela nada).
+        for picking in self:
+            if (
+                picking.state == 'done'
+                and picking.picking_type_code == 'outgoing'
+                and picking.sale_id
+                and 'x_delivery_exchange_rate' in picking.sale_id._fields
+            ):
+                picking.sale_id.sudo()._som_freeze_delivery_rate()
+
         # Traslado de bin validado: re-anclar en el bin destino las reservas
         # comerciales que este traslado desplazó al crearse.
         for picking in self:
