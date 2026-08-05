@@ -67,12 +67,29 @@ class SaleOrderLine(models.Model):
         return lines
 
     def write(self, vals):
+        # Vigilancia del piso autorizado: se detecta el CRUCE (antes bien,
+        # después por debajo) para alertar una sola vez.
+        floor_watch = None
+        if 'price_unit' in vals:
+            floor_watch = {
+                order.id: bool(order._som_authorized_floor_violations())
+                for order in self.order_id
+            }
+
         res = super().write(vals)
         if (
             not self.env.context.get('som_skip_iva_force')
             and ('tax_ids' in vals or 'product_id' in vals)
         ):
             self._som_force_service_iva()
+
+        if floor_watch is not None:
+            for order in self.order_id:
+                if floor_watch.get(order.id):
+                    continue
+                violations = order._som_authorized_floor_violations()
+                if violations:
+                    order._som_alert_floor_violation(violations)
         return res
 
     x_selected_lots = fields.Many2many(
@@ -696,26 +713,45 @@ class SaleOrder(models.Model):
 
         return rate if rate > 0 else 1.0
 
+    x_authorized_floor_json = fields.Json(
+        string='Pisos de precio autorizados',
+        copy=False,
+        help='Producto → precio mínimo autorizado. Se graba al aprobar una '
+             'autorización de precios; bajar de ahí re-bloquea la orden.',
+    )
+
     @api.depends(
         'order_line.price_unit',
         'order_line.product_id',
         'pricelist_id',
         'x_price_authorization_id',
         'x_price_authorization_id.state',
+        'x_authorized_floor_json',
     )
     def _compute_has_low_prices(self):
         Product = self.env['product.template']
         threshold_level = Product._get_user_threshold_level()
         for order in self:
-            if order.x_price_authorization_id and order.x_price_authorization_id.state == 'approved':
-                order.x_has_low_prices = False
-                continue
+            approved = bool(
+                order.x_price_authorization_id
+                and order.x_price_authorization_id.state == 'approved')
+            floors = order.x_authorized_floor_json or {}
 
             currency_code = order.pricelist_id.currency_id.name or 'USD' if order.pricelist_id else 'USD'
             has_low = False
 
             for line in order.order_line:
                 if not line.product_id or line.display_type or line.product_id.type == 'service':
+                    continue
+
+                # El piso autorizado manda SIEMPRE, aun con autorización
+                # aprobada: bajar de lo autorizado re-bloquea la orden.
+                floor = float(floors.get(str(line.product_id.id), 0) or 0)
+                if floor > 0 and line.price_unit < (floor - 0.01):
+                    has_low = True
+                    break
+
+                if approved:
                     continue
 
                 tmpl = line.product_id.product_tmpl_id
@@ -742,9 +778,24 @@ class SaleOrder(models.Model):
 
         currency_code = self.pricelist_id.currency_id.name or 'USD' if self.pricelist_id else 'USD'
         violating = []
+        approved = bool(
+            self.x_price_authorization_id
+            and self.x_price_authorization_id.state == 'approved')
+        floors = self.x_authorized_floor_json or {}
 
         for line in self.order_line:
             if not line.product_id or line.display_type or line.product_id.type == 'service':
+                continue
+
+            floor = float(floors.get(str(line.product_id.id), 0) or 0)
+            if floor > 0 and line.price_unit < (floor - 0.01):
+                violating.append(
+                    f"{line.product_id.display_name} "
+                    f"(Precio: {line.price_unit:.2f}, Precio autorizado: {floor:.2f})"
+                )
+                continue
+
+            if approved:
                 continue
 
             tmpl = line.product_id.product_tmpl_id
@@ -758,12 +809,50 @@ class SaleOrder(models.Model):
 
         return violating
 
+    def _som_authorized_floor_violations(self):
+        """Líneas por debajo del precio YA autorizado (piso)."""
+        self.ensure_one()
+        floors = self.x_authorized_floor_json or {}
+        if not floors:
+            return []
+        out = []
+        for line in self.order_line:
+            if not line.product_id or line.display_type:
+                continue
+            floor = float(floors.get(str(line.product_id.id), 0) or 0)
+            if floor > 0 and line.price_unit < (floor - 0.01):
+                out.append(
+                    f"{line.product_id.display_name} "
+                    f"(Precio: {line.price_unit:.2f}, Autorizado: {floor:.2f})"
+                )
+        return out
+
+    def _som_alert_floor_violation(self, violations):
+        """El vendedor bajó un precio por debajo de lo autorizado: la orden
+        queda re-bloqueada y los autorizadores deben aprobar de nuevo."""
+        self.ensure_one()
+        listado = "\n".join(f"• {v}" for v in violations)
+        self.message_post(body=Markup(
+            f"<p>🚫 <b>Precio por debajo de lo autorizado</b> — la orden "
+            f"queda BLOQUEADA (enviar/imprimir/confirmar) hasta contar con "
+            f"una nueva autorización.</p><pre>{listado}</pre>"
+        ))
+        group = self.env.ref(
+            'inventory_shopping_cart.group_price_authorizer',
+            raise_if_not_found=False)
+        if group:
+            self._som_notify_users(
+                group.users,
+                f"Re-autorizar precios: {self.name}",
+                f"{self.env.user.name} bajó precios por debajo de lo YA "
+                f"autorizado en la orden {self.name} "
+                f"(cliente {self.partner_id.display_name or ''}). La orden "
+                f"está bloqueada hasta una nueva autorización.\n{listado}",
+            )
+
     def _check_seller_low_price_block(self, action_name="realizar esta acción"):
         for order in self:
             if not order.x_has_low_prices:
-                continue
-
-            if order.x_price_authorization_id and order.x_price_authorization_id.state == 'approved':
                 continue
 
             if self.env.user.has_group('inventory_shopping_cart.group_price_authorizer'):

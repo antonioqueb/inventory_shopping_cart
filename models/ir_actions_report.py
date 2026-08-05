@@ -25,10 +25,11 @@ class IrActionsReport(models.Model):
                 orders = self.env['sale.order'].browse(res_ids)
                 for order in orders:
                     if order.x_has_low_prices:
-                        # Verificar si tiene autorización aprobada
-                        if order.x_price_authorization_id and order.x_price_authorization_id.state == 'approved':
-                            continue
-                        
+                        # OJO: NO hacer bypass por autorización aprobada —
+                        # x_has_low_prices también se enciende cuando el
+                        # vendedor baja del PISO autorizado, y en ese caso
+                        # la impresión debe bloquearse aunque exista una
+                        # autorización aprobada.
                         violating = order._get_violating_products()
                         if violating:
                             raise UserError(

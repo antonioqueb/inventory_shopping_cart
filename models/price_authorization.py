@@ -315,7 +315,23 @@ class PriceAuthorization(models.Model):
         })
 
         self._process_approved_authorization()
+        self._som_write_authorized_floors()
         self._notify_seller(approved=True)
+
+    def _som_write_authorized_floors(self):
+        """Graba en la orden el piso autorizado por producto. Bajar de ese
+        piso después re-bloquea la orden aunque la autorización siga
+        aprobada (sale.order._compute_has_low_prices)."""
+        self.ensure_one()
+        order = self.sale_order_id
+        if not order:
+            return
+        floors = dict(order.x_authorized_floor_json or {})
+        for line in self.line_ids:
+            if line.product_id and line.authorized_price:
+                floors[str(line.product_id.id)] = math.ceil(line.authorized_price)
+        if floors:
+            order.x_authorized_floor_json = floors
 
     def action_reject(self):
         self.ensure_one()
