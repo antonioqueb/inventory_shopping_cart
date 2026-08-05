@@ -1467,6 +1467,39 @@ class SaleOrder(models.Model):
                         f"CONGELADA (hay entrega validada o factura "
                         f"publicada) y no puede cambiarse."
                     )
+
+            # El core de Odoo bloquea cambiar la lista en órdenes en estado
+            # 'sale' sin excepción posible ("You cannot change the pricelist
+            # of a confirmed order"). Aquí el candado REAL es
+            # x_pricelist_locked (entrega/factura), así que para órdenes
+            # confirmadas NO bloqueadas se aplica el cambio rodeando ese
+            # guard con un estado transitorio (sin tracking para no
+            # ensuciar el chatter).
+            confirmed = self.filtered(
+                lambda o: o.state == 'sale'
+                and vals['pricelist_id'] != o.pricelist_id.id)
+            if confirmed:
+                pl_id = vals.pop('pricelist_id')
+                res = super().write(vals) if vals else True
+                pl = self.env['product.pricelist'].browse(pl_id)
+                for order in self:
+                    if order.pricelist_id.id == pl_id:
+                        continue
+                    ctx_order = order.with_context(tracking_disable=True)
+                    sup = super(SaleOrder, ctx_order)
+                    if order.state == 'sale':
+                        sup.write({'state': 'draft'})
+                        sup.write({'pricelist_id': pl_id})
+                        sup.write({'state': 'sale'})
+                    else:
+                        sup.write({'pricelist_id': pl_id})
+                    order.message_post(body=Markup(
+                        f"<p>💱 <b>Divisa/lista de precios cambiada</b> a "
+                        f"<b>{pl.display_name}</b> por {self.env.user.name} "
+                        f"(orden confirmada sin entrega: permitido; el TC "
+                        f"se congela con la entrega).</p>"
+                    ))
+                return res
         return super().write(vals)
 
     def action_request_authorization(self):
