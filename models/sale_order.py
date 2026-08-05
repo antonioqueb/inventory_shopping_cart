@@ -21,6 +21,61 @@ except ImportError:
 class SaleOrderLine(models.Model):
     _inherit = 'sale.order.line'
 
+    # ------------------------------------------------------------------
+    # IVA 16% OBLIGATORIO EN SERVICIOS
+    # ------------------------------------------------------------------
+    # Todo servicio vendido lleva IVA 16% SIEMPRE. Quitarlo requiere que
+    # la orden tenga aprobada la exención (x_iva_exempt_state). Se fuerza
+    # silenciosamente en create/write: si alguien lo quita, se re-agrega.
+
+    def _som_get_service_iva_tax(self, company):
+        return self.env['account.tax'].sudo().search([
+            ('type_tax_use', '=', 'sale'),
+            ('amount_type', '=', 'percent'),
+            ('amount', '=', 16),
+            ('company_id', '=', (company or self.env.company).id),
+        ], limit=1)
+
+    def _som_line_has_iva16(self):
+        self.ensure_one()
+        return any(
+            t.type_tax_use == 'sale'
+            and t.amount_type == 'percent'
+            and t.amount == 16
+            for t in self.tax_ids
+        )
+
+    def _som_force_service_iva(self):
+        for line in self:
+            if (
+                not line.product_id
+                or line.product_id.type != 'service'
+                or line.display_type
+                or line.state in ('done', 'cancel')
+                or line.order_id.x_iva_exempt_state == 'approved'
+                or line._som_line_has_iva16()
+            ):
+                continue
+            tax = line._som_get_service_iva_tax(line.company_id)
+            if tax:
+                line.with_context(som_skip_iva_force=True).tax_ids = [(4, tax.id)]
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        lines = super().create(vals_list)
+        if not self.env.context.get('som_skip_iva_force'):
+            lines._som_force_service_iva()
+        return lines
+
+    def write(self, vals):
+        res = super().write(vals)
+        if (
+            not self.env.context.get('som_skip_iva_force')
+            and ('tax_ids' in vals or 'product_id' in vals)
+        ):
+            self._som_force_service_iva()
+        return res
+
     x_selected_lots = fields.Many2many(
         'stock.quant',
         string='Lotes Seleccionados',
@@ -881,6 +936,106 @@ class SaleOrder(models.Model):
             f"La orden sigue bloqueada hasta ajustar el descuento.</p>"
         ))
         self._notify_discount_seller(approved=False)
+        return True
+
+    # ------------------------------------------------------------------
+    # AUTORIZACIÓN PARA QUITAR EL IVA DE SERVICIOS
+    # ------------------------------------------------------------------
+    x_iva_exempt_state = fields.Selection([
+        ('none', 'Con IVA'),
+        ('requested', 'Exención solicitada'),
+        ('approved', 'Exención aprobada'),
+        ('rejected', 'Exención rechazada'),
+    ], string='IVA de servicios', default='none', copy=False, tracking=True)
+
+    def _som_notify_users(self, users, summary, note):
+        """Actividad + mención en el chatter (inbox/correo) para cada usuario."""
+        self.ensure_one()
+        users = users.filtered(lambda u: u.id != self.env.user.id)
+        for user in users:
+            self.activity_schedule(
+                'mail.mail_activity_data_todo',
+                user_id=user.id,
+                summary=summary,
+                note=note,
+            )
+        if users.partner_id:
+            self.message_post(
+                body=Markup('<p><b>%s</b></p><p>%s</p>') % (summary, note),
+                partner_ids=users.partner_id.ids,
+                message_type='comment',
+                subtype_xmlid='mail.mt_comment',
+            )
+
+    def action_request_iva_exemption(self):
+        self.ensure_one()
+        if self.x_iva_exempt_state == 'approved':
+            raise UserError("La exención de IVA ya está aprobada en esta orden.")
+        self.x_iva_exempt_state = 'requested'
+        group = self.env.ref(
+            'inventory_shopping_cart.group_price_authorizer',
+            raise_if_not_found=False)
+        if group:
+            self._som_notify_users(
+                group.users,
+                f"Autorizar quitar IVA: {self.name}",
+                f"La orden {self.name} (cliente {self.partner_id.display_name or ''}, "
+                f"vendedor {self.env.user.name}) solicita QUITAR el IVA del 16% de los "
+                f"servicios. Los servicios conservan el IVA hasta que se apruebe.",
+            )
+        self.message_post(body=Markup(
+            f"<p>🔐 <b>Solicitud para quitar IVA de servicios</b> enviada a los "
+            f"Autorizadores de Precios por {self.env.user.name}.</p>"
+        ))
+        return True
+
+    def action_approve_iva_exemption(self):
+        self.ensure_one()
+        if not self.env.user.has_group('inventory_shopping_cart.group_price_authorizer'):
+            raise UserError("Solo un Autorizador de Precios puede aprobar quitar el IVA.")
+        if self.x_iva_exempt_state != 'requested':
+            raise UserError("No hay solicitud de exención de IVA pendiente.")
+        self.x_iva_exempt_state = 'approved'
+        # Con la exención aprobada, se retira el IVA 16% de los servicios.
+        for line in self.order_line:
+            if line.product_id and line.product_id.type == 'service' and not line.display_type:
+                iva = line.tax_ids.filtered(
+                    lambda t: t.type_tax_use == 'sale'
+                    and t.amount_type == 'percent' and t.amount == 16)
+                if iva:
+                    line.with_context(som_skip_iva_force=True).tax_ids = [
+                        (3, t.id) for t in iva]
+        self.message_post(body=Markup(
+            f"<p>✅ <b>Exención de IVA de servicios APROBADA</b> por "
+            f"{self.env.user.name}. Se retiró el IVA 16% de los servicios.</p>"
+        ))
+        if self.user_id:
+            self._som_notify_users(
+                self.user_id,
+                f"Exención de IVA aprobada: {self.name}",
+                f"{self.env.user.name} aprobó quitar el IVA de los servicios "
+                f"de la orden {self.name}.",
+            )
+        return True
+
+    def action_reject_iva_exemption(self):
+        self.ensure_one()
+        if not self.env.user.has_group('inventory_shopping_cart.group_price_authorizer'):
+            raise UserError("Solo un Autorizador de Precios puede rechazar la solicitud.")
+        if self.x_iva_exempt_state != 'requested':
+            raise UserError("No hay solicitud de exención de IVA pendiente.")
+        self.x_iva_exempt_state = 'rejected'
+        self.message_post(body=Markup(
+            f"<p>❌ <b>Exención de IVA de servicios RECHAZADA</b> por "
+            f"{self.env.user.name}. Los servicios conservan el IVA 16%.</p>"
+        ))
+        if self.user_id:
+            self._som_notify_users(
+                self.user_id,
+                f"Exención de IVA rechazada: {self.name}",
+                f"{self.env.user.name} rechazó quitar el IVA de los servicios "
+                f"de la orden {self.name}. Los servicios conservan el IVA.",
+            )
         return True
 
     def _create_invoices(self, *args, **kwargs):
