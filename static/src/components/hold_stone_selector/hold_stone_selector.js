@@ -438,6 +438,12 @@ export class HoldStoneExpandButton extends Component {
         return quant.location_id ? quant.location_id[1] : "";
     }
 
+    // Ubicación recortada: último padre / último hijo, nunca la ruta completa.
+    _shortLoc(name) {
+        const parts = String(name || "").split("/").filter(Boolean);
+        return parts.length ? parts.slice(-2).join("/") : "";
+    }
+
     _getTipoFromQuant(quant) {
         return String((quant && quant.x_tipo) || "placa").toLowerCase();
     }
@@ -633,7 +639,7 @@ export class HoldStoneExpandButton extends Component {
             for (const quant of state.quants) {
                 const lotId = this._getLotIdFromQuant(quant);
                 const lotName = this._getLotNameFromQuant(quant);
-                const locationName = this._getLocationNameFromQuant(quant);
+                const locationName = this._shortLoc(this._getLocationNameFromQuant(quant));
                 const selected = lotId && state.selectedLotIds.has(lotId);
 
                 if (selected) {
