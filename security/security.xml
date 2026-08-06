@@ -36,8 +36,20 @@
         <field name="comment">Vendedores mayoristas autorizados a ver los Precios 3, 4 y 5 sin solicitud previa. Solo requieren autorización cuando capturan un precio por debajo del Precio 4.</field>
     </record>
 
+    <!-- Nivel 1 del selector: solo VE el dashboard (SOM Analytics y el
+         Dashboard Ejecutivo, que incluyen utilidad con costo all-in) sin
+         poder autorizar precios mínimos. -->
+    <record id="group_dashboard_viewer" model="res.groups">
+        <field name="name">Visor del Dashboard Personalizado</field>
+        <field name="privilege_id" ref="privilege_price_authorizer"/>
+        <field name="comment">Puede abrir SOM Analytics y el Dashboard
+            Ejecutivo (ve utilidad con costo all-in) sin capacidad de
+            autorizar precios mínimos.</field>
+    </record>
+
     <record id="group_price_authorizer" model="res.groups">
         <field name="name">Autorizador de Precios Mínimos</field>
         <field name="privilege_id" ref="privilege_price_authorizer"/>
+        <field name="implied_ids" eval="[(4, ref('group_dashboard_viewer'))]"/>
     </record>
 </odoo>
