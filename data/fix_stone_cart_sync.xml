@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Reparación idempotente de órdenes existentes desincronizadas
+         (carrito ⇄ selector de placas ⇄ picking). Corre en cada -u;
+         después de la primera pasada los espejos en SOL.write mantienen
+         las tres copias iguales y esto no encuentra nada que corregir. -->
+    <function model="sale.order.line" name="_som_fix_stone_cart_desync"/>
+</odoo>

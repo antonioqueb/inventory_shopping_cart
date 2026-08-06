@@ -121,6 +121,52 @@ class SaleOrderLine(models.Model):
                 self._som_mirror_cart_to_stone()
         return res
 
+    @api.model
+    def _som_fix_stone_cart_desync(self):
+        """Reparación de órdenes YA existentes (corre en cada -u, idempotente):
+
+        1. Líneas confirmadas con selección: si el picking trae lotes que no
+           están en el selector (fantasmas) o le faltan lotes seleccionados,
+           se reconstruye con la sync canónica de sale_stone_selection.
+        2. Realinea x_selected_lots (carrito) con lot_ids.
+
+        Solo toca movimientos vivos (no done/cancel); lo ya entregado no se
+        modifica. Tras la primera pasada los espejos mantienen todo igual,
+        así que las corridas siguientes no encuentran nada.
+        """
+        if 'lot_ids' not in self._fields:
+            return
+        lines = self.search([
+            ('state', 'in', ('sale', 'done')),
+            ('lot_ids', '!=', False),
+        ])
+        fixed_pick = fixed_cart = 0
+        for line in lines:
+            live_moves = line.move_ids.filtered(
+                lambda m: m.state not in ('done', 'cancel'))
+            if live_moves:
+                picking_lots = set(
+                    live_moves.move_line_ids.mapped('lot_id').ids)
+                if picking_lots != set(line.lot_ids.ids):
+                    _logger.warning(
+                        "[CART MIRROR FIX] Línea %s (%s): picking %s ≠ "
+                        "selector %s — reconstruyendo.",
+                        line.id, line.order_id.name,
+                        sorted(picking_lots), sorted(line.lot_ids.ids))
+                    if hasattr(line, '_sync_lots_to_picking_moves'):
+                        line.with_context(
+                            skip_hold_validation=True,
+                        )._sync_lots_to_picking_moves()
+                        fixed_pick += 1
+            if (set(line.x_selected_lots.mapped('lot_id').ids)
+                    != set(line.lot_ids.ids)):
+                line._som_mirror_stone_to_cart()
+                fixed_cart += 1
+        _logger.info(
+            "[CART MIRROR FIX] Reparación terminada: %s pickings "
+            "reconstruidos, %s carritos realineados (de %s líneas con "
+            "selección).", fixed_pick, fixed_cart, len(lines))
+
     def _som_mirror_stone_to_cart(self):
         """lot_ids (selector de placas) manda en órdenes confirmadas:
         realinea x_selected_lots para que el carrito jamás retenga material
