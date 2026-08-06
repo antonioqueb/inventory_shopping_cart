@@ -105,7 +105,72 @@ class SaleOrderLine(models.Model):
                 violations = order._som_authorized_floor_violations()
                 if violations:
                     order._som_alert_floor_violation(violations)
+
+        # ESPEJO carrito ⇄ selector de placas en órdenes confirmadas.
+        # x_selected_lots era una TERCERA copia de la selección que se
+        # congelaba con lo elegido en el carrito: al quitar material desde
+        # el selector, el carrito lo conservaba y flujos posteriores
+        # (asignación, limpieza de lotes automáticos que exenta lo
+        # "seleccionado en carrito") re-reservaban el lote en el picking
+        # como fantasma — invisible en el selector e imposible de volver a
+        # asignar. Ahora ambas copias se realinean en cada cambio.
+        if not self.env.context.get('som_skip_cart_mirror'):
+            if 'lot_ids' in vals and 'lot_ids' in self._fields:
+                self._som_mirror_stone_to_cart()
+            elif 'x_selected_lots' in vals and 'lot_ids' in self._fields:
+                self._som_mirror_cart_to_stone()
         return res
+
+    def _som_mirror_stone_to_cart(self):
+        """lot_ids (selector de placas) manda en órdenes confirmadas:
+        realinea x_selected_lots para que el carrito jamás retenga material
+        ya quitado ni le falte material agregado."""
+        for line in self:
+            if line.state not in ('sale', 'done'):
+                continue
+            target_lots = line.lot_ids
+            current = line.x_selected_lots
+            if set(current.mapped('lot_id').ids) == set(target_lots.ids):
+                continue
+            keep = current.filtered(
+                lambda q: q.lot_id and q.lot_id in target_lots)
+            missing = target_lots - keep.mapped('lot_id')
+            add = self.env['stock.quant']
+            for lot in missing:
+                add |= self.env['stock.quant'].search([
+                    ('lot_id', '=', lot.id),
+                    ('location_id.usage', '=', 'internal'),
+                    ('quantity', '>', 0),
+                ], limit=1)
+            _logger.info(
+                "[CART MIRROR] Línea %s: x_selected_lots realineado a "
+                "lot_ids (%s lotes).", line.id, len(target_lots))
+            line.with_context(som_skip_cart_mirror=True).write({
+                'x_selected_lots': [(6, 0, (keep | add).ids)],
+            })
+
+    def _som_mirror_cart_to_stone(self):
+        """Cambios de x_selected_lots en una línea confirmada se propagan a
+        lot_ids: el write de lot_ids dispara la sincronización existente
+        hacia el picking (sale_stone_selection), que quita/agrega las move
+        lines. Así lo que se borra del carrito se borra de la entrega."""
+        for line in self:
+            if line.state not in ('sale', 'done'):
+                continue
+            lot_ids = line.x_selected_lots.mapped('lot_id').ids
+            if set(line.lot_ids.ids) == set(lot_ids):
+                continue
+            breakdown = {
+                k: v for k, v in (line.x_lot_breakdown_json or {}).items()
+                if str(k).isdigit() and int(k) in lot_ids
+            }
+            _logger.info(
+                "[CART MIRROR] Línea %s: propagando carrito → selector "
+                "(%s lotes) y picking.", line.id, len(lot_ids))
+            line.with_context(som_skip_cart_mirror=True).write({
+                'lot_ids': [(6, 0, lot_ids)],
+                'x_lot_breakdown_json': breakdown or False,
+            })
 
     x_selected_lots = fields.Many2many(
         'stock.quant',
@@ -1253,6 +1318,13 @@ class SaleOrder(models.Model):
         for order in self:
             for line in order.order_line:
                 if line.x_selected_lots and not line.lot_ids:
+                    # Solo en la PRIMERA confirmación: si la línea ya tiene
+                    # movimientos vivos, lot_ids vacío significa que el
+                    # vendedor QUITÓ la selección — sembrar desde el carrito
+                    # aquí resucitaría material ya borrado.
+                    if line.move_ids.filtered(
+                            lambda m: m.state not in ('cancel',)):
+                        continue
                     lot_ids = line.x_selected_lots.mapped('lot_id')
                     if lot_ids:
                         _logger.info(
