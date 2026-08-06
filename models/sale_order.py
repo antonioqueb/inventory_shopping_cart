@@ -136,6 +136,60 @@ class SaleOrderLine(models.Model):
         """
         if 'lot_ids' not in self._fields:
             return
+
+        # 0. ADOPCIÓN (caso orden 91): línea confirmada SIN selección pero
+        #    cuya ENTREGA sí trae lotes — órdenes previas al espejo donde la
+        #    copia entrega→venta nunca corrió. Ahí la entrega es la verdad
+        #    y se propaga a la orden de venta (lot_ids + breakdown para
+        #    formato/pieza); el picking NO se toca.
+        adopted = 0
+        for line in self.search([
+            ('state', 'in', ('sale', 'done')),
+            ('lot_ids', '=', False),
+        ]):
+            if line.display_type or not line.product_id:
+                continue
+            mls = line.move_ids.filtered(
+                lambda m: m.state != 'cancel'
+            ).move_line_ids.filtered(lambda ml: ml.lot_id)
+            if not mls:
+                continue
+            qty_field = ('quantity' if 'quantity' in mls._fields
+                         else 'qty_done')
+            # Por lote, la mayor cantidad registrada en UN solo picking
+            # (en multi-paso cada paso repite la cantidad).
+            by_lot_pick = {}
+            for ml in mls:
+                key = (ml.lot_id.id, ml.picking_id.id or 0)
+                by_lot_pick[key] = by_lot_pick.get(key, 0.0) + float(
+                    getattr(ml, qty_field, 0.0) or 0.0)
+            qty_by_lot = {}
+            for (lot_id, _pick), qty in by_lot_pick.items():
+                if qty > qty_by_lot.get(lot_id, 0.0):
+                    qty_by_lot[lot_id] = qty
+            lot_ids = [k for k, v in qty_by_lot.items() if v > 0]
+            if not lot_ids:
+                continue
+            breakdown = {}
+            for lot in self.env['stock.lot'].browse(lot_ids):
+                tipo = str(getattr(lot, 'x_tipo', '') or 'placa').lower()
+                if tipo in ('formato', 'pieza'):
+                    breakdown[str(lot.id)] = qty_by_lot.get(lot.id, 0.0)
+            _logger.warning(
+                "[CART MIRROR FIX] Línea %s (%s): adoptando %s lote(s) "
+                "de la ENTREGA hacia la orden de venta.",
+                line.id, line.order_id.name, len(lot_ids))
+            vals = {'lot_ids': [(6, 0, lot_ids)]}
+            if breakdown:
+                vals['x_lot_breakdown_json'] = breakdown
+            # skip_stone_sync_picking: la entrega es la fuente, no se
+            # reconstruye. El espejo al carrito sí corre en el write.
+            line.with_context(
+                skip_stone_sync_picking=True,
+                skip_hold_validation=True,
+            ).write(vals)
+            adopted += 1
+
         lines = self.search([
             ('state', 'in', ('sale', 'done')),
             ('lot_ids', '!=', False),
@@ -163,9 +217,10 @@ class SaleOrderLine(models.Model):
                 line._som_mirror_stone_to_cart()
                 fixed_cart += 1
         _logger.info(
-            "[CART MIRROR FIX] Reparación terminada: %s pickings "
-            "reconstruidos, %s carritos realineados (de %s líneas con "
-            "selección).", fixed_pick, fixed_cart, len(lines))
+            "[CART MIRROR FIX] Reparación terminada: %s líneas adoptaron "
+            "la selección de su entrega, %s pickings reconstruidos, %s "
+            "carritos realineados (de %s líneas con selección).",
+            adopted, fixed_pick, fixed_cart, len(lines))
 
     def _som_mirror_stone_to_cart(self):
         """lot_ids (selector de placas) manda en órdenes confirmadas:
