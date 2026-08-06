@@ -335,6 +335,15 @@ class SaleOrder(models.Model):
     # (MXN⇄USD) y los precios se remapean. El TC se CONGELA con la primera
     # entrega validada, y queda como registro.
     # =========================================================================
+    x_confirm_exchange_rate = fields.Float(
+        string='TC al confirmar',
+        digits=(12, 4),
+        copy=False,
+        readonly=True,
+        help='TC Banorte vigente al confirmar la orden. Contra el TC '
+             'congelado en la entrega mide la ganancia/pérdida cambiaria '
+             'operativa de la ventana confirmación→entrega.',
+    )
     x_delivery_exchange_rate = fields.Float(
         string='TC congelado en entrega',
         digits=(12, 4),
@@ -1338,7 +1347,13 @@ class SaleOrder(models.Model):
                         skip_stone_sync_so=True,
                     ).write(vals)
 
+    def _som_capture_confirm_rate(self):
+        for order in self:
+            if not order.x_confirm_exchange_rate:
+                order.x_confirm_exchange_rate = order.x_exchange_rate or 0.0
+
     def action_confirm(self):
+        self._som_capture_confirm_rate()
         """
         Override:
         1. Valida precios bajos.
