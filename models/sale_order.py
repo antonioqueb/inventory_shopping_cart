@@ -424,6 +424,14 @@ class SaleOrder(models.Model):
         default=False,
         copy=False,
     )
+    x_discount_auth_result = fields.Selection([
+        ('approved', 'Aprobado'),
+        ('rejected', 'Rechazado'),
+    ], string="Resultado de Autorización de Descuento", copy=False)
+    x_discount_rejected_amount = fields.Float(
+        string="Descuento Evitado (MXN)", default=0.0, copy=False,
+        help="Descuento rechazado por el autorizador: margen rescatado.",
+    )
 
     # -------------------------------------------------------------------------
     # GUARDIA CENTRAL CONTRA DOBLE RESERVA DE LOTES / QUANTS
@@ -1102,6 +1110,7 @@ class SaleOrder(models.Model):
             raise UserError("Solo un Autorizador de Precios puede autorizar descuentos.")
         self.x_discount_authorized_amount = self.x_discount_amount_mxn
         self.x_discount_auth_requested = False
+        self.x_discount_auth_result = 'approved'
         self._discount_auth_mark_activities_done()
         self.message_post(body=Markup(
             f"<p>✅ <b>Descuento autorizado</b> (≈ {self.x_discount_amount_mxn:,.2f} MXN) "
@@ -1114,6 +1123,10 @@ class SaleOrder(models.Model):
         self.ensure_one()
         if not self.env.user.has_group('inventory_shopping_cart.group_price_authorizer'):
             raise UserError("Solo un Autorizador de Precios puede rechazar descuentos.")
+        self.x_discount_auth_result = 'rejected'
+        self.x_discount_rejected_amount = (
+            self.x_discount_rejected_amount
+            + (self.x_discount_amount_mxn or 0.0))
         self.x_discount_auth_requested = False
         self._discount_auth_mark_activities_done()
         self.message_post(body=Markup(
