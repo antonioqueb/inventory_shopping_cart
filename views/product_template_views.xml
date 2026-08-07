@@ -286,11 +286,11 @@
                 <field name="x_price_usd_1" string="Precio 1" optional="show" groups="product_cost_security.group_product_cost_viewer"/>
                 <field name="x_price_usd_2" string="Precio 2" optional="show" groups="product_cost_security.group_product_cost_viewer"/>
                 <field name="x_price_usd_3" string="Precio 3" optional="show" groups="product_cost_security.group_product_cost_viewer"/>
-                <field name="x_utilidad_usd_1" optional="show" groups="product_cost_security.group_product_cost_viewer"/>
-                <field name="x_utilidad_usd_2" optional="show" groups="product_cost_security.group_product_cost_viewer"/>
-                <field name="x_utilidad_usd_3" optional="show" groups="product_cost_security.group_product_cost_viewer"/>
-                <field name="x_utilidad_usd_4" optional="hide" groups="product_cost_security.group_product_cost_viewer"/>
-                <field name="x_utilidad_usd_5" optional="hide" groups="product_cost_security.group_product_cost_viewer"/>
+                <field name="x_utilidad" string="Util. 1 %" optional="show" groups="product_cost_security.group_product_cost_viewer"/>
+                <field name="x_utilidad_media" string="Util. 2 %" optional="show" groups="product_cost_security.group_product_cost_viewer"/>
+                <field name="x_utilidad_minima" string="Util. 3 %" optional="show" groups="product_cost_security.group_product_cost_viewer"/>
+                <field name="x_utilidad_4" string="Util. 4 %" optional="hide" groups="product_cost_security.group_product_cost_viewer"/>
+                <field name="x_utilidad_5" string="Util. 5 %" optional="hide" groups="product_cost_security.group_product_cost_viewer"/>
             </xpath>
         </field>
     </record>
@@ -314,14 +314,17 @@
                 <field name="x_costo_mxn_edit" optional="show"/>
                 <field name="x_costo_mayor_usd" string="All-In USD" readonly="1" optional="show"/>
                 <field name="x_costo_mayor" string="All-In MXN" readonly="1" optional="hide"/>
-                <field name="x_price_usd_1" string="Precio 1"/>
-                <field name="x_price_usd_2" string="Precio 2"/>
-                <field name="x_price_usd_3" string="Precio 3"/>
-                <field name="x_utilidad_usd_1"/>
-                <field name="x_utilidad_usd_2"/>
-                <field name="x_utilidad_usd_3"/>
-                <field name="x_utilidad_usd_4" optional="hide"/>
-                <field name="x_utilidad_usd_5" optional="hide"/>
+                <field name="x_utilidad" string="Util. 1 %"/>
+                <field name="x_utilidad_media" string="Util. 2 %"/>
+                <field name="x_utilidad_minima" string="Util. 3 %"/>
+                <field name="x_utilidad_4" string="Util. 4 %" optional="hide"/>
+                <field name="x_utilidad_5" string="Util. 5 %" optional="hide"/>
+                <field name="x_price_usd_1" string="Precio 1 USD" readonly="1"/>
+                <field name="x_price_usd_2" string="Precio 2 USD" readonly="1"/>
+                <field name="x_price_usd_3" string="Precio 3 USD" readonly="1"/>
+                <field name="x_price_mxn_1" string="Precio 1 MXN" readonly="1" optional="hide"/>
+                <field name="x_price_mxn_2" string="Precio 2 MXN" readonly="1" optional="hide"/>
+                <field name="x_price_mxn_3" string="Precio 3 MXN" readonly="1" optional="hide"/>
             </list>
         </field>
     </record>

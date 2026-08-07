@@ -276,50 +276,12 @@ class ProductTemplate(models.Model):
         help='Costo BASE en MXN (el costo nativo standard_price). '
              'Editable: al guardar corre el motor ALL-IN completo.',
     )
-    x_utilidad_usd_1 = fields.Float(
-        string='Utilidad 1 %', digits=(12, 0),
-        compute='_compute_som_utilidades',
-        inverse='_inverse_som_utilidad_1',
-        help='Margen del nivel 1 sobre su precio. EDITABLE: al capturar '
-             'el %% se recalcula el Precio 1 desde el costo '
-             '(precio = costo / (1 - %%/100)).')
-    x_utilidad_usd_2 = fields.Float(
-        string='Utilidad 2 %', digits=(12, 0),
-        compute='_compute_som_utilidades',
-        inverse='_inverse_som_utilidad_2',
-        help='Margen del nivel 2 sobre su precio. Editable: recalcula el '
-             'Precio 2 desde el costo.')
-    x_utilidad_usd_3 = fields.Float(
-        string='Utilidad 3 %', digits=(12, 0),
-        compute='_compute_som_utilidades',
-        inverse='_inverse_som_utilidad_3',
-        help='Margen del nivel 3 sobre su precio. Editable: recalcula el '
-             'Precio 3 desde el costo.')
-    x_utilidad_usd_4 = fields.Float(
-        string='Utilidad 4 %', digits=(12, 0),
-        compute='_compute_som_utilidades',
-        inverse='_inverse_som_utilidad_4',
-        help='Margen del nivel 4 sobre su precio. Editable: recalcula el '
-             'Precio 4 desde el costo.')
-    x_utilidad_usd_5 = fields.Float(
-        string='Utilidad 5 %', digits=(12, 0),
-        compute='_compute_som_utilidades',
-        inverse='_inverse_som_utilidad_5',
-        help='Margen del nivel 5 sobre su precio. Editable: recalcula el '
-             'Precio 5 desde el costo.')
-
     def _som_costing_rate(self):
         try:
             info = self._get_costing_rate_info(company=self.env.company)
             return float(info.get('rate') or 0.0)
         except Exception:
             return 0.0
-
-    def _som_costo_usd_of(self, rate):
-        self.ensure_one()
-        if self.x_costo_mayor_usd:
-            return self.x_costo_mayor_usd
-        return (self.x_costo_mayor / rate) if rate else 0.0
 
     @api.depends('standard_price')
     def _compute_som_costo_edit(self):
@@ -331,61 +293,19 @@ class ProductTemplate(models.Model):
                 (rec.standard_price or 0.0) / rate) if rate else 0.0
 
     def _inverse_som_costo_usd(self):
-        """USD capturado → standard_price (nativo) y motor ALL-IN."""
+        """USD capturado → standard_price (nativo). El write de
+        standard_price dispara el motor completo: costo ALL-IN y
+        escalera de precios MXN/USD 1-5."""
         rate = self._som_costing_rate()
         for rec in self:
             if rate:
                 rec.standard_price = (rec.x_costo_usd_edit or 0.0) * rate
-        self._compute_costo_all_in()
 
     def _inverse_som_costo_mxn(self):
-        """MXN capturado → standard_price (nativo) y motor ALL-IN."""
+        """MXN capturado → standard_price (nativo) → motor completo."""
         for rec in self:
             rec.standard_price = rec.x_costo_mxn_edit or 0.0
-        self._compute_costo_all_in()
 
-    @api.depends('x_price_usd_1', 'x_price_usd_2', 'x_price_usd_3',
-                 'x_price_usd_4', 'x_price_usd_5',
-                 'x_costo_mayor', 'x_costo_mayor_usd')
-    def _compute_som_utilidades(self):
-        """Margen %% de cada nivel sobre su precio: (precio - costo) /
-        precio × 100. Sin precio o sin costo → 0."""
-        rate = self._som_costing_rate()
-        for rec in self:
-            costo_usd = rec._som_costo_usd_of(rate)
-            for i in range(1, 6):
-                price = rec['x_price_usd_%s' % i] or 0.0
-                rec['x_utilidad_usd_%s' % i] = round(
-                    (price - costo_usd) / price * 100.0
-                ) if (price and costo_usd) else 0.0
-
-    def _som_inverse_utilidad(self, level):
-        """Capturar el margen %% recalcula el PRECIO del nivel desde el
-        costo: precio = costo / (1 - %%/100). Requiere costo capturado y
-        %% menor a 100."""
-        rate = self._som_costing_rate()
-        for rec in self:
-            pct_val = round(rec['x_utilidad_usd_%s' % level] or 0.0)
-            costo_usd = rec._som_costo_usd_of(rate)
-            if not costo_usd or pct_val >= 100.0:
-                continue
-            rec['x_price_usd_%s' % level] = round(
-                costo_usd / (1.0 - pct_val / 100.0), 2)
-
-    def _inverse_som_utilidad_1(self):
-        self._som_inverse_utilidad(1)
-
-    def _inverse_som_utilidad_2(self):
-        self._som_inverse_utilidad(2)
-
-    def _inverse_som_utilidad_3(self):
-        self._som_inverse_utilidad(3)
-
-    def _inverse_som_utilidad_4(self):
-        self._som_inverse_utilidad(4)
-
-    def _inverse_som_utilidad_5(self):
-        self._som_inverse_utilidad(5)
 
     x_price_usd_1 = fields.Float(string='Precio USD 1', digits='Product Price', default=0.0, company_dependent=True)
     x_price_usd_2 = fields.Float(string='Precio USD 2', digits='Product Price', default=0.0, company_dependent=True)
