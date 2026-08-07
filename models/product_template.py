@@ -268,20 +268,36 @@ class ProductTemplate(models.Model):
              'al guardar.',
     )
     x_utilidad_usd_1 = fields.Float(
-        string='Utilidad 1', digits='Product Price',
-        compute='_compute_som_utilidades')
+        string='Utilidad 1 %', digits=(12, 1),
+        compute='_compute_som_utilidades',
+        inverse='_inverse_som_utilidad_1',
+        help='Margen del nivel 1 sobre su precio. EDITABLE: al capturar '
+             'el %% se recalcula el Precio 1 desde el costo '
+             '(precio = costo / (1 - %%/100)).')
     x_utilidad_usd_2 = fields.Float(
-        string='Utilidad 2', digits='Product Price',
-        compute='_compute_som_utilidades')
+        string='Utilidad 2 %', digits=(12, 1),
+        compute='_compute_som_utilidades',
+        inverse='_inverse_som_utilidad_2',
+        help='Margen del nivel 2 sobre su precio. Editable: recalcula el '
+             'Precio 2 desde el costo.')
     x_utilidad_usd_3 = fields.Float(
-        string='Utilidad 3', digits='Product Price',
-        compute='_compute_som_utilidades')
+        string='Utilidad 3 %', digits=(12, 1),
+        compute='_compute_som_utilidades',
+        inverse='_inverse_som_utilidad_3',
+        help='Margen del nivel 3 sobre su precio. Editable: recalcula el '
+             'Precio 3 desde el costo.')
     x_utilidad_usd_4 = fields.Float(
-        string='Utilidad 4', digits='Product Price',
-        compute='_compute_som_utilidades')
+        string='Utilidad 4 %', digits=(12, 1),
+        compute='_compute_som_utilidades',
+        inverse='_inverse_som_utilidad_4',
+        help='Margen del nivel 4 sobre su precio. Editable: recalcula el '
+             'Precio 4 desde el costo.')
     x_utilidad_usd_5 = fields.Float(
-        string='Utilidad 5', digits='Product Price',
-        compute='_compute_som_utilidades')
+        string='Utilidad 5 %', digits=(12, 1),
+        compute='_compute_som_utilidades',
+        inverse='_inverse_som_utilidad_5',
+        help='Margen del nivel 5 sobre su precio. Editable: recalcula el '
+             'Precio 5 desde el costo.')
 
     def _som_costing_rate(self):
         try:
@@ -323,14 +339,44 @@ class ProductTemplate(models.Model):
                  'x_price_usd_4', 'x_price_usd_5',
                  'x_costo_mayor', 'x_costo_mayor_usd')
     def _compute_som_utilidades(self):
+        """Margen %% de cada nivel sobre su precio: (precio - costo) /
+        precio × 100. Sin precio o sin costo → 0."""
         rate = self._som_costing_rate()
         for rec in self:
             costo_usd = rec._som_costo_usd_of(rate)
-            rec.x_utilidad_usd_1 = (rec.x_price_usd_1 or 0.0) - costo_usd
-            rec.x_utilidad_usd_2 = (rec.x_price_usd_2 or 0.0) - costo_usd
-            rec.x_utilidad_usd_3 = (rec.x_price_usd_3 or 0.0) - costo_usd
-            rec.x_utilidad_usd_4 = (rec.x_price_usd_4 or 0.0) - costo_usd
-            rec.x_utilidad_usd_5 = (rec.x_price_usd_5 or 0.0) - costo_usd
+            for i in range(1, 6):
+                price = rec['x_price_usd_%s' % i] or 0.0
+                rec['x_utilidad_usd_%s' % i] = (
+                    (price - costo_usd) / price * 100.0
+                ) if (price and costo_usd) else 0.0
+
+    def _som_inverse_utilidad(self, level):
+        """Capturar el margen %% recalcula el PRECIO del nivel desde el
+        costo: precio = costo / (1 - %%/100). Requiere costo capturado y
+        %% menor a 100."""
+        rate = self._som_costing_rate()
+        for rec in self:
+            pct_val = rec['x_utilidad_usd_%s' % level] or 0.0
+            costo_usd = rec._som_costo_usd_of(rate)
+            if not costo_usd or pct_val >= 100.0:
+                continue
+            rec['x_price_usd_%s' % level] = round(
+                costo_usd / (1.0 - pct_val / 100.0), 2)
+
+    def _inverse_som_utilidad_1(self):
+        self._som_inverse_utilidad(1)
+
+    def _inverse_som_utilidad_2(self):
+        self._som_inverse_utilidad(2)
+
+    def _inverse_som_utilidad_3(self):
+        self._som_inverse_utilidad(3)
+
+    def _inverse_som_utilidad_4(self):
+        self._som_inverse_utilidad(4)
+
+    def _inverse_som_utilidad_5(self):
+        self._som_inverse_utilidad(5)
 
     x_price_usd_1 = fields.Float(string='Precio USD 1', digits='Product Price', default=0.0, company_dependent=True)
     x_price_usd_2 = fields.Float(string='Precio USD 2', digits='Product Price', default=0.0, company_dependent=True)
