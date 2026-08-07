@@ -265,4 +265,32 @@
             </xpath>
         </field>
     </record>
+
+    <!-- LISTA DE PRODUCTOS (Inventario): costo USD/MXN editables en línea,
+         precios N1-N3 editables y utilidad por nivel — SOLO para el grupo
+         "Ver Costo de Productos" (groups_id restringe la vista completa;
+         para los demás la lista queda intacta y sin edición). -->
+    <record id="view_product_template_list_som_costs" model="ir.ui.view">
+        <field name="name">product.template.list.som.costs</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_tree_view"/>
+        <field name="groups_id" eval="[(4, ref('product_cost_security.group_product_cost_viewer'))]"/>
+        <field name="arch" type="xml">
+            <xpath expr="//list" position="attributes">
+                <attribute name="editable">top</attribute>
+            </xpath>
+            <xpath expr="//list" position="inside">
+                <field name="x_costo_usd_edit" optional="show" width="90px"/>
+                <field name="x_costo_mxn_edit" optional="show" width="90px"/>
+                <field name="x_price_usd_1" string="Precio 1" optional="show" width="90px"/>
+                <field name="x_price_usd_2" string="Precio 2" optional="show" width="90px"/>
+                <field name="x_price_usd_3" string="Precio 3" optional="show" width="90px"/>
+                <field name="x_utilidad_usd_1" optional="show" width="90px"/>
+                <field name="x_utilidad_usd_2" optional="show" width="90px"/>
+                <field name="x_utilidad_usd_3" optional="show" width="90px"/>
+                <field name="x_utilidad_usd_4" optional="hide" width="90px"/>
+                <field name="x_utilidad_usd_5" optional="hide" width="90px"/>
+            </xpath>
+        </field>
+    </record>
 </odoo>

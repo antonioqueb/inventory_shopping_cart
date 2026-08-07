@@ -246,6 +246,92 @@ class ProductTemplate(models.Model):
 
     # === CAMPOS DE PRECIOS CALCULADOS ===
 
+    # === COSTO EDITABLE EN LA LISTA + UTILIDAD POR NIVEL ===
+    # Solo visibles/editables para el grupo "Ver Costo de Productos"
+    # (la vista de lista está restringida por groups_id). Editar el USD
+    # recalcula el MXN con el TC de costeo y viceversa; las utilidades
+    # por nivel se recalculan en vivo en la misma fila.
+    x_costo_usd_edit = fields.Float(
+        string='Costo USD',
+        digits='Product Price',
+        compute='_compute_som_costo_edit',
+        inverse='_inverse_som_costo_usd',
+        help='Costo ALL-IN en USD (TC de costeo). Editable: recalcula el '
+             'costo MXN al guardar.',
+    )
+    x_costo_mxn_edit = fields.Float(
+        string='Costo MXN',
+        digits='Product Price',
+        compute='_compute_som_costo_edit',
+        inverse='_inverse_som_costo_mxn',
+        help='Costo ALL-IN en MXN. Editable: recalcula el equivalente USD '
+             'al guardar.',
+    )
+    x_utilidad_usd_1 = fields.Float(
+        string='Utilidad 1', digits='Product Price',
+        compute='_compute_som_utilidades')
+    x_utilidad_usd_2 = fields.Float(
+        string='Utilidad 2', digits='Product Price',
+        compute='_compute_som_utilidades')
+    x_utilidad_usd_3 = fields.Float(
+        string='Utilidad 3', digits='Product Price',
+        compute='_compute_som_utilidades')
+    x_utilidad_usd_4 = fields.Float(
+        string='Utilidad 4', digits='Product Price',
+        compute='_compute_som_utilidades')
+    x_utilidad_usd_5 = fields.Float(
+        string='Utilidad 5', digits='Product Price',
+        compute='_compute_som_utilidades')
+
+    def _som_costing_rate(self):
+        try:
+            info = self._get_costing_rate_info(company=self.env.company)
+            return float(info.get('rate') or 0.0)
+        except Exception:
+            return 0.0
+
+    def _som_costo_usd_of(self, rate):
+        self.ensure_one()
+        if self.x_costo_mayor_usd:
+            return self.x_costo_mayor_usd
+        return (self.x_costo_mayor / rate) if rate else 0.0
+
+    @api.depends('x_costo_mayor', 'x_costo_mayor_usd')
+    def _compute_som_costo_edit(self):
+        rate = self._som_costing_rate()
+        for rec in self:
+            rec.x_costo_mxn_edit = rec.x_costo_mayor or 0.0
+            rec.x_costo_usd_edit = rec._som_costo_usd_of(rate)
+
+    def _inverse_som_costo_usd(self):
+        rate = self._som_costing_rate()
+        for rec in self:
+            usd = rec.x_costo_usd_edit or 0.0
+            rec.x_costo_mayor_usd = usd
+            if rate:
+                rec.x_costo_mayor = usd * rate
+
+    def _inverse_som_costo_mxn(self):
+        rate = self._som_costing_rate()
+        for rec in self:
+            mxn = rec.x_costo_mxn_edit or 0.0
+            rec.x_costo_mayor = mxn
+            if rate:
+                rec.x_costo_mayor_usd = mxn / rate
+
+    @api.depends('x_price_usd_1', 'x_price_usd_2', 'x_price_usd_3',
+                 'x_price_usd_4', 'x_price_usd_5',
+                 'x_costo_mayor', 'x_costo_mayor_usd')
+    def _compute_som_utilidades(self):
+        rate = self._som_costing_rate()
+        for rec in self:
+            costo_usd = rec._som_costo_usd_of(rate)
+            rec.x_utilidad_usd_1 = (rec.x_price_usd_1 or 0.0) - costo_usd
+            rec.x_utilidad_usd_2 = (rec.x_price_usd_2 or 0.0) - costo_usd
+            rec.x_utilidad_usd_3 = (rec.x_price_usd_3 or 0.0) - costo_usd
+            rec.x_utilidad_usd_4 = (rec.x_price_usd_4 or 0.0) - costo_usd
+            rec.x_utilidad_usd_5 = (rec.x_price_usd_5 or 0.0) - costo_usd
+
     x_price_usd_1 = fields.Float(string='Precio USD 1', digits='Product Price', default=0.0, company_dependent=True)
     x_price_usd_2 = fields.Float(string='Precio USD 2', digits='Product Price', default=0.0, company_dependent=True)
     x_price_usd_3 = fields.Float(string='Precio USD 3', digits='Product Price', default=0.0, company_dependent=True)
