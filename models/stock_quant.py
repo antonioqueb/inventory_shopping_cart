@@ -272,21 +272,30 @@ class StockQuant(models.Model):
 
                 zpl_code += "^XA^CI28"
 
+                # ROTACIÓN 90°: la impresora carga la media en vertical pero
+                # el diseño es horizontal — todos los campos van con
+                # orientación R (^A0R/^BCR), coordenadas transpuestas y el
+                # tamaño de media declarado (^PW ancho físico, ^LL largo).
+                # 203 dpi → 1 cm = 80 dots. Canto/lomo NO se toca.
                 if label_format == '10x5':
-                    zpl_code += "^FO20,30^A0N,40,40^FD" + product_name + "^FS"
-                    zpl_code += "^FO20,80^A0N,35,35^FDLote: " + lot_name + "^FS"
-                    zpl_code += "^FO20,120^A0N,30,30^FD" + dim_str + "^FS"
-                    zpl_code += "^FO40,180^BY2,2,100^BCN,100,Y,N,N^FD" + lot_name + "^FS"
+                    # Media física: 5 cm de ancho (400) × 10 cm de largo (800)
+                    zpl_code += "^PW400^LL800"
+                    zpl_code += "^FO330,20^A0R,40,40^FD" + product_name + "^FS"
+                    zpl_code += "^FO280,20^A0R,35,35^FDLote: " + lot_name + "^FS"
+                    zpl_code += "^FO240,20^A0R,30,30^FD" + dim_str + "^FS"
+                    zpl_code += "^FO70,40^BY2,2,100^BCR,100,Y,N,N^FD" + lot_name + "^FS"
 
                 elif label_format == '20x10':
-                    zpl_code += "^FO50,50^A0N,70,70^FD" + product_name + "^FS"
-                    zpl_code += "^FO50,150^A0N,50,50^FDLote: " + lot_name + "^FS"
-                    zpl_code += "^FO50,220^A0N,50,50^FDDimensiones: " + dim_str + "^FS"
+                    # Media física: 10 cm de ancho (800) × 20 cm de largo (1600)
+                    zpl_code += "^PW800^LL1600"
+                    zpl_code += "^FO690,50^A0R,70,70^FD" + product_name + "^FS"
+                    zpl_code += "^FO600,50^A0R,50,50^FDLote: " + lot_name + "^FS"
+                    zpl_code += "^FO530,50^A0R,50,50^FDDimensiones: " + dim_str + "^FS"
                     if hasattr(lot, 'x_grosor'):
-                        zpl_code += f"^FO50,290^A0N,50,50^FDGrosor: {lot.x_grosor} cm^FS"
-                    zpl_code += f"^FO800,150^A0N,50,50^FDArea: {quant.quantity} m2^FS"
-                    zpl_code += "^FO100,400^BY4,3,200^BCN,200,Y,N,N^FD" + lot_name + "^FS"
-                    zpl_code += "^FO20,20^GB1550,760,4^FS"
+                        zpl_code += f"^FO460,50^A0R,50,50^FDGrosor: {lot.x_grosor} cm^FS"
+                    zpl_code += f"^FO600,900^A0R,50,50^FDArea: {quant.quantity} m2^FS"
+                    zpl_code += "^FO150,100^BY4,3,200^BCR,200,Y,N,N^FD" + lot_name + "^FS"
+                    zpl_code += "^FO20,20^GB760,1560,4^FS"
 
                 zpl_code += "^XZ"
 
