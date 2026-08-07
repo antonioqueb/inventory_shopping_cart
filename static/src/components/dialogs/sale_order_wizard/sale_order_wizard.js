@@ -513,10 +513,8 @@ export class SaleOrderWizard extends Component {
             this.notification.add("Debe seleccionar o crear un cliente", { type: "warning" });
             return;
         }
-        if (this.state.currentStep === 2 && !this.state.selectedProjectId) {
-            this.notification.add("Debe seleccionar o crear un proyecto", { type: "warning" });
-            return;
-        }
+        // El proyecto es OPCIONAL: se puede avanzar sin elegirlo (la OV se
+        // crea sin proyecto y puede asignarse después desde la orden).
         if (this.state.currentStep === 3 && !this.state.selectedArchitectId) {
             this.notification.add("Debe seleccionar o crear un arquitecto", { type: "warning" });
             return;

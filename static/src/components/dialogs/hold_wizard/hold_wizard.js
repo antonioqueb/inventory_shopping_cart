@@ -511,10 +511,8 @@ export class HoldWizard extends Component {
             this.notification.add("Debe seleccionar un cliente", { type: "warning" });
             return;
         }
-        if (this.state.currentStep === 2 && !this.state.selectedProjectId) {
-            this.notification.add("Debe seleccionar un proyecto", { type: "warning" });
-            return;
-        }
+        // El proyecto es OPCIONAL: se puede avanzar sin elegirlo (el apartado
+        // se crea sin proyecto y puede asignarse después).
         if (this.state.currentStep === 3 && !this.state.selectedArchitectId) {
             this.notification.add("Debe seleccionar un arquitecto", { type: "warning" });
             return;
@@ -545,7 +543,8 @@ export class HoldWizard extends Component {
     // ========== CREAR HOLDS ==========
     
     async createHolds() {
-        if (!this.state.selectedPartnerId || !this.state.selectedProjectId || !this.state.selectedArchitectId) {
+        // El proyecto es OPCIONAL: solo cliente y arquitecto son requeridos.
+        if (!this.state.selectedPartnerId || !this.state.selectedArchitectId) {
             this.notification.add("Faltan datos requeridos", { type: "warning" });
             return;
         }
