@@ -263,39 +263,46 @@ class StockQuant(models.Model):
         else:
             for quant in quants:
                 lot = quant.lot_id
-                product_name = quant.product_id.name[:40] if quant.product_id.name else ''
+                product_name = quant.product_id.name[:60] if quant.product_id.name else ''
                 lot_name = lot.name or ''
-
-                dim_str = ""
-                if hasattr(lot, 'x_alto') and hasattr(lot, 'x_ancho'):
-                    dim_str = f"{lot.x_alto}x{lot.x_ancho} cm"
+                qty_str = ('%g' % (quant.quantity or 0)) + ' m2'
 
                 zpl_code += "^XA^CI28"
 
-                # ROTACIÓN 90°: la impresora carga la media en vertical pero
-                # el diseño es horizontal — todos los campos van con
-                # orientación R (^A0R/^BCR), coordenadas transpuestas y el
-                # tamaño de media declarado (^PW ancho físico, ^LL largo).
+                # DISEÑO (rotado 90°: media vertical, lectura horizontal):
+                #   [SOM invertido] [LOTE grande]     ← banda superior
+                #   PRODUCTO GIGANTE (hasta 2 líneas via ^FB)
+                #   CÓDIGO DE BARRAS ENORME sin números (^BCR,...,N) + m²
+                # Sin 'Lote:'/'Area:', sin dimensiones ni grosor.
                 # 203 dpi → 1 cm = 80 dots. Canto/lomo NO se toca.
                 if label_format == '10x5':
-                    # Media física: 5 cm de ancho (400) × 10 cm de largo (800)
+                    # Media: 5 cm ancho (400) × 10 cm largo (800)
                     zpl_code += "^PW400^LL800"
-                    zpl_code += "^FO330,20^A0R,40,40^FD" + product_name + "^FS"
-                    zpl_code += "^FO280,20^A0R,35,35^FDLote: " + lot_name + "^FS"
-                    zpl_code += "^FO240,20^A0R,30,30^FD" + dim_str + "^FS"
-                    zpl_code += "^FO70,40^BY2,2,100^BCR,100,Y,N,N^FD" + lot_name + "^FS"
+                    # Logo SOM: bloque negro con texto en reversa
+                    zpl_code += "^FO305,20^GB90,185,90^FS"
+                    zpl_code += "^FO322,42^A0R,58,58^FR^FDSOM^FS"
+                    # Lote (solo el valor, grande)
+                    zpl_code += "^FO310,235^A0R,70,70^FD" + lot_name + "^FS"
+                    # Producto gigante, hasta 2 líneas
+                    zpl_code += ("^FO225,20^A0R,56,56^FB600,2,4,L^FD"
+                                 + product_name + "^FS")
+                    # Área (solo el valor)
+                    zpl_code += "^FO235,640^A0R,46,46^FD" + qty_str + "^FS"
+                    # Código de barras enorme, sin interpretación
+                    zpl_code += ("^FO25,30^BY3,2,150^BCR,150,N,N,N^FD"
+                                 + lot_name + "^FS")
 
                 elif label_format == '20x10':
-                    # Media física: 10 cm de ancho (800) × 20 cm de largo (1600)
+                    # Media: 10 cm ancho (800) × 20 cm largo (1600)
                     zpl_code += "^PW800^LL1600"
-                    zpl_code += "^FO690,50^A0R,70,70^FD" + product_name + "^FS"
-                    zpl_code += "^FO600,50^A0R,50,50^FDLote: " + lot_name + "^FS"
-                    zpl_code += "^FO530,50^A0R,50,50^FDDimensiones: " + dim_str + "^FS"
-                    if hasattr(lot, 'x_grosor'):
-                        zpl_code += f"^FO460,50^A0R,50,50^FDGrosor: {lot.x_grosor} cm^FS"
-                    zpl_code += f"^FO600,900^A0R,50,50^FDArea: {quant.quantity} m2^FS"
-                    zpl_code += "^FO150,100^BY4,3,200^BCR,200,Y,N,N^FD" + lot_name + "^FS"
-                    zpl_code += "^FO20,20^GB760,1560,4^FS"
+                    zpl_code += "^FO600,30^GB175,345,175^FS"
+                    zpl_code += "^FO628,68^A0R,110,110^FR^FDSOM^FS"
+                    zpl_code += "^FO615,430^A0R,130,130^FD" + lot_name + "^FS"
+                    zpl_code += ("^FO410,30^A0R,105,105^FB1230,2,8,L^FD"
+                                 + product_name + "^FS")
+                    zpl_code += "^FO420,1300^A0R,85,85^FD" + qty_str + "^FS"
+                    zpl_code += ("^FO45,45^BY5,2,330^BCR,330,N,N,N^FD"
+                                 + lot_name + "^FS")
 
                 zpl_code += "^XZ"
 
