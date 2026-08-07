@@ -275,33 +275,36 @@ class StockQuant(models.Model):
                 #   CÓDIGO DE BARRAS ENORME sin números (^BCR,...,N) + m²
                 # Sin 'Lote:'/'Area:', sin dimensiones ni grosor.
                 # 203 dpi → 1 cm = 80 dots. Canto/lomo NO se toca.
+                # LAYOUT EN DOS MITADES (sin logo):
+                #   ┌─────────────────────────────┐
+                #   │   NOMBRE DEL MATERIAL (×2)  │  ← mitad superior
+                #   ├─────────────────────────────┤
+                #   │ CANTIDAD      ▐║█║║█║█║║▌  │  ← mitad inferior
+                #   └─────────────────────────────┘
                 if label_format == '10x5':
                     # Media: 5 cm ancho (400) × 10 cm largo (800)
                     zpl_code += "^PW400^LL800"
-                    # Logo SOM: bloque negro con texto en reversa
-                    zpl_code += "^FO305,20^GB90,185,90^FS"
-                    zpl_code += "^FO322,42^A0R,58,58^FR^FDSOM^FS"
-                    # Lote (solo el valor, grande)
-                    zpl_code += "^FO310,235^A0R,70,70^FD" + lot_name + "^FS"
-                    # Producto gigante, hasta 2 líneas
-                    zpl_code += ("^FO225,20^A0R,56,56^FB600,2,4,L^FD"
+                    # Marco y línea divisoria a la mitad
+                    zpl_code += "^FO8,8^GB384,784,3^FS"
+                    zpl_code += "^FO200,8^GB3,784,3^FS"
+                    # ARRIBA: solo el nombre del material, centrado, 2 líneas
+                    zpl_code += ("^FO330,25^A0R,62,62^FB750,2,6,C^FD"
                                  + product_name + "^FS")
-                    # Área (solo el valor)
-                    zpl_code += "^FO235,640^A0R,46,46^FD" + qty_str + "^FS"
-                    # Código de barras enorme, sin interpretación
-                    zpl_code += ("^FO25,30^BY3,2,150^BCR,150,N,N,N^FD"
+                    # ABAJO izquierda: la cantidad
+                    zpl_code += "^FO65,35^A0R,66,66^FD" + qty_str + "^FS"
+                    # ABAJO derecha: código de barras grande sin números
+                    zpl_code += ("^FO25,330^BY2,2,150^BCR,150,N,N,N^FD"
                                  + lot_name + "^FS")
 
                 elif label_format == '20x10':
                     # Media: 10 cm ancho (800) × 20 cm largo (1600)
                     zpl_code += "^PW800^LL1600"
-                    zpl_code += "^FO600,30^GB175,345,175^FS"
-                    zpl_code += "^FO628,68^A0R,110,110^FR^FDSOM^FS"
-                    zpl_code += "^FO615,430^A0R,130,130^FD" + lot_name + "^FS"
-                    zpl_code += ("^FO410,30^A0R,105,105^FB1230,2,8,L^FD"
+                    zpl_code += "^FO10,10^GB780,1580,4^FS"
+                    zpl_code += "^FO400,10^GB4,1580,4^FS"
+                    zpl_code += ("^FO660,40^A0R,118,118^FB1520,2,10,C^FD"
                                  + product_name + "^FS")
-                    zpl_code += "^FO420,1300^A0R,85,85^FD" + qty_str + "^FS"
-                    zpl_code += ("^FO45,45^BY5,2,330^BCR,330,N,N,N^FD"
+                    zpl_code += "^FO130,70^A0R,125,125^FD" + qty_str + "^FS"
+                    zpl_code += ("^FO50,660^BY4,2,310^BCR,310,N,N,N^FD"
                                  + lot_name + "^FS")
 
                 zpl_code += "^XZ"
