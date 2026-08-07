@@ -260,20 +260,21 @@ class ProductTemplate(models.Model):
     )
 
     x_costo_usd_edit = fields.Float(
-        string='Costo USD',
+        string='Costo base USD',
         digits='Product Price',
         compute='_compute_som_costo_edit',
         inverse='_inverse_som_costo_usd',
-        help='Costo ALL-IN en USD (TC de costeo). Editable: recalcula el '
-             'costo MXN al guardar.',
+        help='Costo BASE en USD. Editable: al guardar escribe el costo '
+             'nativo (standard_price = USD × TC de costeo) y corre el '
+             'motor ALL-IN (base + logística + arancel).',
     )
     x_costo_mxn_edit = fields.Float(
-        string='Costo MXN',
+        string='Costo base MXN',
         digits='Product Price',
         compute='_compute_som_costo_edit',
         inverse='_inverse_som_costo_mxn',
-        help='Costo ALL-IN en MXN. Editable: recalcula el equivalente USD '
-             'al guardar.',
+        help='Costo BASE en MXN (el costo nativo standard_price). '
+             'Editable: al guardar corre el motor ALL-IN completo.',
     )
     x_utilidad_usd_1 = fields.Float(
         string='Utilidad 1 %', digits=(12, 1),
@@ -320,28 +321,28 @@ class ProductTemplate(models.Model):
             return self.x_costo_mayor_usd
         return (self.x_costo_mayor / rate) if rate else 0.0
 
-    @api.depends('x_costo_mayor', 'x_costo_mayor_usd')
+    @api.depends('standard_price')
     def _compute_som_costo_edit(self):
+        """Muestra el costo BASE nativo (standard_price) en MXN y USD."""
         rate = self._som_costing_rate()
         for rec in self:
-            rec.x_costo_mxn_edit = rec.x_costo_mayor or 0.0
-            rec.x_costo_usd_edit = rec._som_costo_usd_of(rate)
+            rec.x_costo_mxn_edit = rec.standard_price or 0.0
+            rec.x_costo_usd_edit = (
+                (rec.standard_price or 0.0) / rate) if rate else 0.0
 
     def _inverse_som_costo_usd(self):
+        """USD capturado → standard_price (nativo) y motor ALL-IN."""
         rate = self._som_costing_rate()
         for rec in self:
-            usd = rec.x_costo_usd_edit or 0.0
-            rec.x_costo_mayor_usd = usd
             if rate:
-                rec.x_costo_mayor = usd * rate
+                rec.standard_price = (rec.x_costo_usd_edit or 0.0) * rate
+        self._compute_costo_all_in()
 
     def _inverse_som_costo_mxn(self):
-        rate = self._som_costing_rate()
+        """MXN capturado → standard_price (nativo) y motor ALL-IN."""
         for rec in self:
-            mxn = rec.x_costo_mxn_edit or 0.0
-            rec.x_costo_mayor = mxn
-            if rate:
-                rec.x_costo_mayor_usd = mxn / rate
+            rec.standard_price = rec.x_costo_mxn_edit or 0.0
+        self._compute_costo_all_in()
 
     @api.depends('x_price_usd_1', 'x_price_usd_2', 'x_price_usd_3',
                  'x_price_usd_4', 'x_price_usd_5',
