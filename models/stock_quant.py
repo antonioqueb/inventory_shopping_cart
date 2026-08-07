@@ -287,13 +287,17 @@ class StockQuant(models.Model):
                     # Marco y línea divisoria a la mitad
                     zpl_code += "^FO8,8^GB384,784,3^FS"
                     zpl_code += "^FO200,8^GB3,784,3^FS"
-                    # ARRIBA: solo el nombre del material, centrado, 2 líneas
-                    zpl_code += ("^FO330,25^A0R,62,62^FB750,2,6,C^FD"
+                    # ARRIBA: solo el nombre del material, centrado, 2 líneas.
+                    # OJO rotado (^A0R + ^FB): la ÚLTIMA línea cae en el origen
+                    # y las anteriores se apilan HACIA ARRIBA (+x). Con origen
+                    # alto la 1ª línea se salía de la etiqueta: origen bajo y
+                    # fuente menor para que ambas líneas queden dentro.
+                    zpl_code += ("^FO250,25^A0R,48,48^FB750,2,4,C^FD"
                                  + product_name + "^FS")
                     # ABAJO izquierda: la cantidad
                     zpl_code += "^FO65,35^A0R,66,66^FD" + qty_str + "^FS"
                     # ABAJO derecha: código de barras grande sin números
-                    zpl_code += ("^FO25,330^BY2,2,150^BCR,150,N,N,N^FD"
+                    zpl_code += ("^FO25,330^BY3,2,170^BCR,170,N,N,N^FD"
                                  + lot_name + "^FS")
 
                 elif label_format == '20x10':
@@ -301,10 +305,12 @@ class StockQuant(models.Model):
                     zpl_code += "^PW800^LL1600"
                     zpl_code += "^FO10,10^GB780,1580,4^FS"
                     zpl_code += "^FO400,10^GB4,1580,4^FS"
-                    zpl_code += ("^FO660,40^A0R,118,118^FB1520,2,10,C^FD"
+                    # Misma regla del rotado: última línea en el origen, la 1ª
+                    # apila hacia arriba — origen bajo + fuente menor.
+                    zpl_code += ("^FO480,40^A0R,95,95^FB1520,2,8,C^FD"
                                  + product_name + "^FS")
                     zpl_code += "^FO130,70^A0R,125,125^FD" + qty_str + "^FS"
-                    zpl_code += ("^FO50,660^BY4,2,310^BCR,310,N,N,N^FD"
+                    zpl_code += ("^FO30,620^BY5,2,360^BCR,360,N,N,N^FD"
                                  + lot_name + "^FS")
 
                 zpl_code += "^XZ"
