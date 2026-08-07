@@ -251,6 +251,14 @@ class ProductTemplate(models.Model):
     # (la vista de lista está restringida por groups_id). Editar el USD
     # recalcula el MXN con el TC de costeo y viceversa; las utilidades
     # por nivel se recalculan en vivo en la misma fila.
+    x_cost_reviewed = fields.Boolean(
+        string='Revisado',
+        default=False,
+        copy=False,
+        help='Marca de la mesa Costos y Precios: costo y precios de este '
+             'producto ya fueron revisados y están bien (estrella).',
+    )
+
     x_costo_usd_edit = fields.Float(
         string='Costo USD',
         digits='Product Price',
