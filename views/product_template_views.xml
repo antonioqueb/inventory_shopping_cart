@@ -274,6 +274,12 @@
         <field name="model">product.template</field>
         <field name="inherit_id" ref="product.product_template_tree_view"/>
         <field name="arch" type="xml">
+            <!-- multi_edit: click normal ABRE el producto (como siempre);
+                 marcando el checkbox de la fila, las celdas se editan en
+                 línea — costo, precios y las demás. -->
+            <xpath expr="//list" position="attributes">
+                <attribute name="multi_edit">1</attribute>
+            </xpath>
             <xpath expr="//list" position="inside">
                 <field name="x_costo_usd_edit" optional="show" groups="product_cost_security.group_product_cost_viewer"/>
                 <field name="x_costo_mxn_edit" optional="hide" groups="product_cost_security.group_product_cost_viewer"/>
