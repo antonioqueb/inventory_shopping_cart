@@ -8,7 +8,10 @@ const MAYORISTA_LEVELS = new Set(["minimum", "level_4", "level_5"]);
 
 export class PriceLevelSelectorField extends Component {
     static template = "inventory_shopping_cart.PriceLevelSelectorField";
-    static props = { ...standardFieldProps };
+    static props = {
+        ...standardFieldProps,
+        inlinePrice: { type: Boolean, optional: true },
+    };
 
     setup() {
         this.selectRef = useRef("select");
@@ -60,11 +63,49 @@ export class PriceLevelSelectorField extends Component {
         return Boolean(explicitFlag);
     }
 
-    formatPrice(value) {
+    // ── Precio personalizado inline (opción {'inline_price': true}) ──────────
+    // La celda del selector absorbe también la captura del precio: al elegir
+    // "Personalizado" aparece el input en la MISMA columna (la columna de
+    // precio unitario se oculta en la vista). El nombre del campo de precio
+    // se autodetecta para servir a OV (price_unit) y apartados
+    // (precio_unitario).
+    get priceFieldName() {
+        const fields = this.props.record.fields || {};
+        if ("price_unit" in fields) {
+            return "price_unit";
+        }
+        if ("precio_unitario" in fields) {
+            return "precio_unitario";
+        }
+        return null;
+    }
+
+    get showInlinePrice() {
+        return Boolean(this.props.inlinePrice) && Boolean(this.priceFieldName);
+    }
+
+    get priceValue() {
+        const fname = this.priceFieldName;
+        return fname ? Number(this.props.record.data[fname]) || 0 : 0;
+    }
+
+    async onPriceChange(ev) {
+        const fname = this.priceFieldName;
+        if (!fname) {
+            return;
+        }
+        let val = parseFloat(String(ev.target.value).replace(",", "."));
+        if (!isFinite(val) || val < 0) {
+            val = 0;
+        }
+        await this.props.record.update({ [fname]: val });
+    }
+
+    formatPrice(value, decimals = 0) {
         const num = Number(value) || 0;
         const formatted = num.toLocaleString("es-MX", {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 0,
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
         });
         return `$${formatted} ${this.currency}`;
     }
@@ -114,6 +155,9 @@ export class PriceLevelSelectorField extends Component {
     }
 
     get displayLabel() {
+        if (this.value === "custom" && this.showInlinePrice) {
+            return `Personalizado ${this.formatPrice(this.priceValue, 2)}`;
+        }
         const opt = this.options.find(([v]) => v === this.value);
         return opt ? opt[1] : "";
     }
@@ -127,6 +171,9 @@ export const priceLevelSelectorField = {
     component: PriceLevelSelectorField,
     displayName: "Nivel de Precio con Monto",
     supportedTypes: ["selection"],
+    extractProps: ({ options }) => ({
+        inlinePrice: Boolean(options && options.inline_price),
+    }),
 };
 
 registry.category("fields").add("price_level_selector", priceLevelSelectorField);

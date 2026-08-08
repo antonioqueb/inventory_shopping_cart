@@ -289,9 +289,15 @@
             </xpath>
 
             <!-- ===================== ORDER LINES: PRICE SELECTOR ===================== -->
+            <!-- COLUMNA ÚNICA DE PRECIO: el selector de nivel absorbe también
+                 la captura del precio Personalizado (inline_price) y la
+                 columna de precio unitario se oculta — un solo campo para
+                 elegir N1..N5 o teclear el personalizado ahí mismo. -->
             <xpath expr="//field[@name='order_line']/list/field[@name='product_uom_qty']" position="after">
                 <field name="x_price_selector"
                        widget="price_level_selector"
+                       options="{'inline_price': True}"
+                       string="Precio"
                        style="width: 240px;"
                        required="1"/>
 
@@ -308,6 +314,9 @@
             <xpath expr="//field[@name='order_line']/list//field[@name='price_unit']" position="attributes">
                 <attribute name="readonly">x_price_selector != 'custom'</attribute>
                 <attribute name="force_save">1</attribute>
+                <!-- El precio vive ahora DENTRO del selector: la columna
+                     propia se oculta (el campo permanece para datos/guardado). -->
+                <attribute name="column_invisible">1</attribute>
             </xpath>
 
         </field>
