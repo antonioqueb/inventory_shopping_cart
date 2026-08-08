@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, useEffect, useRef } from "@odoo/owl";
+import { Component, useEffect, useRef, useState } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 
@@ -15,6 +15,9 @@ export class PriceLevelSelectorField extends Component {
 
     setup() {
         this.selectRef = useRef("select");
+        // "Personalizado" solo se lee con el dropdown ABIERTO; cerrado
+        // la opción se abrevia a "PP" para no comerse la columna.
+        this.ui = useState({ open: false });
 
         useEffect(
             () => {
@@ -130,6 +133,10 @@ export class PriceLevelSelectorField extends Component {
                 return true;
             })
             .map(([val, label]) => {
+                if (val === "custom") {
+                    return [val, this.ui.open ? label : "PP"];
+                }
+
                 if (val === "high") {
                     return [val, `${label} ${this.formatPrice(price1)}`];
                 }
@@ -156,14 +163,23 @@ export class PriceLevelSelectorField extends Component {
 
     get displayLabel() {
         if (this.value === "custom" && this.showInlinePrice) {
-            return `Personalizado ${this.formatPrice(this.priceValue, 2)}`;
+            return `PP ${this.formatPrice(this.priceValue, 2)}`;
         }
         const opt = this.options.find(([v]) => v === this.value);
         return opt ? opt[1] : "";
     }
 
     onChange(ev) {
+        this.ui.open = false;
         this.props.record.update({ [this.props.name]: ev.target.value });
+    }
+
+    onSelectOpen() {
+        this.ui.open = true;
+    }
+
+    onSelectClose() {
+        this.ui.open = false;
     }
 }
 
