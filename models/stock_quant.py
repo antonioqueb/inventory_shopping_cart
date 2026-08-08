@@ -358,7 +358,9 @@ class StockQuant(models.Model):
                 alto_m = alto_raw / 100.0 if alto_raw > 10 else alto_raw
                 ancho_m = ancho_raw / 100.0 if ancho_raw > 10 else ancho_raw
                 area = quant.quantity or 0
-                dim_line = f"{alto_m:.2f} x {ancho_m:.2f} = {area:.2f} M2"
+                # LARGO x ALTO (largo ≡ x_ancho en este inventario); antes
+                # salía invertido como alto x largo.
+                dim_line = f"{ancho_m:.2f} x {alto_m:.2f} = {area:.2f} M2"
 
                 lote_origen = (
                     getattr(lot, 'x_lote_origen', None)
@@ -376,8 +378,9 @@ class StockQuant(models.Model):
                 zpl += f"^FO{18 + x},75^A0N,35,37^FB160,1,0,C^FD{lot_prefix}^FS\n"
                 zpl += f"^FO{28 + x},130^A0N,78,78^FB160,1,0,C^FD{lot_suffix}^FS\n"
                 zpl += f"^FO{133 + x},232^A0R,32,32^FD{product_name}^FS\n"
-                zpl += f"^FO{88 + x},232^A0R,32,32^FD{dim_line}^FS\n"
-                zpl += f"^FO{38 + x},232^A0R,32,32^FD{lote_origen}^FS\n"
+                # Dimensiones y bloque 2 puntos más grandes que el producto.
+                zpl += f"^FO{88 + x},232^A0R,38,38^FD{dim_line}^FS\n"
+                zpl += f"^FO{38 + x},232^A0R,38,38^FD{lote_origen}^FS\n"
                 zpl += f"^FO{12 + x},1017^BY3,2,154^BCB,154,N,N,N^FD{lot_name}^FS\n"
 
             zpl += "^XZ\n"
