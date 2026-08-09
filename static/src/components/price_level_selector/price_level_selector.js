@@ -105,12 +105,13 @@ export class PriceLevelSelectorField extends Component {
     }
 
     formatPrice(value, decimals = 0) {
+        // Sin sufijo de divisa: la lista de precios de la orden ya la define.
         const num = Number(value) || 0;
         const formatted = num.toLocaleString("es-MX", {
             minimumFractionDigits: decimals,
             maximumFractionDigits: decimals,
         });
-        return `$${formatted} ${this.currency}`;
+        return `$${formatted}`;
     }
 
     get options() {

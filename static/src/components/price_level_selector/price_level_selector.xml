@@ -37,7 +37,6 @@
                            t-att-value="priceValue || ''"
                            t-on-click.stop=""
                            t-on-change="onPriceChange"/>
-                    <span class="o_price_level_selector__custom-cur" t-esc="currency"/>
                 </div>
             </t>
         </div>
