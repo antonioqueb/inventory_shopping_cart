@@ -1,10 +1,20 @@
 # -*- coding: utf-8 -*-
+import logging
+from datetime import timedelta
+
 from odoo import models, fields, api
 from odoo.models import Constraint
+
+_logger = logging.getLogger(__name__)
 
 class ShoppingCart(models.Model):
     _name = 'shopping.cart'
     _description = 'Carrito de Compras Persistente'
+
+    # Regla de negocio: el carrito retiene material MÁXIMO 24 horas sin
+    # movimiento (movimiento = cualquier write, p. ej. actualizar cantidad).
+    # Pasado el plazo, el material se libera solo (cron + GC oportunista).
+    CART_TTL_HOURS = 24
     
     user_id = fields.Many2one('res.users', string='Usuario', required=True, default=lambda self: self.env.user, index=True)
     quant_id = fields.Many2one('stock.quant', string='Quant', required=True, ondelete='cascade')
@@ -20,8 +30,43 @@ class ShoppingCart(models.Model):
     )
     
     @api.model
+    def _gc_expired(self):
+        """Elimina entradas de carrito sin movimiento en CART_TTL_HOURS.
+        write_date es la última actividad (crear/actualizar cantidad)."""
+        limit = fields.Datetime.now() - timedelta(hours=self.CART_TTL_HOURS)
+        expired = self.sudo().search([('write_date', '<', limit)])
+        if expired:
+            _logger.info(
+                '[CART GC] Liberando %s lote(s) de carritos vencidos (24h '
+                'sin movimiento): %s',
+                len(expired),
+                ', '.join('%s/%s' % (e.user_id.login, e.quant_id.lot_id.name or e.quant_id.id)
+                          for e in expired[:20]),
+            )
+            expired.unlink()
+        return True
+
+    def _som_hours_left(self):
+        self.ensure_one()
+        elapsed = (fields.Datetime.now() - (self.write_date or self.added_at
+                                            or fields.Datetime.now()))
+        left = self.CART_TTL_HOURS - (elapsed.total_seconds() / 3600.0)
+        return max(round(left, 1), 0.0)
+
+    @api.model
+    def _som_active_entries_for_lots(self, lot_ids, exclude_user_id=None):
+        """Entradas de carrito VIVAS (post-GC) de otros usuarios para los
+        lotes dados. El carrito bloquea por LOTE, no solo por quant."""
+        self._gc_expired()
+        domain = [('lot_id', 'in', [int(l) for l in lot_ids if l])]
+        if exclude_user_id:
+            domain.append(('user_id', '!=', int(exclude_user_id)))
+        return self.sudo().search(domain)
+
+    @api.model
     def get_cart_items(self):
         """Obtener items del carrito del usuario actual"""
+        self._gc_expired()
         items = self.search([('user_id', '=', self.env.user.id)])
         result = []
         for item in items:
@@ -109,6 +154,29 @@ class ShoppingCart(models.Model):
                     f' ⚠ Ojo: apartada para {hold_partner.name}. Solo podrás '
                     'cotizarla a ese cliente.'
                 )
+
+        # ESTADO DE CARRITO ENTRE VENDEDORES: si el lote vive en el carrito
+        # ACTIVO de otro usuario, no se puede tomar — se informa de quién es
+        # y cuánto le queda de vigencia (24h sin movimiento lo libera).
+        foreign = self._som_active_entries_for_lots(
+            [lot_id], exclude_user_id=self.env.user.id)
+        if foreign:
+            entry = foreign[0]
+            return {
+                'success': False,
+                'message': (
+                    'El lote %s está EN EL CARRITO de %s desde %s '
+                    '(le quedan %.1f h de vigencia). Si no lo convierte en '
+                    'pedido, se liberará automáticamente.'
+                ) % (
+                    entry.quant_id.lot_id.name or '',
+                    entry.user_id.name,
+                    fields.Datetime.context_timestamp(
+                        self, entry.added_at or entry.create_date
+                    ).strftime('%d/%m %H:%M'),
+                    entry._som_hours_left(),
+                ),
+            }
 
         # Buscar si ya existe
         existing = self.search([('user_id', '=', self.env.user.id), ('quant_id', '=', quant_id)])

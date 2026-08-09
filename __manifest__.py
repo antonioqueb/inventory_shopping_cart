@@ -1,7 +1,7 @@
 # ./__manifest__.py
 {
     'name': 'Carrito de Compra para Inventario Visual',
-    'version': '19.0.8.5.0',
+    'version': '19.0.9.0.0',
     'category': 'Inventory/Inventory',
     'summary': 'Sistema de carrito de compra y apartado múltiple desde inventario visual',
     'author': 'Alphaqueb Consulting SAS',
@@ -24,6 +24,7 @@
         'data/ir_sequence.xml',
         'data/email_templates.xml',
         'data/ir_cron.xml',
+        'data/shopping_cart_cron.xml',
         'views/product_template_views.xml',
         'views/project_client_views.xml',
         'views/price_authorization_views.xml',
@@ -49,6 +50,7 @@
             'inventory_shopping_cart/static/src/components/cart_mixin/cart_mixin.js',
             'inventory_shopping_cart/static/src/components/floating_bar/floating_bar.js',
             'inventory_shopping_cart/static/src/components/dialogs/cart_dialog/cart_dialog.js',
+            'inventory_shopping_cart/static/src/components/dialogs/cart_info/cart_info_dialog.js',
             'inventory_shopping_cart/static/src/components/dialogs/hold_wizard/hold_wizard.js',
             'inventory_shopping_cart/static/src/components/dialogs/sale_order_wizard/sale_order_wizard.js',
             'inventory_shopping_cart/static/src/components/dialogs/transfer_wizard/transfer_wizard.js',
@@ -56,6 +58,7 @@
             'inventory_shopping_cart/static/src/patches/inventory_controller_patch.xml',
             'inventory_shopping_cart/static/src/components/floating_bar/floating_bar.xml',
             'inventory_shopping_cart/static/src/components/dialogs/cart_dialog/cart_dialog.xml',
+            'inventory_shopping_cart/static/src/components/dialogs/cart_info/cart_info_dialog.xml',
             'inventory_shopping_cart/static/src/components/dialogs/hold_wizard/hold_wizard.xml',
             'inventory_shopping_cart/static/src/components/dialogs/sale_order_wizard/sale_order_wizard.xml',
             'inventory_shopping_cart/static/src/components/dialogs/transfer_wizard/transfer_wizard.xml',

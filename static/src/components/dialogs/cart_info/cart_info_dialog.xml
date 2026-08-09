@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="inventory_shopping_cart.CartInfoDialog" owl="1">
+        <Dialog size="'xl'" title="''" contentClass="'o_hold_info_dialog_content o_hold_info_dialog_content_wood'">
+            <div class="o_hold_info_dialog o_hold_info_dialog_wood">
+
+                <button class="hold-info-floating-close" type="button" t-on-click="props.close" title="Cerrar">
+                    <i class="fa fa-times"/>
+                </button>
+
+                <!-- HERO -->
+                <div class="hold-info-hero">
+                    <div class="hold-info-hero__grain"/>
+                    <div class="hold-info-hero__content">
+                        <div class="hold-info-hero__left">
+                            <div class="hold-info-hero__icon">
+                                <i class="fa fa-shopping-cart"/>
+                            </div>
+
+                            <div class="hold-info-hero__copy">
+                                <span class="hold-info-eyebrow">En carrito</span>
+                                <h2>Material en carrito de venta</h2>
+                                <p>
+                                    Este lote está en el carrito de un vendedor. Si en 24 horas
+                                    sin movimiento no se convierte en pedido, se libera
+                                    automáticamente y vuelve a estar disponible.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- QUICK SUMMARY -->
+                <div class="hold-info-summary">
+                    <div class="hold-info-stat hold-info-stat--product">
+                        <span>Producto</span>
+                        <strong t-esc="detailData.product_name or '-'"/>
+                    </div>
+
+                    <div class="hold-info-stat">
+                        <span>Lote</span>
+                        <strong t-esc="detailData.lot_name or '-'"/>
+                    </div>
+
+                    <div class="hold-info-stat">
+                        <span>Cantidad en carrito</span>
+                        <strong><t t-esc="cartInfo.quantity or detailData.quantity or 0"/> </strong>
+                    </div>
+
+                    <div class="hold-info-stat hold-info-stat--status">
+                        <span>Estatus</span>
+                        <strong>En Carrito</strong>
+                    </div>
+                </div>
+
+                <!-- DETALLE DEL CARRITO -->
+                <div class="hold-info-status">
+                    <div class="hold-info-status__icon">
+                        <i class="fa fa-user"/>
+                    </div>
+                    <div class="hold-info-status__copy">
+                        <strong>
+                            Carrito de <t t-esc="cartInfo.user_name or '-'"/>
+                            <t t-if="cartInfo.is_mine"> (tú)</t>
+                        </strong>
+                        <p>
+                            Agregado el <t t-esc="cartInfo.added_at or '-'"/> ·
+                            Último movimiento el <t t-esc="cartInfo.last_activity or '-'"/> ·
+                            <b t-esc="hoursLeftLabel"/>
+                        </p>
+                        <p t-if="!cartInfo.is_mine">
+                            Si necesitas este material, contacta a
+                            <t t-esc="cartInfo.user_name"/> — o espera a que el
+                            carrito expire para que se libere solo.
+                        </p>
+                    </div>
+                </div>
+
+            </div>
+        </Dialog>
+    </t>
+
+</templates>

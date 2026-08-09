@@ -11,6 +11,7 @@
             <attribute name="selectAllCurrentProduct.bind">selectAllCurrentProduct</attribute>
             <attribute name="deselectAllCurrentProduct.bind">deselectAllCurrentProduct</attribute>
             <attribute name="cart">cart</attribute>
+            <attribute name="onCartStatusClick.bind">onCartStatusClick</attribute>
         </xpath>
     </t>
     
@@ -42,7 +43,7 @@
                         type="checkbox"
                         class="form-check-input cart-checkbox"
                         t-att-checked="props.isInCart ? (props.isInCart(detail.id) ? 'checked' : undefined) : undefined"
-                        t-att-disabled="(detail.tiene_hold or detail.en_orden_venta or detail.en_taller or detail.is_transit) and !(props.cart and props.cart.canSelectBlocked)"
+                        t-att-disabled="(detail.tiene_hold or detail.en_orden_venta or detail.en_taller or detail.is_transit or (detail.en_carrito and detail.cart_info and !detail.cart_info.is_mine)) and !(props.cart and props.cart.canSelectBlocked)"
                         t-on-click.stop="() => props.toggleCartSelection ? props.toggleCartSelection(detail) : null"
                         t-att-title="(props.cart and props.cart.canSelectBlocked and (detail.tiene_hold or detail.en_orden_venta or detail.en_taller or detail.is_transit)) ? (detail.tiene_hold ? 'Lote apartado — disponible solo para movimiento/etiquetas' : (detail.en_orden_venta ? 'Lote en orden de venta — disponible solo para movimiento/etiquetas' : (detail.en_taller ? 'Lote en taller/producción — disponible solo para movimiento/etiquetas' : 'Lote en tránsito — disponible solo para movimiento/etiquetas'))) : (detail.tiene_hold ? 'Lote con apartado activo' : (detail.en_orden_venta ? 'Lote en orden de venta confirmada' : (detail.en_taller ? 'Lote en taller / producción' : (detail.is_transit ? 'Lote en tránsito' : ''))))"
                     />
@@ -71,4 +72,24 @@
         </xpath>
     </t>
     
+
+    <t t-name="inventory_visual_enhanced.ProductDetails" t-inherit="inventory_visual_enhanced.ProductDetails" t-inherit-mode="extension" owl="1">
+        <!-- ESTADO "EN CARRITO" en la columna E: prioridad debajo de taller/
+             hold/venta, arriba de "sin estado". Mismo patrón de badges. -->
+        <xpath expr="//span[@class='status-badge-btn status-no-hold']" position="replace">
+            <button
+                t-elif="detail.en_carrito"
+                type="button"
+                class="status-badge-btn status-cart"
+                t-on-click="() => props.onCartStatusClick ? props.onCartStatusClick(detail.id, detail.cart_info) : null"
+                t-att-title="detail.cart_info ? ('En carrito de ' + detail.cart_info.user_name + ' · ' + detail.cart_info.hours_left + ' h restantes') : 'En carrito'"
+            >
+                <i class="fa fa-shopping-cart"></i>
+            </button>
+            <span t-else="" class="status-badge-btn status-no-hold" title="Sin apartado">
+                <i class="fa fa-hand-paper-o"></i>
+            </span>
+        </xpath>
+    </t>
+
 </templates>

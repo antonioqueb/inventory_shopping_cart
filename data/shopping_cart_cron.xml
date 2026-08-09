@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Regla de negocio: el carrito solo retiene material 24 horas sin
+         movimiento. Este cron libera lo vencido cada hora; además hay GC
+         oportunista en add_to_cart / get_cart_items / get_quant_details
+         para que el estado visible nunca dependa solo del cron. -->
+    <record id="ir_cron_shopping_cart_gc" model="ir.cron">
+        <field name="name">Carrito: liberar material vencido (24h)</field>
+        <field name="model_id" ref="model_shopping_cart"/>
+        <field name="state">code</field>
+        <field name="code">model._gc_expired()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">hours</field>
+        <field name="active" eval="True"/>
+    </record>
+</odoo>

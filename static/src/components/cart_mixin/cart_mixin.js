@@ -3,6 +3,7 @@
 import { patch } from "@web/core/utils/patch";
 import { useState } from "@odoo/owl";
 import { registry } from "@web/core/registry";
+import { CartInfoDialog } from "../dialogs/cart_info/cart_info_dialog";
 
 const InventoryVisualController = registry.category("actions").get("inventory_visual_enhanced");
 
@@ -37,10 +38,34 @@ patch(InventoryVisualController.prototype, {
         this.selectAllCurrentProduct = this.selectAllCurrentProduct.bind(this);
         this.deselectAllCurrentProduct = this.deselectAllCurrentProduct.bind(this);
         this.areAllCurrentProductSelected = this.areAllCurrentProductSelected.bind(this);
+        this.onCartStatusClick = this.onCartStatusClick.bind(this);
         
         this.loadCartFromDB();
         this.loadSalesPermissions();
         this.loadInventoryPermissions();
+    },
+
+    // Estado EN CARRITO: popup informativo con el detalle del carrito que
+    // retiene el lote (mismo branding que el diálogo de apartado).
+    onCartStatusClick(detailId, cartInfo) {
+        let detailData = null;
+        for (const [productId, details] of Object.entries(this.state.productDetails || {})) {
+            const detail = (details || []).find((d) => d.id === detailId);
+            if (detail) {
+                const product = (this.state.products || []).find(
+                    (p) => p.product_id === parseInt(productId)
+                );
+                detailData = {
+                    ...detail,
+                    product_name: product ? product.product_name : (detail.product_name || ""),
+                };
+                break;
+            }
+        }
+        this.dialog.add(CartInfoDialog, {
+            cartInfo: cartInfo || {},
+            detailData: detailData || {},
+        });
     },
 
     async loadSalesPermissions() {

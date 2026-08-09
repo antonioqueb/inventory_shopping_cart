@@ -1,13 +1,67 @@
 # ./models/stock_quant.py
 # -*- coding: utf-8 -*-
+import logging
 from odoo import models, fields, api
 from odoo.exceptions import UserError
 from datetime import datetime, timedelta
 import math
 
+_logger = logging.getLogger(__name__)
+
 
 class StockQuant(models.Model):
     _inherit = 'stock.quant'
+
+    # ═══════════════════════════════════════════════════════════════════
+    # ESTADO "EN CARRITO" para el Inventario Visual: cada quant se anota
+    # con el carrito activo que lo retiene (de cualquier vendedor), igual
+    # que los estados de hold / orden de venta / taller.
+    # ═══════════════════════════════════════════════════════════════════
+    @api.model
+    def get_quant_details(self, quant_ids=None):
+        res = super().get_quant_details(quant_ids=quant_ids)
+        if not res:
+            return res
+        try:
+            Cart = self.env['shopping.cart'].sudo()
+            Cart._gc_expired()
+            entries = Cart.search([
+                ('quant_id', 'in', [d.get('id') for d in res if d.get('id')]),
+            ])
+            by_quant = {}
+            by_lot = {}
+            for e in entries:
+                by_quant[e.quant_id.id] = e
+                if e.lot_id:
+                    by_lot.setdefault(e.lot_id, e)
+            for d in res:
+                entry = by_quant.get(d.get('id'))
+                if not entry and d.get('lot_id'):
+                    # El mismo LOTE puede estar en carrito vía otro quant
+                    # (otra ubicación): el estado aplica al lote completo.
+                    entry = by_lot.get(d.get('lot_id'))
+                if entry:
+                    added_local = fields.Datetime.context_timestamp(
+                        self, entry.added_at or entry.create_date)
+                    activity_local = fields.Datetime.context_timestamp(
+                        self, entry.write_date or entry.create_date)
+                    d['en_carrito'] = True
+                    d['cart_info'] = {
+                        'user_id': entry.user_id.id,
+                        'user_name': entry.user_id.name,
+                        'is_mine': entry.user_id.id == self.env.uid,
+                        'added_at': added_local.strftime('%d/%m/%Y %H:%M'),
+                        'last_activity': activity_local.strftime('%d/%m/%Y %H:%M'),
+                        'hours_left': entry._som_hours_left(),
+                        'quantity': entry.quantity,
+                        'ttl_hours': Cart.CART_TTL_HOURS,
+                    }
+                else:
+                    d['en_carrito'] = False
+                    d['cart_info'] = None
+        except Exception:
+            _logger.exception('[CART STATE] No se pudo anotar el estado de carrito.')
+        return res
 
     @api.model
     def get_current_user_info(self):
