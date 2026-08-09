@@ -246,9 +246,29 @@ class SaleOrderLine(models.Model):
             _logger.info(
                 "[CART MIRROR] Línea %s: x_selected_lots realineado a "
                 "lot_ids (%s lotes).", line.id, len(target_lots))
-            line.with_context(som_skip_cart_mirror=True).write({
-                'x_selected_lots': [(6, 0, (keep | add).ids)],
-            })
+            mirror_vals = {'x_selected_lots': [(6, 0, (keep | add).ids)]}
+            # Si el realineo SUSTITUYE un quant, las llaves de quant del
+            # desglose que apuntaban al quant saliente se re-keyean a su
+            # LOTE — sin esto la parcialidad dejaba de resolverse y el lote
+            # degradaba a "completo" en reportes y syncs.
+            bd = line.x_lot_breakdown_json or {}
+            if bd:
+                kept_quants = {str(q.id) for q in (keep | add)}
+                old_map = {
+                    str(q.id): q.lot_id.id for q in current if q.lot_id}
+                rekeyed = {}
+                changed = False
+                for k, v in bd.items():
+                    ks = str(k)
+                    if (ks.isdigit() and ks not in kept_quants
+                            and ks in old_map):
+                        rekeyed.setdefault(str(old_map[ks]), v)
+                        changed = True
+                    else:
+                        rekeyed[ks] = v
+                if changed:
+                    mirror_vals['x_lot_breakdown_json'] = rekeyed
+            line.with_context(som_skip_cart_mirror=True).write(mirror_vals)
 
     def _som_mirror_cart_to_stone(self):
         """Cambios de x_selected_lots en una línea confirmada se propagan a
@@ -261,10 +281,26 @@ class SaleOrderLine(models.Model):
             lot_ids = line.x_selected_lots.mapped('lot_id').ids
             if set(line.lot_ids.ids) == set(lot_ids):
                 continue
-            breakdown = {
-                k: v for k, v in (line.x_lot_breakdown_json or {}).items()
-                if str(k).isdigit() and int(k) in lot_ids
+            # RE-KEY antes de filtrar: el desglose puede venir con llaves de
+            # QUANT (flujo de carrito/hold). El filtro viejo solo reconocía
+            # llaves de LOTE y BORRABA la parcialidad completa (el lote
+            # pasaba a "entero" en visual, ratchet y picking). Cada llave de
+            # quant se traduce a su lote antes de decidir qué se conserva.
+            quant_to_lot = {
+                str(q.id): q.lot_id.id
+                for q in line.x_selected_lots if q.lot_id
             }
+            breakdown = {}
+            for k, v in (line.x_lot_breakdown_json or {}).items():
+                key = str(k)
+                if not key.isdigit():
+                    continue
+                if int(key) in lot_ids:
+                    breakdown[key] = v
+                elif key in quant_to_lot and quant_to_lot[key] in lot_ids:
+                    # llave de quant → re-key al lote (sin pisar una llave de
+                    # lote ya existente)
+                    breakdown.setdefault(str(quant_to_lot[key]), v)
             _logger.info(
                 "[CART MIRROR] Línea %s: propagando carrito → selector "
                 "(%s lotes) y picking.", line.id, len(lot_ids))
@@ -1496,13 +1532,30 @@ class SaleOrder(models.Model):
                     if qty > qty_by_lot.get(lot_id, 0.0):
                         qty_by_lot[lot_id] = qty
 
-                # Fallback: si todavía no hay move lines, usar x_selected_lots.
+                # Fallback: si todavía no hay move lines, usar x_selected_lots
+                # PREFIRIENDO la parcialidad del desglose original (llave de
+                # lote o de quant). Tomar quant.quantity a ciegas inflaba la
+                # asignación al quant COMPLETO (100 en vez de los 50
+                # vendidos) cuando la reserva aún no existía.
                 if not qty_by_lot:
+                    original_bd = line.x_lot_breakdown_json or {}
                     for quant in line.x_selected_lots:
-                        if quant.lot_id:
-                            qty_by_lot[quant.lot_id.id] = qty_by_lot.get(
-                                quant.lot_id.id, 0.0
-                            ) + (quant.quantity or 0.0)
+                        if not quant.lot_id:
+                            continue
+                        qty = None
+                        raw = original_bd.get(str(quant.lot_id.id))
+                        if raw is None:
+                            raw = original_bd.get(str(quant.id))
+                        if raw is not None:
+                            try:
+                                qty = float(raw or 0.0)
+                            except Exception:
+                                qty = None
+                        if qty is None:
+                            qty = quant.quantity or 0.0
+                        qty_by_lot[quant.lot_id.id] = qty_by_lot.get(
+                            quant.lot_id.id, 0.0
+                        ) + qty
 
                 lot_ids = list(qty_by_lot.keys())
                 if not lot_ids:
