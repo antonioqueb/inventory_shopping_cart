@@ -1456,9 +1456,30 @@ class StockLotHoldOrderLine(models.Model):
 
         quants = Quant.search(domain, limit=limit, order='lot_id')
 
+        # LOTES COMPROMETIDOS (ventas confirmadas, entregas, taller, carrito):
+        # fuera del selector de apartados por completo. La reserva nativa NO
+        # basta como filtro — las líneas gestionadas por Torre de Control
+        # omiten el FIFO a propósito y sus lotes quedan comprometidos con
+        # reserved_quantity = 0. Los lotes del PROPIO apartado en edición se
+        # permiten (para poder verlo/ajustarlo).
+        committed_lot_ids = set(Quant._get_committed_lot_ids(int(product_id)))
+        if hold_order_id:
+            own_hold = self.browse(int(hold_order_id)).exists()
+            if own_hold:
+                own_lots = set()
+                if 'lot_ids' in own_hold._fields and own_hold.lot_ids:
+                    own_lots.update(own_hold.lot_ids.ids)
+                for line in getattr(own_hold, 'line_ids', []):
+                    if getattr(line, 'lot_id', False):
+                        own_lots.add(line.lot_id.id)
+                committed_lot_ids -= own_lots
+
         available = Quant.browse()
         for quant in quants:
             if not quant.lot_id:
+                continue
+
+            if quant.lot_id.id in committed_lot_ids:
                 continue
 
             # Hold activo de OTRA reserva: la placa ya está apartada.
