@@ -1500,7 +1500,45 @@ class StockLotHoldOrderLine(models.Model):
         read_fields = ['id', 'lot_id', 'location_id', 'quantity', 'reserved_quantity']
         read_fields += [f for f in optional_fields if f in Quant._fields]
 
-        return available.read(read_fields)
+        rows = available.read(read_fields)
+
+        # Cantidad LIBRE por lote (físico − asignado a pedidos/entregas/
+        # reservas): es el TOPE real del apartado. El widget la usa como
+        # máximo del input y una fila sin libre no se ofrece. Sin esto, un
+        # formato con parte asignada a un pedido se ofrecía por su físico
+        # completo y el apartado rebasaba el material real.
+        Line = self.env['stock.lot.hold.order.line']
+        if hasattr(Line, '_som_lot_free_qty'):
+            free_left = {}
+            filtered = []
+            own_lot_ids = set()
+            if hold_order_id:
+                own = self.browse(int(hold_order_id)).exists()
+                if own:
+                    for ln in getattr(own, 'line_ids', []):
+                        own_lot_ids.update(ln.lot_ids.ids)
+            for row in rows:
+                lot_id = row['lot_id'][0] if row.get('lot_id') else 0
+                if not lot_id:
+                    continue
+                if lot_id not in free_left:
+                    lot = self.env['stock.lot'].browse(lot_id)
+                    free_left[lot_id] = Line._som_lot_free_qty(lot)[2]
+                # Los lotes del propio apartado en edición se ofrecen por su
+                # físico (su cantidad ya está tomada por esta misma orden).
+                if lot_id in own_lot_ids:
+                    row['som_free_qty'] = row.get('quantity') or 0.0
+                    filtered.append(row)
+                    continue
+                row_free = min(row.get('quantity') or 0.0, free_left[lot_id])
+                if row_free <= 0.0001:
+                    continue
+                free_left[lot_id] -= row_free
+                row['som_free_qty'] = row_free
+                filtered.append(row)
+            return filtered
+
+        return rows
 
     def _get_quantity_from_lots(self):
         self.ensure_one()
@@ -1530,6 +1568,11 @@ class StockLotHoldOrderLine(models.Model):
                 key = str(lot.id)
                 if key in breakdown:
                     total += float(breakdown.get(key) or 0.0)
+                    continue
+                if hasattr(self, '_som_lot_free_qty'):
+                    # LIBRE, no físico: lo asignado a pedidos/entregas no
+                    # puede volver a apartarse.
+                    total += self._som_lot_free_qty(lot)[2]
                     continue
                 quants = self.env['stock.quant'].search([
                     ('lot_id', '=', lot.id),

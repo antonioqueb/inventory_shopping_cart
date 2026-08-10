@@ -597,7 +597,7 @@ export class HoldStoneExpandButton extends Component {
         const filterLocation = root.querySelector("#hs-filter-location");
 
         const getChosenQty = (quant, lotId) => {
-            const full = Number(quant.quantity || 0);
+            const full = Number((quant.som_free_qty ?? quant.quantity) || 0);
             if (!this._isFraccionableQuant(quant)) {
                 return full;
             }
@@ -647,7 +647,7 @@ export class HoldStoneExpandButton extends Component {
                 }
 
                 const fraccionable = this._isFraccionableQuant(quant);
-                const fullQty = Number(quant.quantity || 0);
+                const fullQty = Number((quant.som_free_qty ?? quant.quantity) || 0);
 
                 // M²: las placas muestran el lote completo (no fraccionable).
                 // Formatos/piezas seleccionados muestran un input para elegir
@@ -740,7 +740,7 @@ export class HoldStoneExpandButton extends Component {
                             // Al seleccionar un fraccionable, predeterminar la
                             // cantidad al lote completo si no había parcialidad.
                             if (this._isFraccionableQuant(quant) && !state.qtyByLot.has(lotId)) {
-                                state.qtyByLot.set(lotId, Number(quant.quantity || 0));
+                                state.qtyByLot.set(lotId, Number((quant.som_free_qty ?? quant.quantity) || 0));
                             }
                         }
                     }
@@ -764,7 +764,7 @@ export class HoldStoneExpandButton extends Component {
                     }
                     const quant = state.selectedQuantByLot.get(lotId)
                         || state.quants.find((item) => this._getLotIdFromQuant(item) === lotId);
-                    const fullQty = quant ? Number(quant.quantity || 0) : Infinity;
+                    const fullQty = quant ? Number((quant.som_free_qty ?? quant.quantity) || 0) : Infinity;
                     state.qtyByLot.set(lotId, this._clampQuantity(input.value, fullQty));
                     updateTotals();
                 });
@@ -778,7 +778,7 @@ export class HoldStoneExpandButton extends Component {
                     }
                     const quant = state.selectedQuantByLot.get(lotId)
                         || state.quants.find((item) => this._getLotIdFromQuant(item) === lotId);
-                    const fullQty = quant ? Number(quant.quantity || 0) : Infinity;
+                    const fullQty = quant ? Number((quant.som_free_qty ?? quant.quantity) || 0) : Infinity;
                     const clamped = this._clampQuantity(input.value, fullQty);
                     state.qtyByLot.set(lotId, clamped);
                     input.value = clamped;
