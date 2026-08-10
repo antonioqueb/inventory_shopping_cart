@@ -1004,25 +1004,75 @@
         p  { font-size: 11px; margin: 2px 0 0; }
     }
 
-    /* ── FOOTER: botonera en rejilla 2×N, sin desbordes ── */
+    /* ── FOOTER: botonera ordenada ─────────────────────────────────────
+       Diseño móvil: acciones secundarias homogéneas en pares (con flex
+       wrap el impar sobrante se estira solo a fila completa) y el CTA
+       "Crear Orden de Venta" al final, a todo lo ancho y con jerarquía.
+       Orden visual fijo vía `order`, independiente del orden del DOM:
+       Etiquetas · Trasladar | Apartar Todo · Eliminar Apartados | CTA. */
     .modal-dialog:has(.isc-modal-surface) .modal-footer {
-        display: grid !important;
-        grid-template-columns: 1fr 1fr;
+        display: flex !important;
+        flex-wrap: wrap !important;
         gap: 8px !important;
-        padding: 10px 12px calc(10px + env(safe-area-inset-bottom)) !important;
+        padding: 10px 12px calc(12px + env(safe-area-inset-bottom)) !important;
+        border-top: 1px solid rgba(92, 185, 242, 0.2) !important;
+        background: var(--isc-cream) !important;
+
+        > * { margin: 0 !important; }
 
         .btn {
-            margin: 0 !important;
-            font-size: 12px;
-            padding: 9px 8px;
+            flex: 1 1 calc(50% - 8px);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            min-height: 42px;
+            padding: 8px 10px;
+            border-radius: 12px;
+            font-size: 12.5px;
+            font-weight: 800;
+            line-height: 1.2;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+
+            i { font-size: 12px; }
         }
 
-        /* La acción principal ocupa fila completa */
-        .btn-primary { grid-column: 1 / -1; }
+        /* Secundarios con el mismo peso visual (Etiquetas/Apartar/Trasladar) */
+        .btn-light,
+        .btn-secondary,
+        .btn-warning {
+            background: var(--isc-oak-light);
+            border: 1px solid rgba(21, 95, 148, 0.22);
+            color: var(--isc-walnut);
+        }
 
-        .alert { grid-column: 1 / -1; margin: 0 !important; font-size: 11px; }
+        .btn-light { order: 1; }                 /* Etiquetas   */
+        .btn-warning:not(.me-auto) { order: 2; } /* Trasladar   */
+        .btn-secondary { order: 3; }             /* Apartar Todo */
+
+        /* Eliminar Apartados: tono de advertencia suave */
+        .btn-warning.me-auto {
+            order: 4;
+            background: #fff7ed;
+            border-color: rgba(180, 83, 9, 0.32);
+            color: #b45309;
+        }
+
+        /* CTA principal: última fila, a todo lo ancho */
+        .btn-primary {
+            order: 10;
+            flex: 1 1 100%;
+            min-height: 46px;
+            font-size: 13.5px;
+            border: none;
+            border-radius: 13px;
+            color: #fff;
+            background: linear-gradient(135deg, var(--isc-cedar), var(--isc-walnut));
+            box-shadow: 0 8px 18px rgba(21, 95, 148, 0.28);
+        }
+
+        .alert { flex: 1 1 100%; margin: 0 !important; font-size: 11px; }
     }
 }
