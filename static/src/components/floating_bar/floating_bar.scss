@@ -1029,8 +1029,11 @@
             min-height: 42px;
             padding: 8px 10px;
             border-radius: 12px;
-            font-size: 12.5px;
+            /* Todos los botones con el MISMO tamaño de texto, en mayúsculas */
+            font-size: 12px;
             font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
             line-height: 1.2;
             white-space: nowrap;
             overflow: hidden;
@@ -1060,12 +1063,11 @@
             color: #b45309;
         }
 
-        /* CTA principal: última fila, a todo lo ancho */
+        /* CTA principal: última fila, a todo lo ancho (mismo tamaño de texto) */
         .btn-primary {
             order: 10;
             flex: 1 1 100%;
             min-height: 46px;
-            font-size: 13.5px;
             border: none;
             border-radius: 13px;
             color: #fff;
