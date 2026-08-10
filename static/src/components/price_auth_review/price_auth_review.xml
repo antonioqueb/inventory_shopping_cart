@@ -68,12 +68,10 @@
                         <span class="pa-col pa-col--product">
                             <span class="pa-product-name" t-esc="line.product"/>
                             <span class="pa-product-flag" t-if="d.is_authorizer" t-esc="levelLabel(line)"/>
-                            <span class="pa-product-cost" t-if="d.is_authorizer and line.cost">
-                                Costo destino: <t t-esc="money(line.cost)"/>
-                            </span>
-                            <!-- Costos en USD para el autorizador: base y
-                                 all-in (este último solo cuando el costeo ya
-                                 lo tiene calculado). -->
+                            <!-- Costos SOLO en USD para el autorizador: base
+                                 y all-in (este último cuando el costeo ya lo
+                                 tiene calculado). El costo en MXN no se
+                                 muestra. -->
                             <span class="pa-product-cost" t-if="d.is_authorizer and line.cost_base_usd">
                                 Costo base: $<t t-esc="num(line.cost_base_usd)"/> USD
                             </span>
