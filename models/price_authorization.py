@@ -249,11 +249,21 @@ class PriceAuthorization(models.Model):
                 'subtotal': qty * auth,
             }
             if is_authorizer:
+                # Costos en DÓLARES para el autorizador: base (standard_price
+                # expresado en USD) y ALL-IN USD cuando el motor de costeo ya
+                # lo calculó (>0). Solo viajan al autorizador.
+                cost_base_usd = 0.0
+                cost_allin_usd = 0.0
+                if tmpl:
+                    cost_base_usd = getattr(tmpl, 'x_costo_usd_edit', 0.0) or 0.0
+                    cost_allin_usd = getattr(tmpl, 'x_costo_mayor_usd', 0.0) or 0.0
                 item.update({
                     'price_1': Product._get_price_level_value(tmpl, 'high', currency) if tmpl else 0.0,
                     'price_2': line.medium_price or 0.0,
                     'price_3': line.minimum_price or 0.0,
                     'cost': line.product_cost or 0.0,
+                    'cost_base_usd': cost_base_usd,
+                    'cost_allin_usd': cost_allin_usd,
                 })
             lines.append(item)
 

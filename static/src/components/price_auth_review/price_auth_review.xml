@@ -71,6 +71,15 @@
                             <span class="pa-product-cost" t-if="d.is_authorizer and line.cost">
                                 Costo destino: <t t-esc="money(line.cost)"/>
                             </span>
+                            <!-- Costos en USD para el autorizador: base y
+                                 all-in (este último solo cuando el costeo ya
+                                 lo tiene calculado). -->
+                            <span class="pa-product-cost" t-if="d.is_authorizer and line.cost_base_usd">
+                                Costo base: $<t t-esc="num(line.cost_base_usd)"/> USD
+                            </span>
+                            <span class="pa-product-cost pa-product-cost--allin" t-if="d.is_authorizer and line.cost_allin_usd">
+                                All-In: $<t t-esc="num(line.cost_allin_usd)"/> USD
+                            </span>
                         </span>
                         <span class="pa-col pa-col--qty">
                             <t t-esc="num(line.quantity)"/> <small t-esc="line.uom"/>
