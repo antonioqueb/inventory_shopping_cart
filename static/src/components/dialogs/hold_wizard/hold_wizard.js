@@ -31,7 +31,7 @@ export class HoldWizard extends Component {
             showCreateProject: false,
             newProjectName: '',
             
-            // Arquitecto
+            // Embajador
             searchArchitectTerm: '',
             architects: [],
             selectedArchitectId: null,
@@ -257,7 +257,7 @@ export class HoldWizard extends Component {
         } catch (error) { this.notification.add("Error creando proyecto", { type: "danger" }); }
     }
 
-    // ========== ARQUITECTO ==========
+    // ========== EMBAJADOR ==========
 
     onSearchArchitect(ev) {
         const value = ev.target.value;
@@ -270,7 +270,7 @@ export class HoldWizard extends Component {
         try {
             const architects = await this.orm.call("stock.quant", "get_architects", [], { search_term: this.state.searchArchitectTerm.trim() });
             this.state.architects = architects;
-        } catch (error) { this.notification.add("Error buscando arquitectos", { type: "danger" }); }
+        } catch (error) { this.notification.add("Error buscando embajadores", { type: "danger" }); }
     }
     
     selectArchitect(architect) {
@@ -290,8 +290,8 @@ export class HoldWizard extends Component {
             const result = await this.orm.call("stock.quant", "create_architect", [], {
                 name: this.state.newArchitectName.trim(), vat: this.state.newArchitectVat.trim(), ref: this.state.newArchitectRef.trim()
             });
-            if (result.success) { this.selectArchitect(result.architect); this.notification.add("Arquitecto creado", { type: "success" }); }
-        } catch (error) { this.notification.add("Error creando arquitecto", { type: "danger" }); }
+            if (result.success) { this.selectArchitect(result.architect); this.notification.add("Embajador creado", { type: "success" }); }
+        } catch (error) { this.notification.add("Error creando embajador", { type: "danger" }); }
     }
 
     // ========== SERVICIOS ==========
@@ -514,7 +514,7 @@ export class HoldWizard extends Component {
         // El proyecto es OPCIONAL: se puede avanzar sin elegirlo (el apartado
         // se crea sin proyecto y puede asignarse después).
         if (this.state.currentStep === 3 && !this.state.selectedArchitectId) {
-            this.notification.add("Debe seleccionar un arquitecto", { type: "warning" });
+            this.notification.add("Debe seleccionar un embajador", { type: "warning" });
             return;
         }
         if (this.state.currentStep === 4) {
@@ -543,7 +543,7 @@ export class HoldWizard extends Component {
     // ========== CREAR HOLDS ==========
     
     async createHolds() {
-        // El proyecto es OPCIONAL: solo cliente y arquitecto son requeridos.
+        // El proyecto es OPCIONAL: solo cliente y embajador son requeridos.
         if (!this.state.selectedPartnerId || !this.state.selectedArchitectId) {
             this.notification.add("Faltan datos requeridos", { type: "warning" });
             return;

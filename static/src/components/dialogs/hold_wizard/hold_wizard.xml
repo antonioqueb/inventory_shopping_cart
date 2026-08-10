@@ -17,7 +17,7 @@
                             <div class="isc-eyebrow">Apartado múltiple</div>
                             <h3 class="isc-modal-title">Crear Apartado</h3>
                             <p class="isc-modal-subtitle">
-                                Configura cliente, proyecto, arquitecto, precios, material adicional, servicios y confirmación del apartado.
+                                Configura cliente, proyecto, embajador, precios, material adicional, servicios y confirmación del apartado.
                             </p>
                             <div class="isc-hero-metrics">
                                 <span class="isc-chip">
@@ -56,7 +56,7 @@
                             
                             <div class="step-item" t-att-class="{ active: state.currentStep >= 3, completed: state.currentStep > 3 }">
                                 <div class="step-number">3</div>
-                                <div class="step-label">Arquitecto</div>
+                                <div class="step-label">Embajador</div>
                             </div>
                             <div class="step-line" t-att-class="{ active: state.currentStep > 3 }"></div>
                             
@@ -217,11 +217,11 @@
                         </t>
                     </div>
                     
-                    <!-- PASO 3: ARQUITECTO -->
+                    <!-- PASO 3: EMBAJADOR -->
                     <div class="step-content" t-if="state.currentStep === 3">
                         <h5>
                             <i class="fa fa-user-circle text-secondary"></i>
-                            Seleccionar Arquitecto
+                            Seleccionar Embajador
                         </h5>
                         
                         <div class="btn-group w-100 mb-3" role="group">
@@ -244,7 +244,7 @@
                             <div class="alert alert-light border d-flex align-items-center mb-3" t-if="state.selectedArchitectName">
                                 <i class="fa fa-check-circle fa-2x text-success me-3"></i>
                                 <div>
-                                    <strong>Arquitecto seleccionado:</strong><br/>
+                                    <strong>Embajador seleccionado:</strong><br/>
                                     <t t-esc="state.selectedArchitectName"/>
                                 </div>
                             </div>
@@ -267,7 +267,7 @@
                             <div class="card mb-3">
                                 <div class="card-body">
                                     <div class="mb-3">
-                                        <label class="form-label fw-bold">Nombre del Arquitecto <span class="text-danger">*</span></label>
+                                        <label class="form-label fw-bold">Nombre del Embajador <span class="text-danger">*</span></label>
                                         <input type="text" class="form-control" placeholder="Nombre completo..." t-model="state.newArchitectName"/>
                                     </div>
                                     <div class="row">
@@ -282,7 +282,7 @@
                                     </div>
                                     <button class="btn btn-secondary w-100" t-on-click="createArchitect">
                                         <i class="fa fa-plus-circle"></i>
-                                        Crear Arquitecto
+                                        Crear Embajador
                                     </button>
                                 </div>
                             </div>
@@ -575,7 +575,7 @@
                                         <t t-esc="state.selectedProjectName"/>
                                     </div>
                                     <div class="col-md-6">
-                                        <strong>Arquitecto:</strong><br/>
+                                        <strong>Embajador:</strong><br/>
                                         <t t-esc="state.selectedArchitectName"/>
                                     </div>
                                     <div class="col-md-6">

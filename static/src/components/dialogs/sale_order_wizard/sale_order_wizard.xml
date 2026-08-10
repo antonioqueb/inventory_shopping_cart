@@ -17,7 +17,7 @@
                             <div class="isc-eyebrow">Venta desde carrito</div>
                             <h3 class="isc-modal-title">Crear Orden de Venta</h3>
                             <p class="isc-modal-subtitle">
-                                Configura cliente, proyecto, arquitecto, precios, servicios y confirma la orden con los lotes seleccionados.
+                                Configura cliente, proyecto, embajador, precios, servicios y confirma la orden con los lotes seleccionados.
                             </p>
                             <div class="isc-hero-metrics">
                                 <span class="isc-chip">
@@ -53,7 +53,7 @@
 
                             <div class="step-item" t-att-class="{ active: state.currentStep >= 3, completed: state.currentStep > 3 }">
                                 <div class="step-number">3</div>
-                                <div class="step-label">Arquitecto</div>
+                                <div class="step-label">Embajador</div>
                             </div>
                             <div class="step-line" t-att-class="{ active: state.currentStep > 3 }"></div>
 
@@ -286,11 +286,11 @@
                         </t>
                     </div>
                     
-                    <!-- PASO 3: ARQUITECTO -->
+                    <!-- PASO 3: EMBAJADOR -->
                     <div class="step-content" t-if="state.currentStep === 3">
                         <h5 class="mb-3">
                             <i class="fa fa-user-circle text-primary me-2"></i>
-                            Seleccionar Arquitecto
+                            Seleccionar Embajador
                         </h5>
                         
                         <div class="btn-group w-100 mb-3" role="group">
@@ -331,7 +331,7 @@
                             <div class="alert alert-light border d-flex align-items-center mb-3" t-if="state.selectedArchitectName">
                                 <i class="fa fa-check-circle fa-2x text-success me-3"></i>
                                 <div>
-                                    <strong>Arquitecto seleccionado:</strong><br/>
+                                    <strong>Embajador seleccionado:</strong><br/>
                                     <t t-esc="state.selectedArchitectName"/>
                                 </div>
                             </div>
@@ -363,7 +363,7 @@
                                 <div class="card-body">
                                     <div class="mb-3">
                                         <label class="form-label fw-bold">
-                                            Nombre del Arquitecto <span class="text-danger">*</span>
+                                            Nombre del Embajador <span class="text-danger">*</span>
                                         </label>
                                         <input 
                                             type="text"
@@ -397,7 +397,7 @@
                                         t-on-click="createArchitect"
                                     >
                                         <i class="fa fa-plus-circle me-2"></i>
-                                        Crear Arquitecto
+                                        Crear Embajador
                                     </button>
                                 </div>
                             </div>
@@ -691,7 +691,7 @@
                                         <t t-esc="state.selectedProjectName"/>
                                     </div>
                                     <div class="col-md-4">
-                                        <strong>Arquitecto:</strong><br/>
+                                        <strong>Embajador:</strong><br/>
                                         <t t-esc="state.selectedArchitectName"/>
                                     </div>
                                     <div class="col-md-4">

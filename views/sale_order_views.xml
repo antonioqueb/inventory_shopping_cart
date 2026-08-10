@@ -225,11 +225,11 @@
                        context="{'default_partner_id': partner_id}"/>
 
                 <field name="x_architect_id"
-                       string="Arquitecto"
+                       string="Embajador"
                        domain="[('x_es_arquitecto', '=', True)]"/>
 
                 <!-- Referencia (client_order_ref): movida desde "Otra información"
-                     al frente del formulario, DEBAJO de Arquitecto — más abajo
+                     al frente del formulario, DEBAJO de Embajador — más abajo
                      se elimina la original de la pestaña. -->
                 <field name="client_order_ref" string="Referencia"/>
             </xpath>

@@ -492,7 +492,7 @@ class SaleOrder(models.Model):
 
     x_architect_id = fields.Many2one(
         'res.partner',
-        string='Arquitecto',
+        string='Embajador',
     )
 
     x_price_authorization_id = fields.Many2one(
