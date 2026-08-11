@@ -122,11 +122,21 @@ class SomWhatsappSend(models.TransientModel):
             'Documento enviado por WhatsApp (%s) al %s: %s'
         ) % (variant, self.phone, fname))
 
+        # Hoja NATIVA de compartir (Web Share API): en móvil el PDF viaja
+        # ADJUNTO de verdad (el usuario elige WhatsApp y sale el archivo
+        # con el mensaje). En escritorio sin Web Share cae a wa.me con la
+        # liga de descarga dentro del mensaje.
+        wa_url = 'https://wa.me/%s?text=%s' % (
+            self._som_normalize_phone(self.phone), quote(message))
         return {
-            'type': 'ir.actions.act_url',
-            'url': 'https://wa.me/%s?text=%s' % (
-                self._som_normalize_phone(self.phone), quote(message)),
-            'target': 'new',
+            'type': 'ir.actions.client',
+            'tag': 'som_share_pdf',
+            'params': {
+                'url': link,
+                'filename': fname,
+                'message': message,
+                'wa_url': wa_url,
+            },
         }
 
 
