@@ -376,9 +376,10 @@ class StockQuant(models.Model):
                     # FILA DEL LOTE EN 2 COLUMNAS:
                     #   col 1 (mitad izquierda del largo): LOTE centrado
                     #   col 2 (mitad derecha): logo SOM
-                    zpl_code += ("^FO415,40^A0R,120,120^FB740,1,0,C^FD"
+                    # +16 dots (2 mm) hacia arriba: lote y logo
+                    zpl_code += ("^FO431,40^A0R,120,120^FB740,1,0,C^FD"
                                  + lot_name + "^FS")
-                    zpl_code += "^FO405,980" + SOM_LOGO_ZPL + "^FS"
+                    zpl_code += "^FO421,980" + SOM_LOGO_ZPL + "^FS"
                     zpl_code += "^FO130,70^A0R,125,125^FD" + qty_str + "^FS"
                     # Barras un poco más angostas para dar lugar al NÚMERO DE
                     # LOTE legible (se perdió en el rediseño 'sin números' del
