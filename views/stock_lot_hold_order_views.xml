@@ -111,6 +111,14 @@
                         ⛔ RESERVA VENCIDA POR SEGUNDA VEZ — el material fue eliminado. El detalle de lo liberado quedó en el registro de abajo.
                     </div>
 
+                    <!-- Franja de CANCELADO: inconfundible, sobre el título. -->
+                    <div class="alert text-center fw-bold"
+                         style="font-size: 18px; letter-spacing: 3px; background: #3f3f46; color: #ffffff; border-left: 6px solid #18181b; text-transform: uppercase;"
+                         role="alert"
+                         invisible="state != 'cancel'">
+                        ✖ RESERVA CANCELADA — no aparta ningún material
+                    </div>
+
                     <div class="oe_title">
                         <h1>
                             <field name="name" readonly="1"/>
