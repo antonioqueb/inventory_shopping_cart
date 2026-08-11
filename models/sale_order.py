@@ -3,6 +3,7 @@
 
 import math
 import logging
+import re
 
 from markupsafe import Markup
 
@@ -1012,6 +1013,14 @@ class SaleOrder(models.Model):
              'autorización de precios; bajar de ahí re-bloquea la orden.',
     )
 
+    def _som_is_migrated_order(self):
+        """PARCHE TEMPORAL órdenes migradas: una referencia de cliente con
+        al menos 3 dígitos numéricos seguidos marca la orden como migrada
+        y la EXENTA de la autorización de precios (sin franja de precios
+        no autorizados y sin bloqueo al enviar/confirmar)."""
+        self.ensure_one()
+        return bool(re.search(r'\d{3}', self.client_order_ref or ''))
+
     @api.depends(
         'order_line.price_unit',
         'order_line.product_id',
@@ -1019,11 +1028,15 @@ class SaleOrder(models.Model):
         'x_price_authorization_id',
         'x_price_authorization_id.state',
         'x_authorized_floor_json',
+        'client_order_ref',
     )
     def _compute_has_low_prices(self):
         Product = self.env['product.template']
         threshold_level = Product._get_user_threshold_level()
         for order in self:
+            if order._som_is_migrated_order():
+                order.x_has_low_prices = False
+                continue
             approved = bool(
                 order.x_price_authorization_id
                 and order.x_price_authorization_id.state == 'approved')
@@ -1145,6 +1158,11 @@ class SaleOrder(models.Model):
     def _check_seller_low_price_block(self, action_name="realizar esta acción"):
         for order in self:
             if not order.x_has_low_prices:
+                continue
+
+            # Parche temporal: órdenes migradas (referencia con 3+ dígitos)
+            # avanzan sin autorización de precios.
+            if order._som_is_migrated_order():
                 continue
 
             if self.env.user.has_group('inventory_shopping_cart.group_price_authorizer'):
@@ -2081,6 +2099,13 @@ class SaleOrder(models.Model):
             # No se exenta a los autorizadores: check_price_authorization_needed
             # aplica el umbral según el rol (vendedor: P2, mayorista: P4,
             # autorizador: P5). Debajo de su umbral, todos requieren solicitud.
+            # PRECIOS BAJO EL UMBRAL: la orden SE CREA SIEMPRE — jamás se
+            # pierde la captura. Los precios bajos se TOPAN al umbral del rol
+            # (el precio más alto) y la solicitud de autorización nace ligada
+            # a la orden: al aprobarse, los precios BAJAN a lo solicitado
+            # (mismo mecanismo que la solicitud desde orden manual). Antes el
+            # flujo desviaba a solo-autorización y el vendedor perdía todo.
+            requested_low_prices = {}
             if not self.env.context.get('skip_auth_check'):
                 auth_result = self.env['product.template'].check_price_authorization_needed(
                     prices_map,
@@ -2088,27 +2113,19 @@ class SaleOrder(models.Model):
                 )
 
                 if auth_result.get('needs_authorization'):
-                    auth = self._create_cart_price_authorization(
-                        partner_id=partner_id,
-                        products=products,
-                        services=services,
-                        notes=notes,
-                        currency_code=currency_code,
-                        apply_tax=apply_tax,
-                        project_id=project_id,
-                        architect_id=architect_id,
-                    )
-
-                    return {
-                        'needs_authorization': True,
-                        'authorization_id': auth.id,
-                        'authorization_name': auth.name,
-                        'message': (
-                            f'Se detectaron precios por debajo del nivel permitido. '
-                            f'Se creó la solicitud {auth.name}. La orden de venta se '
-                            f'generará automáticamente cuando sea aprobada.'
-                        ),
-                    }
+                    Product = self.env['product.template']
+                    threshold_level = Product._get_user_threshold_level()
+                    for coll in (products or []), (services or []):
+                        for pd in coll:
+                            rec = self.env['product.product'].browse(pd['product_id'])
+                            if not rec.exists():
+                                continue
+                            threshold = Product._get_price_level_value(
+                                rec.product_tmpl_id, threshold_level, currency_code)
+                            price = float(pd.get('price_unit') or 0.0)
+                            if threshold > 0 and price < (threshold - 0.01):
+                                requested_low_prices[str(pd['product_id'])] = price
+                                pd['price_unit'] = threshold
 
             company_id = self.env.company.id
             invoice_id, shipping_id = self._resolve_partner_addresses(self.env, partner_id)
@@ -2178,10 +2195,64 @@ class SaleOrder(models.Model):
             sale_order.invalidate_recordset()
             sale_order.with_context(skip_auth_check=True).action_confirm()
 
+            clamp_message = ''
+            if requested_low_prices:
+                Product = self.env['product.template']
+                qty_by_pid = {}
+                for coll in (products or []), (services or []):
+                    for pd in coll:
+                        pid_str = str(pd['product_id'])
+                        if pid_str in requested_low_prices:
+                            qty_by_pid[pid_str] = qty_by_pid.get(pid_str, 0.0) \
+                                + float(pd.get('quantity') or 0.0)
+                auth = self.env['price.authorization'].create({
+                    'seller_id': self.env.user.id,
+                    'operation_type': 'sale',
+                    'partner_id': partner_id,
+                    'project_id': project_id,
+                    'currency_code': currency_code,
+                    'notes': (
+                        'Solicitud automática desde carrito: la orden '
+                        f'{sale_order.name} se creó con los precios TOPADOS '
+                        'al umbral del rol; al aprobarse bajarán a lo '
+                        'solicitado.'
+                    ),
+                    'sale_order_id': sale_order.id,
+                    'temp_data': {
+                        'source': 'manual_order',
+                        'sale_order_id': sale_order.id,
+                        'architect_id': architect_id,
+                    },
+                })
+                sale_order.x_price_authorization_id = auth.id
+                for pid_str, req_price in requested_low_prices.items():
+                    product = self.env['product.product'].browse(int(pid_str))
+                    tmpl = product.product_tmpl_id
+                    self.env['price.authorization.line'].create({
+                        'authorization_id': auth.id,
+                        'product_id': int(pid_str),
+                        'quantity': qty_by_pid.get(pid_str, 0.0),
+                        'lot_count': 0,
+                        'requested_price': req_price,
+                        'authorized_price': req_price,
+                        'medium_price': Product._get_price_level_value(tmpl, 'medium', currency_code),
+                        'minimum_price': Product._get_price_level_value(tmpl, 'minimum', currency_code),
+                        'level_4_price': Product._get_price_level_value(tmpl, 'level_4', currency_code),
+                        'level_5_price': Product._get_price_level_value(tmpl, 'level_5', currency_code),
+                    })
+                clamp_message = (
+                    'Precios por debajo del nivel permitido: la orden se '
+                    'guardó con el precio del umbral y se creó la solicitud '
+                    f'{auth.name}; al aprobarse, los precios bajarán a lo '
+                    'solicitado.'
+                )
+
             return {
                 'success': True,
                 'order_id': sale_order.id,
                 'order_name': sale_order.name,
+                'price_clamped': bool(requested_low_prices),
+                'message': clamp_message,
             }
 
         except UserError:
