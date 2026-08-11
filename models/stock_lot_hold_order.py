@@ -14,6 +14,22 @@ _logger = logging.getLogger(__name__)
 class StockLotHoldOrder(models.Model):
     _inherit = 'stock.lot.hold.order'
 
+    # Utilidad global de la reserva (suma de líneas). Mismo candado de
+    # grupo que la utilidad por línea.
+    x_utilidad_total = fields.Monetary(
+        string='Utilidad total',
+        compute='_compute_x_utilidad_total',
+        currency_field='currency_id',
+        groups='inventory_shopping_cart.group_price_authorizer',
+    )
+
+    @api.depends('line_ids.precio_total', 'line_ids.cantidad_m2',
+                 'line_ids.product_id', 'currency_id')
+    def _compute_x_utilidad_total(self):
+        for order in self:
+            order.x_utilidad_total = sum(
+                order.line_ids.mapped('x_utilidad'))
+
     # -------------------------------------------------------------------------
     # Líneas del apartado
     # -------------------------------------------------------------------------
@@ -1082,6 +1098,34 @@ class StockLotHoldOrder(models.Model):
 
 class StockLotHoldOrderLine(models.Model):
     _inherit = 'stock.lot.hold.order.line'
+
+    # Utilidad de la línea: total − (m² × costo destino). SOLO visible
+    # para autorizadores de precio (groups a nivel de CAMPO: el ORM niega
+    # la lectura a cualquier otro usuario, no es solo cosmético de vista).
+    # El costo (x_costo_mayor, MXN) se convierte a la moneda de la orden
+    # para restar peras con peras cuando el apartado va en USD.
+    x_utilidad = fields.Monetary(
+        string='Utilidad',
+        compute='_compute_x_utilidad',
+        currency_field='currency_id',
+        groups='inventory_shopping_cart.group_price_authorizer',
+    )
+
+    @api.depends('cantidad_m2', 'precio_total', 'product_id', 'currency_id')
+    def _compute_x_utilidad(self):
+        company = self.env.company
+        today = fields.Date.context_today(self)
+        for line in self:
+            cost_unit = 0.0
+            if line.product_id:
+                cost_unit = float(
+                    line.product_id.product_tmpl_id.x_costo_mayor or 0.0)
+            cost_total = (line.cantidad_m2 or 0.0) * cost_unit
+            cur = line.currency_id or company.currency_id
+            if cur and company.currency_id and cur != company.currency_id:
+                cost_total = company.currency_id._convert(
+                    cost_total, cur, company, today)
+            line.x_utilidad = (line.precio_total or 0.0) - cost_total
 
     x_price_selector = fields.Selection([
         ('high', 'N1'),
