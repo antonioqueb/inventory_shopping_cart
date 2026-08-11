@@ -360,6 +360,9 @@ class StockQuant(models.Model):
                     # Código de barras compacto, dentro de la franja
                     zpl_code += ("^FO22,330^BY2,2,80^BCR,80,N,N,N^FD"
                                  + lot_name + "^FS")
+                    # Logo SOM centrado en la mitad superior (que estaba
+                    # limpia): mismo bitmap embebido de la etiqueta Grande.
+                    zpl_code += "^FO225,180" + SOM_LOGO_ZPL + "^FS"
 
                 elif label_format == '20x10':
                     # Media: 10 cm ancho (800) × 20 cm largo (1600)
