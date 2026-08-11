@@ -349,29 +349,23 @@ class StockQuant(models.Model):
                 #   │ CANTIDAD      ▐║█║║█║█║║▌  │  ← mitad inferior
                 #   └─────────────────────────────┘
                 if label_format == '10x5':
-                    # Media: 5 cm ancho (400) × 10 cm largo (800)
-                    # TODO EL CONTENIDO EN LA MITAD INFERIOR DEL ANCHO
-                    # (franja x 8..200): la mitad superior de la etiqueta
-                    # queda LIMPIA (así se usa la media estándar en piso).
-                    # ^POI: la etiqueta completa gira 180° (salía atravesada
-                    # en la media física).
-                    zpl_code += "^PW400^LL800^POI"
-                    # Marco solo alrededor de la mitad inferior
-                    zpl_code += "^FO8,8^GB192,784,3^FS"
-                    # Nombre del material: 2 líneas compactas pegadas al
-                    # borde de la mitad (rotado: la última línea cae en el
-                    # origen y la 1ª apila hacia arriba).
-                    zpl_code += ("^FO112,25^A0R,40,40^FB750,2,4,C^FD"
+                    # GIRADA 90°: media horizontal — 10 cm de ancho (800) ×
+                    # 5 cm de alto (400), texto en orientación NORMAL (^A0N).
+                    # TODA la información va en la MITAD INFERIOR (y 200..392);
+                    # la mitad superior queda limpia.
+                    zpl_code += "^PW800^LL400"
+                    # Marco solo de la mitad inferior
+                    zpl_code += "^FO8,204^GB784,188,3^FS"
+                    # Nombre del material: 2 líneas centradas
+                    zpl_code += ("^FO10,214^A0N,36,36^FB780,2,4,C^FD"
                                  + product_name + "^FS")
-                    # Cantidad al inicio de la franja
-                    zpl_code += "^FO52,35^A0R,52,52^FD" + qty_str + "^FS"
-                    # Código de barras compacto, dentro de la franja
-                    zpl_code += ("^FO22,330^BY2,2,80^BCR,80,N,N,N^FD"
+                    # Cantidad a la izquierda
+                    zpl_code += "^FO25,320^A0N,55,55^FD" + qty_str + "^FS"
+                    # Código de barras al centro-derecha
+                    zpl_code += ("^FO270,312^BY2,2,72^BCN,72,N,N,N^FD"
                                  + lot_name + "^FS")
-                    # Logo SOM MINI dentro de la franja inferior, al final
-                    # del largo (la mitad superior queda LIMPIA, como se
-                    # planeó para esta media).
-                    zpl_code += "^FO25,600" + SOM_LOGO_10X5_ZPL + "^FS"
+                    # Logo SOM al extremo derecho de la franja
+                    zpl_code += "^FO628,330" + SOM_LOGO_CANTO_ZPL + "^FS"
 
                 elif label_format == '20x10':
                     # Media: 10 cm ancho (800) × 20 cm largo (1600)
