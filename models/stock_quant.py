@@ -363,6 +363,10 @@ class StockQuant(models.Model):
                     # apila hacia arriba — origen bajo + fuente menor.
                     zpl_code += ("^FO480,40^A0R,95,95^FB1520,2,8,C^FD"
                                  + product_name + "^FS")
+                    # NÚMERO DE LOTE EN GRANDE, centrado, justo debajo del
+                    # nombre (rotado: x menor = más abajo en la mitad superior)
+                    zpl_code += ("^FO405,40^A0R,72,72^FB1520,1,0,C^FD"
+                                 + lot_name + "^FS")
                     zpl_code += "^FO130,70^A0R,125,125^FD" + qty_str + "^FS"
                     # Barras un poco más angostas para dar lugar al NÚMERO DE
                     # LOTE legible (se perdió en el rediseño 'sin números' del
