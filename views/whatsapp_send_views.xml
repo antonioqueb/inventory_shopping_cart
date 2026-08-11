@@ -8,14 +8,19 @@
                 <group>
                     <field name="res_model" invisible="1"/>
                     <field name="res_id" invisible="1"/>
+                    <field name="x_report_name" invisible="1"/>
+                    <field name="x_filename" invisible="1"/>
+                    <field name="x_message" invisible="1"/>
                     <field name="partner_id"/>
-                    <field name="phone" placeholder="Ej. 8112345678 o +52 81 1234 5678"/>
                     <field name="report_choice" widget="radio"/>
                 </group>
+                <div class="text-muted mb-2">
+                    Al compartir se abrirá la hoja del sistema: elige WhatsApp
+                    y después el contacto — el PDF va adjunto con el mensaje.
+                </div>
+                <widget name="som_whatsapp_share"/>
                 <footer>
-                    <button name="action_send" type="object" string="Abrir WhatsApp"
-                            class="btn-success" icon="fa-whatsapp"/>
-                    <button string="Cancelar" special="cancel" class="btn-secondary"/>
+                    <button string="Cerrar" special="cancel" class="btn-secondary"/>
                 </footer>
             </form>
         </field>

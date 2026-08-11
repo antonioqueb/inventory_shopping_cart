@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="inventory_shopping_cart.SomWhatsappShare">
+        <button class="btn btn-success btn-lg w-100" t-on-click="onShare">
+            <i class="fa fa-whatsapp me-2"/> Compartir por WhatsApp
+        </button>
+    </t>
+</templates>

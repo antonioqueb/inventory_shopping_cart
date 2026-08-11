@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
 import base64
-import re
 from urllib.parse import quote
 
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 
-# Reporte por modelo y variante. El envío es por ENLACE wa.me (sin API de
-# WhatsApp): abre la app del usuario con el mensaje listo — el archivo viaja
-# como liga de descarga con token (WhatsApp no permite adjuntar por URL).
+# Reporte por modelo y variante. El PDF se comparte por la hoja NATIVA del
+# sistema (Web Share API) DENTRO del gesto del usuario — el contacto se
+# elige ahí mismo, sin capturar teléfono. Fallback (equipos sin Web
+# Share): wa.me/?text= con liga de descarga — WhatsApp pide elegir el
+# contacto.
 REPORTS = {
     'sale.order': {
         'detail': 'stock_lot_dimensions.action_report_sale_order_custom_detail',
@@ -28,13 +29,17 @@ class SomWhatsappSend(models.TransientModel):
     res_model = fields.Char(required=True)
     res_id = fields.Integer(required=True)
     partner_id = fields.Many2one('res.partner', string='Cliente', readonly=True)
-    phone = fields.Char(
-        string='WhatsApp del cliente', required=True,
-        help='Con lada internacional; a 10 dígitos se antepone 52 (México).')
     report_choice = fields.Selection([
         ('detail', 'Reporte detallado'),
         ('summary', 'Resumen'),
     ], string='Documento a enviar', default='detail', required=True)
+
+    # Payload PRE-CALCULADO (compute → viaja al cliente con cada cambio del
+    # radio): al tocar Compartir, el JS solo descarga el PDF y abre la hoja
+    # nativa — sin viajes extra que maten el gesto del usuario.
+    x_report_name = fields.Char(compute='_compute_share_payload')
+    x_filename = fields.Char(compute='_compute_share_payload')
+    x_message = fields.Text(compute='_compute_share_payload')
 
     @api.model
     def _som_open_for(self, record, partner):
@@ -48,7 +53,6 @@ class SomWhatsappSend(models.TransientModel):
                 'default_res_model': record._name,
                 'default_res_id': record.id,
                 'default_partner_id': partner.id if partner else False,
-                'default_phone': (partner.phone or '') if partner else '',
             },
         }
 
@@ -59,36 +63,72 @@ class SomWhatsappSend(models.TransientModel):
             raise UserError(_('El documento ya no existe.'))
         return record
 
-    @staticmethod
-    def _som_normalize_phone(phone):
-        digits = re.sub(r'\D', '', phone or '')
-        if len(digits) == 10:
-            digits = '52' + digits
-        if len(digits) < 11:
-            raise UserError(_(
-                'El número "%s" no parece un WhatsApp válido: captúralo '
-                'con lada (10 dígitos nacionales o formato internacional).'
-            ) % (phone or ''))
-        return digits
-
-    def action_send(self):
+    def _som_build_message(self, record):
         self.ensure_one()
-        record = self._som_record()
-        report_ref = (REPORTS.get(self.res_model) or {}).get(self.report_choice)
-        if not report_ref:
-            raise UserError(_('No hay reporte configurado para este documento.'))
+        if self.res_model == 'sale.order':
+            label = ('su orden de venta'
+                     if getattr(record, 'state', '') in ('sale', 'done')
+                     else 'su cotización')
+        else:
+            label = 'su reserva de material'
+        partner_name = (self.partner_id.name or '').strip()
+        saludo = 'Buen día%s:' % (' ' + partner_name if partner_name else '')
+        # Sin remitente a propósito: quien envía queda claro por el número.
+        return (
+            '%s\n\n'
+            'Le compartimos el %s de %s *%s*.\n\n'
+            'Quedamos atentos a cualquier duda. Saludos cordiales.'
+        ) % (
+            saludo,
+            'reporte detallado' if self.report_choice == 'detail' else 'resumen',
+            label, record.display_name,
+        )
 
+    @api.depends('res_model', 'res_id', 'report_choice', 'partner_id')
+    def _compute_share_payload(self):
+        for wiz in self:
+            wiz.x_report_name = ''
+            wiz.x_filename = ''
+            wiz.x_message = ''
+            if not wiz.res_model or not wiz.res_id:
+                continue
+            record = wiz.env.get(wiz.res_model)
+            record = record.browse(wiz.res_id).exists() if record is not None else None
+            if not record:
+                continue
+            ref = (REPORTS.get(wiz.res_model) or {}).get(wiz.report_choice)
+            if not ref:
+                continue
+            report = wiz.env.ref(ref, raise_if_not_found=False)
+            if not report:
+                continue
+            variant = 'Detalle' if wiz.report_choice == 'detail' else 'Resumen'
+            wiz.x_report_name = report.report_name
+            wiz.x_filename = '%s - %s.pdf' % (
+                (record.display_name or 'Documento').replace('/', '-'), variant)
+            wiz.x_message = wiz._som_build_message(record)
+
+    @api.model
+    def get_fallback_wa_url(self, res_model, res_id, report_choice):
+        """Plan B (sin Web Share): genera el PDF como adjunto con token y
+        regresa wa.me/?text= — WhatsApp abre con selector de contacto y el
+        mensaje trae la liga de descarga."""
+        record = self.env[res_model].browse(int(res_id)).exists()
+        if not record:
+            raise UserError(_('El documento ya no existe.'))
+        ref = (REPORTS.get(res_model) or {}).get(report_choice)
+        if not ref:
+            raise UserError(_('No hay reporte configurado.'))
         pdf, _ptype = self.env['ir.actions.report'].sudo()._render_qweb_pdf(
-            report_ref, [record.id])
-
-        variant = ('Detalle' if self.report_choice == 'detail' else 'Resumen')
+            ref, [record.id])
+        variant = 'Detalle' if report_choice == 'detail' else 'Resumen'
         fname = '%s - %s.pdf' % (
             (record.display_name or 'Documento').replace('/', '-'), variant)
         att = self.env['ir.attachment'].sudo().create({
             'name': fname,
             'type': 'binary',
             'datas': base64.b64encode(pdf),
-            'res_model': self.res_model,
+            'res_model': res_model,
             'res_id': record.id,
             'mimetype': 'application/pdf',
         })
@@ -96,48 +136,22 @@ class SomWhatsappSend(models.TransientModel):
         base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url') or ''
         link = '%s/web/content/%s?download=true&access_token=%s' % (
             base_url, att.id, att.access_token)
+        wiz = self.new({'res_model': res_model, 'res_id': int(res_id),
+                        'report_choice': report_choice,
+                        'partner_id': getattr(record, 'partner_id',
+                                              self.env['res.partner']).id})
+        message = wiz._som_build_message(record) + (
+            '\n\nPuede descargar el documento aquí:\n%s' % link)
+        return 'https://wa.me/?text=%s' % quote(message)
 
-        if self.res_model == 'sale.order':
-            label = ('su orden de venta'
-                     if getattr(record, 'state', '') in ('sale', 'done')
-                     else 'su cotización')
-        else:
-            label = 'su reserva de material'
-
-        partner_name = (self.partner_id.name or '').strip()
-        saludo = 'Buen día%s:' % (' ' + partner_name if partner_name else '')
-        # Sin remitente a propósito: quien envía queda claro por el número.
-        message = (
-            '%s\n\n'
-            'Le compartimos el %s de %s *%s*.\n\n'
-            'Puede consultarlo y descargarlo aquí:\n%s\n\n'
-            'Quedamos atentos a cualquier duda. Saludos cordiales.'
-        ) % (
-            saludo,
-            'reporte detallado' if self.report_choice == 'detail' else 'resumen',
-            label, record.display_name, link,
-        )
-
-        record.message_post(body=_(
-            'Documento enviado por WhatsApp (%s) al %s: %s'
-        ) % (variant, self.phone, fname))
-
-        # Hoja NATIVA de compartir (Web Share API): en móvil el PDF viaja
-        # ADJUNTO de verdad (el usuario elige WhatsApp y sale el archivo
-        # con el mensaje). En escritorio sin Web Share cae a wa.me con la
-        # liga de descarga dentro del mensaje.
-        wa_url = 'https://wa.me/%s?text=%s' % (
-            self._som_normalize_phone(self.phone), quote(message))
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'som_share_pdf',
-            'params': {
-                'url': link,
-                'filename': fname,
-                'message': message,
-                'wa_url': wa_url,
-            },
-        }
+    @api.model
+    def log_shared(self, res_model, res_id, report_choice):
+        record = self.env[res_model].browse(int(res_id)).exists()
+        if record and hasattr(record, 'message_post'):
+            record.message_post(body=_(
+                'Documento compartido por WhatsApp (%s).'
+            ) % ('Detalle' if report_choice == 'detail' else 'Resumen'))
+        return True
 
 
 class SaleOrderWhatsapp(models.Model):
