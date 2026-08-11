@@ -369,7 +369,9 @@ class StockQuant(models.Model):
                     zpl_code += "^PW800^LL1600"
                     # Nombre pegado al borde superior (rotado: x mayor = más
                     # arriba; la última línea cae en el origen).
-                    zpl_code += ("^FO560,40^A0R,95,95^FB1520,2,8,C^FD"
+                    # Nombre a 70 dots (antes 95): ~0.9 cm por línea a 203
+                    # dpi — deja protagonismo al lote.
+                    zpl_code += ("^FO620,40^A0R,70,70^FB1520,2,8,C^FD"
                                  + product_name + "^FS")
                     # FILA DEL LOTE EN 2 COLUMNAS:
                     #   col 1 (mitad izquierda del largo): LOTE centrado
