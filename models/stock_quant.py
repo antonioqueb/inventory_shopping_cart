@@ -337,21 +337,21 @@ class StockQuant(models.Model):
                 #   └─────────────────────────────┘
                 if label_format == '10x5':
                     # Media: 5 cm ancho (400) × 10 cm largo (800)
+                    # TODO EL CONTENIDO EN LA MITAD INFERIOR DEL ANCHO
+                    # (franja x 8..200): la mitad superior de la etiqueta
+                    # queda LIMPIA (así se usa la media estándar en piso).
                     zpl_code += "^PW400^LL800"
-                    # Marco y línea divisoria a la mitad
-                    zpl_code += "^FO8,8^GB384,784,3^FS"
-                    zpl_code += "^FO200,8^GB3,784,3^FS"
-                    # ARRIBA: solo el nombre del material, centrado, 2 líneas.
-                    # OJO rotado (^A0R + ^FB): la ÚLTIMA línea cae en el origen
-                    # y las anteriores se apilan HACIA ARRIBA (+x). Con origen
-                    # alto la 1ª línea se salía de la etiqueta: origen bajo y
-                    # fuente menor para que ambas líneas queden dentro.
-                    zpl_code += ("^FO250,25^A0R,48,48^FB750,2,4,C^FD"
+                    # Marco solo alrededor de la mitad inferior
+                    zpl_code += "^FO8,8^GB192,784,3^FS"
+                    # Nombre del material: 2 líneas compactas pegadas al
+                    # borde de la mitad (rotado: la última línea cae en el
+                    # origen y la 1ª apila hacia arriba).
+                    zpl_code += ("^FO112,25^A0R,40,40^FB750,2,4,C^FD"
                                  + product_name + "^FS")
-                    # ABAJO izquierda: la cantidad
-                    zpl_code += "^FO65,35^A0R,66,66^FD" + qty_str + "^FS"
-                    # ABAJO derecha: código de barras grande sin números
-                    zpl_code += ("^FO25,330^BY3,2,170^BCR,170,N,N,N^FD"
+                    # Cantidad al inicio de la franja
+                    zpl_code += "^FO52,35^A0R,52,52^FD" + qty_str + "^FS"
+                    # Código de barras compacto, dentro de la franja
+                    zpl_code += ("^FO22,330^BY2,2,80^BCR,80,N,N,N^FD"
                                  + lot_name + "^FS")
 
                 elif label_format == '20x10':
