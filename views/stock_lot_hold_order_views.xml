@@ -94,6 +94,23 @@
                         </button>
                     </div>
 
+                    <!-- Franja de VENCIDO: 1er vencimiento mantiene el
+                         material; renovar la quita; el 2º lo elimina. -->
+                    <field name="x_is_expired" invisible="1"/>
+                    <field name="x_expired_count" invisible="1"/>
+                    <div class="alert alert-danger text-center fw-bold"
+                         style="font-size: 15px; letter-spacing: 1px; border-left: 6px solid #dc2626;"
+                         role="alert"
+                         invisible="not x_is_expired or x_expired_count &gt;= 2">
+                        ⛔ RESERVA VENCIDA — el material sigue apartado. Renueva para conservarlo: al SEGUNDO vencimiento se eliminará automáticamente.
+                    </div>
+                    <div class="alert alert-danger text-center fw-bold"
+                         style="font-size: 15px; letter-spacing: 1px; border-left: 6px solid #7f1d1d;"
+                         role="alert"
+                         invisible="not x_is_expired or x_expired_count &lt; 2">
+                        ⛔ RESERVA VENCIDA POR SEGUNDA VEZ — el material fue eliminado. El detalle de lo liberado quedó en el registro de abajo.
+                    </div>
+
                     <div class="oe_title">
                         <h1>
                             <field name="name" readonly="1"/>
