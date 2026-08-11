@@ -306,14 +306,17 @@
         <field name="arch" type="xml">
             <list editable="top" create="0" delete="0"
                   default_order="x_cost_reviewed desc, name">
-                <field name="x_cost_reviewed" widget="boolean_favorite" string="✓"/>
-                <field name="default_code" optional="show" readonly="1"/>
+                <!-- Estrella nativa de Odoo, columna angosta y sin texto -->
+                <field name="x_cost_reviewed" widget="boolean_favorite" string="★" nolabel="1"/>
                 <field name="name" readonly="1"/>
                 <field name="categ_id" optional="hide" readonly="1"/>
-                <field name="x_costo_usd_edit"/>
-                <field name="x_costo_mxn_edit" optional="show"/>
+                <field name="x_costo_usd_edit" string="Costo USD"/>
+                <field name="x_costo_mxn_edit" string="Costo MXN" optional="hide"/>
                 <field name="x_costo_mayor_usd" string="All-In USD" readonly="1" optional="show"/>
                 <field name="x_costo_mayor" string="All-In MXN" readonly="1" optional="hide"/>
+                <field name="x_is_fixed_price" string="Fijo"/>
+                <field name="x_fixed_price" string="Precio fijo MXN"
+                       readonly="not x_is_fixed_price" optional="show"/>
                 <field name="x_utilidad" string="Util. 1 %"/>
                 <field name="x_utilidad_media" string="Util. 2 %"/>
                 <field name="x_utilidad_minima" string="Util. 3 %"/>
@@ -322,6 +325,8 @@
                 <field name="x_price_usd_1" string="Precio 1 USD" readonly="1"/>
                 <field name="x_price_usd_2" string="Precio 2 USD" readonly="1"/>
                 <field name="x_price_usd_3" string="Precio 3 USD" readonly="1"/>
+                <field name="x_price_usd_4" string="Precio 4 USD" readonly="1" optional="hide"/>
+                <field name="x_price_usd_5" string="Precio 5 USD" readonly="1" optional="hide"/>
                 <field name="x_price_mxn_1" string="Precio 1 MXN" readonly="1" optional="hide"/>
                 <field name="x_price_mxn_2" string="Precio 2 MXN" readonly="1" optional="hide"/>
                 <field name="x_price_mxn_3" string="Precio 3 MXN" readonly="1" optional="hide"/>
@@ -354,7 +359,7 @@
         <field name="view_mode">list</field>
         <field name="view_id" ref="view_product_template_list_som_cost_editor"/>
         <field name="search_view_id" ref="view_product_template_search_som_cost_editor"/>
-        <field name="domain">[('type', '!=', 'service')]</field>
+        <field name="domain">['|', ('type', '!=', 'service'), ('is_storable', '=', True)]</field>
     </record>
 
     <menuitem id="menu_som_cost_price_editor"

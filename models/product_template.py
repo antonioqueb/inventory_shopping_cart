@@ -210,6 +210,29 @@ class ProductTemplate(models.Model):
              "Nivel 3 = Precio Fijo * (1 - %Utilidad Mínima / 100)."
     )
 
+    # Proxy checkbox del modo de precio para la mesa Costos y Precios:
+    # palomeado = Precio Fijo (x_pricing_mode='fixed'). El inverse escribe
+    # x_pricing_mode vía write(), así que el recálculo automático de la
+    # escalera se dispara solo (price_triggers).
+    x_is_fixed_price = fields.Boolean(
+        string='Precio fijo',
+        compute='_compute_x_is_fixed_price',
+        inverse='_inverse_x_is_fixed_price',
+        help='Palomeado: el precio parte del Precio Fijo base y las '
+             'utilidades bajan como niveles de descuento. Sin palomear: '
+             'precio calculado = costo all-in + utilidad.',
+    )
+
+    @api.depends('x_pricing_mode')
+    def _compute_x_is_fixed_price(self):
+        for rec in self:
+            rec.x_is_fixed_price = rec.x_pricing_mode == 'fixed'
+
+    def _inverse_x_is_fixed_price(self):
+        for rec in self:
+            rec.x_pricing_mode = 'fixed' if rec.x_is_fixed_price \
+                else 'calculated'
+
     # === ESTRATEGIA DE PRECIOS: UTILIDADES DIRECTAS ===
 
     x_utilidad = fields.Float(
