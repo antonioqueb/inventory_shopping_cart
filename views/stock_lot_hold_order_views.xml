@@ -111,6 +111,16 @@
                         ⛔ RESERVA VENCIDA POR SEGUNDA VEZ — el material fue eliminado. El detalle de lo liberado quedó en el registro de abajo.
                     </div>
 
+                    <!-- Franja verde: la reserva ya es orden de venta. -->
+                    <div class="alert alert-success text-center fw-bold"
+                         style="font-size: 16px; letter-spacing: 2px; border-left: 6px solid #059669; text-transform: uppercase;"
+                         role="alert"
+                         invisible="not sale_order_id">
+                        ✔ CONVERTIDA A ORDEN DE VENTA
+                        <field name="sale_order_id" readonly="1" nolabel="1" class="fw-bold"
+                               options="{'no_create': True}" style="pointer-events: auto;"/>
+                    </div>
+
                     <!-- Franja de CANCELADO: inconfundible, sobre el título. -->
                     <div class="alert text-center fw-bold"
                          style="font-size: 18px; letter-spacing: 3px; background: #3f3f46; color: #ffffff; border-left: 6px solid #18181b; text-transform: uppercase;"
