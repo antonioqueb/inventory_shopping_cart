@@ -1527,9 +1527,14 @@ class StockLotHoldOrderLine(models.Model):
                 continue
 
             # Hold activo de OTRA reserva: la placa ya está apartada.
+            # APARTADO PARCIAL: si el hold solo retiene su parcialidad
+            # (formato/pieza), el remanente sí se ofrece — el tope por
+            # lo libre (som_free_qty) descuenta lo retenido.
             if getattr(quant, 'x_tiene_hold', False) and quant.x_hold_activo_id:
                 if not hold_order_id or quant.x_hold_activo_id.id != hold_order_id:
-                    continue
+                    if not hasattr(quant, 'som_hold_blocks_fully') \
+                            or quant.som_hold_blocks_fully():
+                        continue
 
             # Reserva nativa activa en otra SO / entrega. Solo puede existir si el
             # quant tiene cantidad reservada, así evitamos una búsqueda por placa libre.
