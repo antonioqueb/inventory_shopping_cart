@@ -364,7 +364,12 @@ class StockQuant(models.Model):
                     zpl_code += ("^FO480,40^A0R,95,95^FB1520,2,8,C^FD"
                                  + product_name + "^FS")
                     zpl_code += "^FO130,70^A0R,125,125^FD" + qty_str + "^FS"
-                    zpl_code += ("^FO30,620^BY5,2,360^BCR,360,N,N,N^FD"
+                    # Barras un poco más angostas para dar lugar al NÚMERO DE
+                    # LOTE legible (se perdió en el rediseño 'sin números' del
+                    # 2026-08-07 y en piso se necesita leerlo a ojo).
+                    zpl_code += ("^FO95,620^BY5,2,295^BCR,295,N,N,N^FD"
+                                 + lot_name + "^FS")
+                    zpl_code += ("^FO25,620^A0R,60,60^FD"
                                  + lot_name + "^FS")
 
                 zpl_code += "^XZ"
