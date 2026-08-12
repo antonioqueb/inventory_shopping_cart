@@ -21,9 +21,14 @@
                     <group string="Configuración Logística y Arancelaria"
                            groups="inventory_shopping_cart.group_price_authorizer">
                         <group>
-                            <field name="x_origin_country_id"/>
-                            <field name="x_pol_id" options="{'no_create': True}"/>
-                            <field name="x_pod_id" options="{'no_create': True}"/>
+                            <field name="x_freight_mode" widget="radio" options="{'horizontal': true}"/>
+                            <field name="x_national_route_id"
+                                   invisible="x_freight_mode != 'national'"
+                                   required="x_freight_mode == 'national'"
+                                   options="{'no_create': True}"/>
+                            <field name="x_origin_country_id" invisible="x_freight_mode == 'national'"/>
+                            <field name="x_pol_id" options="{'no_create': True}" invisible="x_freight_mode == 'national'"/>
+                            <field name="x_pod_id" options="{'no_create': True}" invisible="x_freight_mode == 'national'"/>
                             <field name="x_naviera_id"
                                    domain="[('category_id.name', '=', 'Naviera')]"
                                    options="{'no_create': True}"/>
@@ -33,7 +38,7 @@
                         </group>
                         <group>
                             <field name="x_container_capacity"/>
-                            <field name="x_arancel_pct"/>
+                            <field name="x_arancel_pct" invisible="x_freight_mode == 'national'"/>
                             <button name="action_update_costs"
                                     string="Recalcular Costos Ahora"
                                     type="object"
