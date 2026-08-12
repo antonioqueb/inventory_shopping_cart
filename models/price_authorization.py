@@ -1,8 +1,14 @@
 # -*- coding: utf-8 -*-
+import logging
 import math
+
+from markupsafe import Markup
+
 from odoo import models, fields, api
 from odoo.exceptions import UserError
 from odoo.tools import html2plaintext
+
+_logger = logging.getLogger(__name__)
 
 
 class PriceAuthorization(models.Model):
@@ -111,35 +117,84 @@ class PriceAuthorization(models.Model):
 
         return records
 
+    @api.model
+    def _som_authorizer_users(self):
+        """Autorizadores de precios mínimos, tolerante a Odoo 19.
+
+        `group.user_ids` solo trae a quienes tienen el grupo DIRECTO; los
+        que lo reciben por IMPLICACIÓN de otro grupo viven en `all_user_ids`
+        — leer solo user_ids dejaba autorizadores sin notificar (o a todos,
+        si nadie lo tenía directo) en TODAS las apps comerciales.
+        """
+        Users = self.env['res.users']
+        group = self.env.ref(
+            'inventory_shopping_cart.group_price_authorizer',
+            raise_if_not_found=False)
+        if not group:
+            return Users
+
+        users = Users
+        for fname in ('all_user_ids', 'user_ids', 'users'):
+            if fname in group._fields:
+                users |= group[fname]
+
+        if not users:
+            for fname in ('all_group_ids', 'group_ids', 'groups_id'):
+                if fname in Users._fields:
+                    users = Users.search([(fname, 'in', group.id)])
+                    break
+
+        return users.filtered(lambda u: u.active and not u.share)
+
     def _notify_authorizers(self):
-        """Notifica a todos los usuarios autorizadores sobre la nueva solicitud"""
+        """Notifica a TODOS los autorizadores la nueva solicitud: actividad
+        (systray) + mención en el chatter (inbox/correo). Este es el punto
+        único por el que pasan todas las apps comerciales (carrito, quote,
+        orden manual, holds): toda solicitud nace en create()."""
         self.ensure_one()
 
-        authorizer_group = self.env.ref('inventory_shopping_cart.group_price_authorizer')
-        authorizers = authorizer_group.user_ids.filtered(lambda u: u.id != self.seller_id.id)
+        authorizers = self._som_authorizer_users().filtered(
+            lambda u: u.id != self.seller_id.id)
 
         if not authorizers:
+            _logger.warning(
+                "[PRICE AUTH] %s creada SIN autorizadores a quien notificar "
+                "(grupo Autorizador de Precios Mínimos vacío o solo el "
+                "propio vendedor).", self.name)
             return
 
         activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
         if not activity_type:
             activity_type = self.env['mail.activity.type'].search([('name', '=', 'To Do')], limit=1)
 
+        note = (
+            f"<p>Se requiere su autorización para:</p>"
+            f"<ul>"
+            f"<li><strong>Vendedor:</strong> {self.seller_id.name}</li>"
+            f"<li><strong>Cliente:</strong> {self.partner_id.name}</li>"
+            f"<li><strong>Operación:</strong> {'Venta' if self.operation_type == 'sale' else 'Apartado'}</li>"
+            f"<li><strong>Productos:</strong> {len(self.line_ids)} productos</li>"
+            f"</ul>"
+        )
+
         for authorizer in authorizers:
             self.activity_schedule(
                 activity_type_id=activity_type.id,
                 summary=f'Autorización {self.name}',
-                note=f"""
-                    <p>Se requiere su autorización para:</p>
-                    <ul>
-                        <li><strong>Vendedor:</strong> {self.seller_id.name}</li>
-                        <li><strong>Cliente:</strong> {self.partner_id.name}</li>
-                        <li><strong>Operación:</strong> {'Venta' if self.operation_type == 'sale' else 'Apartado'}</li>
-                        <li><strong>Productos:</strong> {len(self.line_ids)} productos</li>
-                    </ul>
-                """,
+                note=note,
                 user_id=authorizer.id,
             )
+
+        # Mención en el chatter → notificación de inbox/correo real. La
+        # actividad sola vive en el systray y era fácil de no ver.
+        self.message_post(
+            body=Markup(
+                '<p><b>🔐 Autorización de precios mínimos requerida: %s</b></p>%s'
+            ) % (self.name, Markup(note)),
+            partner_ids=authorizers.partner_id.ids,
+            message_type='comment',
+            subtype_xmlid='mail.mt_comment',
+        )
 
     def _notify_seller(self, approved=True):
         """Notifica al vendedor sobre la decisión"""

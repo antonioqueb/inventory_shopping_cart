@@ -1250,13 +1250,18 @@ class SaleOrder(models.Model):
 
     def _som_group_users(self, group):
         """Usuarios de un grupo, tolerante a Odoo 19: res.groups ya no tiene
-        'users'; se resuelve por el campo que exista."""
+        'users'; se resuelve por el campo que exista. all_user_ids va PRIMERO
+        y se UNE con user_ids: solo user_ids omite a quienes reciben el grupo
+        por IMPLICACIÓN de otro grupo (autorizadores sin notificar)."""
         Users = self.env['res.users']
         if not group:
             return Users
-        for fname in ('user_ids', 'users'):
+        users = Users
+        for fname in ('all_user_ids', 'user_ids', 'users'):
             if fname in group._fields:
-                return group[fname]
+                users |= group[fname]
+        if users:
+            return users.filtered(lambda u: u.active and not u.share)
         for fname in ('all_group_ids', 'group_ids', 'groups_id'):
             if fname in Users._fields:
                 return Users.search([
