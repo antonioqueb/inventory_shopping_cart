@@ -1733,10 +1733,15 @@ class SaleOrder(models.Model):
 
     def write(self, vals):
         # ÓRDENES MIGRADAS: el core reescribe date_order al confirmar
-        # (now()); para una orden migrada eso destruye su fecha histórica
-        # y ensucia el mes actual en Analytics — se descarta ese cambio.
-        if 'date_order' in vals and not self.env.context.get(
-                'som_allow_migrated_date_change'):
+        # (now() junto con state='sale'); para una orden migrada eso
+        # destruye su fecha histórica y ensucia el mes actual en
+        # Analytics — se descarta SOLO ese pisotón automático. Las
+        # ediciones manuales de la fecha (write sin cambio de estado)
+        # pasan normal: así se captura la fecha histórica.
+        if 'date_order' in vals \
+                and vals.get('state') in ('sale', 'done') \
+                and not self.env.context.get(
+                    'som_allow_migrated_date_change'):
             keep = self.filtered(
                 lambda o: hasattr(o, '_som_is_migrated_order')
                 and o._som_is_migrated_order() and o.date_order)
