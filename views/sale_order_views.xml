@@ -37,13 +37,20 @@
                         invisible="state == 'cancel' or not x_discount_needs_auth"
                         groups="inventory_shopping_cart.group_price_authorizer"/>
 
-                <!-- Exención de IVA en servicios -->
+                <!-- Exención de IVA: acción DIRECTA y exclusiva. Solo la ven
+                     (y accionan) el Autorizador de Precios Mínimos y el Visor
+                     del Dashboard (SOM Analytics) — el autorizador implica al
+                     visor, por eso basta el grupo del visor. Los vendedores ya
+                     no tienen flujo de solicitud. -->
                 <field name="x_iva_exempt_state" invisible="1"/>
-                <button name="action_request_iva_exemption"
-                        string="Solicitar quitar IVA"
+                <button name="action_remove_iva"
+                        string="Eliminar IVA"
                         type="object"
                         class="btn-warning"
-                        invisible="state == 'cancel' or x_iva_exempt_state in ('requested', 'approved')"/>
+                        invisible="state == 'cancel' or x_iva_exempt_state == 'approved'"
+                        groups="inventory_shopping_cart.group_dashboard_viewer"/>
+                <!-- Solicitudes EN VUELO del flujo anterior: los autorizadores
+                     aún pueden resolverlas; no se generan nuevas. -->
                 <button name="action_approve_iva_exemption"
                         string="Aprobar quitar IVA"
                         type="object"

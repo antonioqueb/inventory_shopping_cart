@@ -1385,6 +1385,55 @@ class SaleOrder(models.Model):
                 subtype_xmlid='mail.mt_comment',
             )
 
+    def _som_user_can_remove_iva(self):
+        """Eliminar IVA es acción DIRECTA y exclusiva de dos perfiles:
+        Autorizador de Precios Mínimos y Visor del Dashboard (SOM
+        Analytics). El autorizador implica al visor, así que basta el
+        grupo del visor, pero se validan ambos por claridad/robustez."""
+        user = self.env.user
+        return (
+            user.has_group('inventory_shopping_cart.group_price_authorizer')
+            or user.has_group('inventory_shopping_cart.group_dashboard_viewer')
+        )
+
+    def _som_remove_iva_from_lines(self):
+        """Retira el IVA 16% de TODAS las líneas de la orden."""
+        self.ensure_one()
+        for line in self.order_line:
+            if line.product_id and not line.display_type:
+                iva = line.tax_ids.filtered(
+                    lambda t: t.type_tax_use == 'sale'
+                    and t.amount_type == 'percent' and t.amount == 16)
+                if iva:
+                    line.with_context(som_skip_iva_force=True).tax_ids = [
+                        (3, t.id) for t in iva]
+
+    def action_remove_iva(self):
+        """ELIMINAR IVA directo (sin flujo de solicitud): solo Autorizador
+        de Precios Mínimos o Visor del Dashboard (SOM Analytics)."""
+        self.ensure_one()
+        if not self._som_user_can_remove_iva():
+            raise UserError(
+                "Solo un Autorizador de Precios Mínimos o un Visor del "
+                "Dashboard (SOM Analytics) puede eliminar el IVA.")
+        if self.state == 'cancel':
+            raise UserError("No se puede eliminar el IVA de una orden cancelada.")
+        if self.x_iva_exempt_state == 'approved':
+            raise UserError("El IVA ya fue eliminado en esta orden.")
+        self.x_iva_exempt_state = 'approved'
+        self._som_remove_iva_from_lines()
+        self.message_post(body=Markup(
+            f"<p>🧾 <b>IVA ELIMINADO</b> directamente por "
+            f"{self.env.user.name}. Se retiró el IVA 16% de la orden.</p>"
+        ))
+        if self.user_id and self.user_id != self.env.user:
+            self._som_notify_users(
+                self.user_id,
+                f"IVA eliminado: {self.name}",
+                f"{self.env.user.name} eliminó el IVA de la orden {self.name}.",
+            )
+        return True
+
     def action_request_iva_exemption(self):
         self.ensure_one()
         if self.x_iva_exempt_state == 'approved':
@@ -1415,14 +1464,7 @@ class SaleOrder(models.Model):
             raise UserError("No hay solicitud de exención de IVA pendiente.")
         self.x_iva_exempt_state = 'approved'
         # Con la exención aprobada, se retira el IVA 16% de TODAS las líneas.
-        for line in self.order_line:
-            if line.product_id and not line.display_type:
-                iva = line.tax_ids.filtered(
-                    lambda t: t.type_tax_use == 'sale'
-                    and t.amount_type == 'percent' and t.amount == 16)
-                if iva:
-                    line.with_context(som_skip_iva_force=True).tax_ids = [
-                        (3, t.id) for t in iva]
+        self._som_remove_iva_from_lines()
         self.message_post(body=Markup(
             f"<p>✅ <b>Exención de IVA APROBADA</b> por "
             f"{self.env.user.name}. Se retiró el IVA 16% de la orden.</p>"
