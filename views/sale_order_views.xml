@@ -17,7 +17,11 @@
                         invisible="state == 'cancel' or not x_has_low_prices"
                         groups="inventory_shopping_cart.group_seller"/>
 
-                <!-- Autorización de DESCUENTOS altos -->
+                <!-- Autorización de DESCUENTOS altos. Cubre AMBOS casos:
+                     aplicado sobre umbral (orden bloqueada) y RETENIDO
+                     (x_discount_pending_request: capturado sin aplicar,
+                     esperando autorización — patrón precios mínimos). -->
+                <field name="x_discount_pending_request" invisible="1"/>
                 <button name="action_request_discount_authorization"
                         string="Solicitar autorización de descuento"
                         type="object"
@@ -28,13 +32,13 @@
                         string="Autorizar descuento"
                         type="object"
                         class="btn-success"
-                        invisible="state == 'cancel' or not x_discount_needs_auth"
+                        invisible="state == 'cancel' or (not x_discount_needs_auth and not x_discount_pending_request)"
                         groups="inventory_shopping_cart.group_price_authorizer"/>
                 <button name="action_reject_discount"
                         string="Rechazar descuento"
                         type="object"
                         class="btn-secondary"
-                        invisible="state == 'cancel' or not x_discount_needs_auth"
+                        invisible="state == 'cancel' or (not x_discount_needs_auth and not x_discount_pending_request)"
                         groups="inventory_shopping_cart.group_price_authorizer"/>
 
                 <!-- Exención de IVA: acción DIRECTA y exclusiva. Solo la ven
@@ -324,6 +328,19 @@
                 <!-- El precio vive ahora DENTRO del selector: la columna
                      propia se oculta (el campo permanece para datos/guardado). -->
                 <attribute name="column_invisible">1</attribute>
+            </xpath>
+
+            <!-- ===================== DESCUENTO POR LÍNEA ===================== -->
+            <!-- Columna de descuento OCULTA pero disponible (opcionales de la
+                 lista). Un descuento que dispara autorización NO se aplica:
+                 queda en 'Desc. solicitado' hasta que un Autorizador de
+                 Precios lo apruebe (mismo patrón que precios mínimos). El
+                 grupo negado evita duplicar la columna nativa si algún día se
+                 activa la opción de descuentos de Ventas. -->
+            <xpath expr="//field[@name='order_line']/list/field[@name='product_uom_qty']" position="after">
+                <field name="discount" optional="hide"
+                       groups="!sale.group_discount_per_so_line"/>
+                <field name="x_requested_discount" optional="hide"/>
             </xpath>
 
         </field>

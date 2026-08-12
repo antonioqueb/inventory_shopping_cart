@@ -23,6 +23,59 @@ class SaleOrderLine(models.Model):
     _inherit = 'sale.order.line'
 
     # ------------------------------------------------------------------
+    # DESCUENTOS: CLAMP HASTA AUTORIZAR (mismo patrón que precios mínimos)
+    # ------------------------------------------------------------------
+    # El descuento capturado que dispara autorización NO SE APLICA: se
+    # guarda aquí como solicitado, la solicitud se lanza sola y el
+    # Autorizador decide. Al aprobar, pasa a 'discount'; al rechazar, se
+    # descarta. Cambiarlo después de aprobado vuelve a requerir auth.
+    x_requested_discount = fields.Float(
+        string='Desc. solicitado (%)',
+        copy=False, readonly=True,
+        help='Descuento capturado pendiente de autorización: NO se aplica '
+             'a la línea hasta que un Autorizador de Precios Mínimos lo '
+             'apruebe. Al rechazar, se descarta.',
+    )
+
+    def _som_split_discount_clamp(self, new_disc):
+        """Subconjunto de líneas cuyo NUEVO descuento requiere autorización
+        (el monto prospectivo de descuento de la orden cruza el umbral y
+        supera lo ya autorizado). Autorizadores y flujos administrativos
+        (excedente/cierre corto de Torre de Control) no se topan."""
+        clamped = self.browse()
+        if (
+            self.env.context.get('som_discount_auth_apply')
+            or self.env.context.get('skip_tc_qty_manual_reset')
+            or self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
+        ):
+            return clamped
+        # ACUMULATIVO por orden: en una escritura en lote (descuento global
+        # en % sobre todas las líneas) ninguna línea cruza el umbral sola,
+        # pero la suma sí — lo que se va a aplicar cuenta como base de las
+        # siguientes líneas del mismo write.
+        running = {}
+        for line in self:
+            order = line.order_id
+            if line.display_type or not line.product_id or not order:
+                continue
+            # Bajar (o igualar) el descuento se aplica directo: nunca
+            # aumenta el monto descontado.
+            if new_disc <= (line.discount or 0.0) + 0.0001:
+                continue
+            delta = (line.price_unit or 0.0) * (line.product_uom_qty or 0.0) \
+                * (new_disc - (line.discount or 0.0)) / 100.0
+            delta_mxn = order._discount_amount_to_mxn(delta)
+            base = (order.x_discount_amount_mxn or 0.0) \
+                + running.get(order.id, 0.0)
+            prospective = base + delta_mxn
+            if prospective >= order._get_discount_auth_threshold_mxn() \
+                    and prospective > (order.x_discount_authorized_amount or 0.0) + 0.01:
+                clamped |= line
+            else:
+                running[order.id] = running.get(order.id, 0.0) + delta_mxn
+        return clamped
+
+    # ------------------------------------------------------------------
     # IVA 16% OBLIGATORIO EN TODA VENTA (productos Y servicios)
     # ------------------------------------------------------------------
     # Toda línea con producto lleva IVA 16% SIEMPRE. Quitarlo requiere que
@@ -80,9 +133,62 @@ class SaleOrderLine(models.Model):
         lines = super().create(vals_list)
         if not self.env.context.get('som_skip_iva_force'):
             lines._som_force_service_iva()
+
+        # CLAMP de descuentos también en líneas NUEVAS con descuento: si el
+        # monto de descuento de la orden ya cruza el umbral, el descuento de
+        # la línea se retira y queda como SOLICITADO.
+        if not (
+            self.env.context.get('som_discount_auth_apply')
+            or self.env.context.get('skip_tc_qty_manual_reset')
+            or self.env.user.has_group('inventory_shopping_cart.group_price_authorizer')
+        ):
+            clamped = lines.browse()
+            for line in lines:
+                if line.display_type or not line.product_id \
+                        or (line.discount or 0.0) <= 0 or not line.order_id:
+                    continue
+                order = line.order_id
+                amount = order.x_discount_amount_mxn or 0.0
+                if amount >= order._get_discount_auth_threshold_mxn() \
+                        and amount > (order.x_discount_authorized_amount or 0.0) + 0.01:
+                    clamped |= line
+            if clamped:
+                for line in clamped:
+                    line.with_context(
+                        som_discount_clamp_done=True, som_skip_iva_force=True,
+                    ).write({
+                        'x_requested_discount': line.discount,
+                        'discount': 0.0,
+                    })
+                clamped.order_id._som_discount_auth_auto_request()
+
         return lines
 
     def write(self, vals):
+        # CLAMP de descuentos (patrón precios mínimos): un descuento que
+        # dispara autorización NO se aplica — queda solicitado y la
+        # solicitud se lanza sola. Aplica igual si el descuento entra por
+        # la columna de la línea o por el botón de descuento global (el
+        # modo porcentaje escribe 'discount' en cada línea).
+        if vals.get('discount') and not self.env.context.get('som_discount_clamp_done'):
+            try:
+                new_disc = float(vals['discount'])
+            except (TypeError, ValueError):
+                new_disc = 0.0
+            if new_disc > 0:
+                clamped = self._som_split_discount_clamp(new_disc)
+                if clamped:
+                    rest = self - clamped
+                    res = True
+                    if rest:
+                        res = rest.with_context(som_discount_clamp_done=True).write(vals)
+                    clamp_vals = dict(vals)
+                    clamp_vals.pop('discount')
+                    clamp_vals['x_requested_discount'] = new_disc
+                    clamped.with_context(som_discount_clamp_done=True).write(clamp_vals)
+                    clamped.order_id._som_discount_auth_auto_request()
+                    return res
+
         # Vigilancia del piso autorizado: se detecta el CRUCE (antes bien,
         # después por debajo) para alertar una sola vez.
         floor_watch = None
@@ -1213,14 +1319,22 @@ class SaleOrder(models.Model):
                  'x_exchange_rate')
     def _compute_discount_amount_mxn(self):
         for order in self:
+            disc_product = getattr(
+                order.company_id, 'sale_discount_product_id', False)
             total = 0.0
             for line in order.order_line:
                 if line.display_type or not line.product_id:
                     continue
                 disc = line.discount or 0.0
-                if disc <= 0:
-                    continue
-                total += (line.price_unit or 0.0) * (line.product_uom_qty or 0.0) * disc / 100.0
+                if disc > 0:
+                    total += (line.price_unit or 0.0) * (line.product_uom_qty or 0.0) * disc / 100.0
+                # Línea de DESCUENTO GLOBAL (botón bajo las líneas, modo
+                # importe): el wizard crea una línea con el producto de
+                # descuento de la compañía y precio NEGATIVO — también es
+                # descuento y también cuenta para el umbral.
+                if disc_product and line.product_id.product_tmpl_id == disc_product \
+                        and (line.price_unit or 0.0) < 0:
+                    total += -(line.price_unit or 0.0) * (line.product_uom_qty or 0.0)
             order.x_discount_amount_mxn = order._discount_amount_to_mxn(total)
 
     @api.depends('x_discount_amount_mxn', 'x_discount_authorized_amount')
@@ -1232,6 +1346,50 @@ class SaleOrder(models.Model):
             order.x_discount_needs_auth = bool(
                 amount >= threshold and amount > (authorized + 0.01)
             )
+
+    x_discount_pending_request = fields.Boolean(
+        string='Descuento por autorizar',
+        compute='_compute_discount_pending_request',
+        help='Hay descuentos capturados SIN APLICAR esperando autorización.',
+    )
+
+    @api.depends('order_line.x_requested_discount')
+    def _compute_discount_pending_request(self):
+        for order in self:
+            order.x_discount_pending_request = any(
+                (line.x_requested_discount or 0.0) > 0
+                for line in order.order_line
+            )
+
+    def _som_pending_discount_amount_mxn(self):
+        """Monto MXN del descuento SOLICITADO y aún no aplicado (delta sobre
+        el descuento vigente de cada línea)."""
+        self.ensure_one()
+        total = 0.0
+        for line in self.order_line:
+            req = line.x_requested_discount or 0.0
+            if req <= 0 or line.display_type or not line.product_id:
+                continue
+            delta = max(req - (line.discount or 0.0), 0.0)
+            total += (line.price_unit or 0.0) * (line.product_uom_qty or 0.0) * delta / 100.0
+        return self._discount_amount_to_mxn(total)
+
+    def _som_discount_auth_auto_request(self):
+        """La captura de un descuento que requiere autorización LANZA la
+        solicitud sola (patrón de precios mínimos): actividad + inbox/correo
+        a los autorizadores, sin que el vendedor tenga que acordarse."""
+        for order in self:
+            pending = order._som_pending_discount_amount_mxn()
+            if pending <= 0:
+                continue
+            order.x_discount_auth_requested = True
+            order._notify_discount_authorizers()
+            order.message_post(body=Markup(
+                f"<p>🔐 <b>Descuento retenido</b>: se capturó un descuento de "
+                f"≈ {pending:,.2f} MXN que requiere autorización. "
+                f"<b>NO se aplicó</b> a la orden; se aplicará al autorizarse. "
+                f"Solicitud enviada a los Autorizadores de Precios.</p>"
+            ))
 
     def _check_discount_authorization_block(self, action_name="realizar esta acción"):
         if self.env.user.has_group('inventory_shopping_cart.group_price_authorizer'):
@@ -1269,23 +1427,39 @@ class SaleOrder(models.Model):
         return Users
 
     def _notify_discount_authorizers(self):
+        """Actividad + mención en chatter (inbox/correo) — mismo canal doble
+        que las autorizaciones de precios mínimos."""
         self.ensure_one()
         group = self.env.ref('inventory_shopping_cart.group_price_authorizer', raise_if_not_found=False)
         if not group:
             return
+        pending = self._som_pending_discount_amount_mxn()
+        parts = []
+        if pending > 0:
+            parts.append(
+                f"un descuento POR APLICAR de ≈ {pending:,.2f} MXN "
+                f"(retenido: no se aplica hasta autorizar)")
+        if self.x_discount_needs_auth:
+            parts.append(
+                f"un descuento aplicado de ≈ {self.x_discount_amount_mxn:,.2f} MXN "
+                f"que supera el umbral (orden BLOQUEADA)")
         note = (
-            f"La orden {self.name} (cliente {self.partner_id.display_name or ''}) "
-            f"tiene un descuento de ≈ {self.x_discount_amount_mxn:,.2f} MXN que "
-            f"supera el umbral de {self._get_discount_auth_threshold_mxn():,.2f} MXN "
-            f"y requiere tu autorización. La orden está BLOQUEADA hasta autorizar."
+            f"La orden {self.name} (cliente {self.partner_id.display_name or ''}, "
+            f"vendedor {self.env.user.name}) tiene "
+            f"{' y '.join(parts) or 'un descuento que requiere autorización'}. "
+            f"Umbral: {self._get_discount_auth_threshold_mxn():,.2f} MXN."
         )
-        for user in self._som_group_users(group).filtered(lambda u: u.id != self.env.user.id):
-            self.activity_schedule(
-                'mail.mail_activity_data_todo',
-                user_id=user.id,
-                summary=f"Autorizar descuento: {self.name}",
-                note=note,
-            )
+        users = self._som_group_users(group)
+        if not users:
+            _logger.warning(
+                "[DISCOUNT AUTH] %s sin autorizadores a quien notificar.",
+                self.name)
+            return
+        self._som_notify_users(
+            users,
+            f"Autorizar descuento: {self.name}",
+            note,
+        )
 
     def _notify_discount_seller(self, approved=True):
         self.ensure_one()
@@ -1333,13 +1507,32 @@ class SaleOrder(models.Model):
         self.ensure_one()
         if not self.env.user.has_group('inventory_shopping_cart.group_price_authorizer'):
             raise UserError("Solo un Autorizador de Precios puede autorizar descuentos.")
+
+        # APLICAR lo retenido: los descuentos solicitados pasan a la línea
+        # recién ahora, con la aprobación (antes de esto NO afectaban la
+        # orden — mismo patrón que los precios topados al umbral).
+        pending_lines = self.order_line.filtered(
+            lambda l: (l.x_requested_discount or 0.0) > 0)
+        for line in pending_lines:
+            line.with_context(
+                som_discount_auth_apply=True,
+                som_discount_clamp_done=True,
+            ).write({
+                'discount': line.x_requested_discount,
+                'x_requested_discount': 0.0,
+            })
+
         self.x_discount_authorized_amount = self.x_discount_amount_mxn
         self.x_discount_auth_requested = False
         self.x_discount_auth_result = 'approved'
         self._discount_auth_mark_activities_done()
+        applied_note = (
+            f" Se aplicaron los descuentos retenidos de {len(pending_lines)} línea(s)."
+            if pending_lines else ""
+        )
         self.message_post(body=Markup(
             f"<p>✅ <b>Descuento autorizado</b> (≈ {self.x_discount_amount_mxn:,.2f} MXN) "
-            f"por {self.env.user.name}. La orden ya no está bloqueada.</p>"
+            f"por {self.env.user.name}.{applied_note} La orden ya no está bloqueada.</p>"
         ))
         self._notify_discount_seller(approved=True)
         return True
@@ -1348,15 +1541,29 @@ class SaleOrder(models.Model):
         self.ensure_one()
         if not self.env.user.has_group('inventory_shopping_cart.group_price_authorizer'):
             raise UserError("Solo un Autorizador de Precios puede rechazar descuentos.")
+
+        # DESCARTAR lo retenido: los descuentos solicitados jamás llegaron a
+        # aplicarse; al rechazar simplemente se limpian.
+        pending_lines = self.order_line.filtered(
+            lambda l: (l.x_requested_discount or 0.0) > 0)
+        if pending_lines:
+            pending_lines.with_context(som_discount_clamp_done=True).write({
+                'x_requested_discount': 0.0,
+            })
+
         self.x_discount_auth_result = 'rejected'
         self.x_discount_rejected_amount = (
             self.x_discount_rejected_amount
             + (self.x_discount_amount_mxn or 0.0))
         self.x_discount_auth_requested = False
         self._discount_auth_mark_activities_done()
+        discarded_note = (
+            f" Los descuentos retenidos de {len(pending_lines)} línea(s) se descartaron "
+            f"(nunca se aplicaron)."
+            if pending_lines else ""
+        )
         self.message_post(body=Markup(
-            f"<p>❌ <b>Descuento rechazado</b> por {self.env.user.name}. "
-            f"La orden sigue bloqueada hasta ajustar el descuento.</p>"
+            f"<p>❌ <b>Descuento rechazado</b> por {self.env.user.name}.{discarded_note}</p>"
         ))
         self._notify_discount_seller(approved=False)
         return True
@@ -2485,3 +2692,30 @@ class SaleOrder(models.Model):
             for order in self:
                 if order.picking_ids:
                     cleaner.clear_pickings_lots(order.picking_ids)
+
+class SaleOrderDiscountWizard(models.TransientModel):
+    _inherit = 'sale.order.discount'
+
+    def action_apply_discount(self):
+        """Botón de DESCUENTO GLOBAL (bajo las líneas, arriba de los totales).
+
+        - Modo porcentaje sobre líneas: escribe 'discount' por línea → el
+          clamp de la línea lo retiene y auto-solicita (no se aplica hasta
+          autorizar; nada extra que hacer aquí).
+        - Modo importe / porcentaje global: crea una línea NEGATIVA con el
+          producto de descuento de la compañía; esa línea cuenta para el
+          umbral — si dispara autorización, la solicitud se lanza sola con
+          la misma notificación y la orden queda BLOQUEADA hasta autorizar.
+        """
+        res = super().action_apply_discount()
+        for order in self.sale_order_id:
+            if order.x_discount_needs_auth and not order.x_discount_auth_requested:
+                order.x_discount_auth_requested = True
+                order._notify_discount_authorizers()
+                order.message_post(body=Markup(
+                    f"<p>🔐 <b>Solicitud de autorización de descuento</b> "
+                    f"(≈ {order.x_discount_amount_mxn:,.2f} MXN, descuento "
+                    f"global) enviada a los autorizadores. La orden está "
+                    f"bloqueada hasta ser autorizada.</p>"
+                ))
+        return res
