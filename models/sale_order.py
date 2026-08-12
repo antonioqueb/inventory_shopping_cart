@@ -1611,6 +1611,12 @@ class SaleOrder(models.Model):
 
     def action_confirm(self):
         self._som_capture_confirm_rate()
+
+        # ÓRDENES MIGRADAS: conservar su FECHA histórica. El core pisa
+        # date_order con now() al confirmar, y las ventas migradas (con
+        # fecha pasada capturada) brincaban al mes actual ensuciando SOM
+        # Analytics, que filtra por date_order. Mismo marcador del parche
+        # de migración: referencia con 3+ dígitos.
         """
         Override:
         1. Valida precios bajos.
@@ -1726,6 +1732,24 @@ class SaleOrder(models.Model):
                 line.price_unit = new_price
 
     def write(self, vals):
+        # ÓRDENES MIGRADAS: el core reescribe date_order al confirmar
+        # (now()); para una orden migrada eso destruye su fecha histórica
+        # y ensucia el mes actual en Analytics — se descarta ese cambio.
+        if 'date_order' in vals and not self.env.context.get(
+                'som_allow_migrated_date_change'):
+            keep = self.filtered(
+                lambda o: hasattr(o, '_som_is_migrated_order')
+                and o._som_is_migrated_order() and o.date_order)
+            if keep:
+                others = self - keep
+                vals_no_date = {k: v for k, v in vals.items()
+                                if k != 'date_order'}
+                if others:
+                    super(SaleOrder, others).write(vals)
+                if vals_no_date:
+                    super(SaleOrder, keep).write(vals_no_date)
+                return True
+
         # La divisa solo puede cambiarse mientras no haya entrega validada
         # ni factura publicada (el TC se congela con la entrega).
         if 'pricelist_id' in vals:
