@@ -2201,13 +2201,20 @@ class SaleOrder(models.Model):
                 if pd.get('to_be_purchased') and 'auto_transit_assign' in self.env['sale.order.line']._fields:
                     line_vals['auto_transit_assign'] = True
 
+                # Máscara comercial (hold → SO): nombre personalizado de la
+                # venta. Se escribe también en name para que TODOS los
+                # documentos impriman la máscara y no el nombre real.
+                if pd.get('mask_name') and 'x_mask_name' in self.env['sale.order.line']._fields:
+                    line_vals['x_mask_name'] = pd['mask_name']
+                    line_vals['name'] = pd['mask_name']
+
                 self.env['sale.order.line'].create(line_vals)
 
             for sd in (services or []):
                 rec = self.env['product.product'].browse(sd['product_id'])
                 tax_ids = [(6, 0, rec.taxes_id.ids)] if apply_tax else [(5, 0, 0)]
 
-                self.env['sale.order.line'].create({
+                service_vals = {
                     'order_id': sale_order.id,
                     'name': rec.get_product_multiline_description_sale() or rec.name,
                     'product_id': rec.id,
@@ -2217,7 +2224,12 @@ class SaleOrder(models.Model):
                     'tax_ids': tax_ids,
                     'company_id': company_id,
                     'x_price_selector': 'custom',
-                })
+                }
+                if sd.get('mask_name') and 'x_mask_name' in self.env['sale.order.line']._fields:
+                    service_vals['x_mask_name'] = sd['mask_name']
+                    service_vals['name'] = sd['mask_name']
+
+                self.env['sale.order.line'].create(service_vals)
 
             sale_order._sync_lot_ids_from_selected_lots()
 
