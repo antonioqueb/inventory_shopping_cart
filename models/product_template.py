@@ -617,116 +617,162 @@ class ProductTemplate(models.Model):
                 base_gross_cost_mxn = max_avg
                 record.x_max_avg_cost_mxn = max_avg
 
-                # ═══ COMPUERTA DE PARÁMETROS (regla de negocio) ═══
-                # Con compras confirmadas, el ALL-IN exige la configuración
-                # logística COMPLETA y una tarifa activa. Si falta algo, NO se
-                # intenta el cálculo (nada de costos con logística en $0):
-                # el costo conserva su último valor válido y el resumen
-                # explica exactamente qué falta.
-                missing_params = []
-                if not record.x_origin_country_id:
-                    missing_params.append('país de origen')
-                if not record.x_pol_id:
-                    missing_params.append('puerto de carga (POL)')
-                if not record.x_pod_id:
-                    missing_params.append('puerto destino (POD)')
-                if (record.x_container_capacity or 0.0) <= 1.0:
-                    missing_params.append('capacidad de contenedor (> 1 m²)')
+                # ═══ MODO DE FLETE ═══
+                # NACIONAL: costo MXN directo del Tarifario Nacional dividido
+                # entre la capacidad del viaje (o la del producto). Sin
+                # arancel (flete doméstico) y sin conversión de divisa.
+                freight_mode = getattr(record, 'x_freight_mode', False) \
+                    or 'international'
+                if freight_mode == 'national':
+                    nat = getattr(record, 'x_national_route_id', False)
+                    missing_nat = []
+                    if not nat or not nat.active:
+                        missing_nat.append(
+                            'ruta nacional ACTIVA (Tarifario Nacional)')
+                    cap_nat = 0.0
+                    if nat:
+                        cap_nat = (nat.capacidad or 0.0) \
+                            or (record.x_container_capacity or 0.0)
+                    if cap_nat <= 1.0:
+                        missing_nat.append(
+                            'capacidad (> 1 m²) en la ruta nacional o el '
+                            'producto')
+                    if missing_nat:
+                        msg = (
+                            "⛔ CÁLCULO OMITIDO — faltan parámetros: %s. El "
+                            "costo conserva el último valor válido "
+                            "($%.2f MXN)." % (
+                                ', '.join(missing_nat),
+                                record.x_costo_mayor or 0.0)
+                        )
+                        record.x_logistics_calc_summary = msg
+                        record.x_cost_calc_summary = msg
+                        continue
 
-                gate_tariff = None
-                if not missing_params:
-                    gate_tariff = self.env['freight.tariff'].search([
-                        ('country_id', '=', record.x_origin_country_id.id),
-                        ('pol_id', '=', record.x_pol_id.id),
-                        ('pod_id', '=', record.x_pod_id.id),
-                        ('state', '=', 'active'),
-                    ], limit=1)
+                    costo_nat = nat.costo or 0.0
+                    logistics_cost_mxn = costo_nat / cap_nat
+                    if usd_to_company_rate > 0:
+                        logistics_cost_usd = (
+                            logistics_cost_mxn / usd_to_company_rate)
+                        freight_tariff_all_in_usd = (
+                            costo_nat / usd_to_company_rate)
+                    logistics_summary = (
+                        f"NACIONAL {nat.display_name}: {costo_nat:.2f} MXN / "
+                        f"{cap_nat:.2f} m² = {logistics_cost_mxn:.4f} MXN/m² "
+                        f"(flete doméstico: sin arancel ni TC)")
+                    duty_cost_mxn = 0.0
+                    all_in_cost_mxn = base_gross_cost_mxn + logistics_cost_mxn
+                else:
+                    # ═══ COMPUERTA DE PARÁMETROS (regla de negocio) ═══
+                    # Con compras confirmadas, el ALL-IN exige la configuración
+                    # logística COMPLETA y una tarifa activa. Si falta algo, NO se
+                    # intenta el cálculo (nada de costos con logística en $0):
+                    # el costo conserva su último valor válido y el resumen
+                    # explica exactamente qué falta.
+                    missing_params = []
+                    if not record.x_origin_country_id:
+                        missing_params.append('país de origen')
+                    if not record.x_pol_id:
+                        missing_params.append('puerto de carga (POL)')
+                    if not record.x_pod_id:
+                        missing_params.append('puerto destino (POD)')
+                    if (record.x_container_capacity or 0.0) <= 1.0:
+                        missing_params.append('capacidad de contenedor (> 1 m²)')
 
-                if missing_params or not gate_tariff:
-                    reason = (
-                        'faltan parámetros: ' + ', '.join(missing_params)
-                        if missing_params
-                        else 'no hay tarifa ACTIVA en el tarifario para País/POL/POD'
-                    )
-                    msg = (
-                        "⛔ CÁLCULO OMITIDO — %s. El costo conserva el último "
-                        "valor válido ($%.2f MXN)." % (
-                            reason, record.x_costo_mayor or 0.0)
-                    )
-                    # Silencioso a propósito: un parámetro faltante NO es un
-                    # intento de cálculo — nada de ruido en el log.
-                    record.x_logistics_calc_summary = msg
-                    record.x_cost_calc_summary = msg
-                    continue
+                    gate_tariff = None
+                    if not missing_params:
+                        gate_tariff = self.env['freight.tariff'].search([
+                            ('country_id', '=', record.x_origin_country_id.id),
+                            ('pol_id', '=', record.x_pol_id.id),
+                            ('pod_id', '=', record.x_pod_id.id),
+                            ('state', '=', 'active'),
+                        ], limit=1)
 
-                if (
-                    record.x_origin_country_id
-                    and record.x_pol_id
-                    and record.x_pod_id
-                    and record.x_container_capacity > 0
-                ):
-                    candidates = self.env['freight.tariff'].search([
-                        ('country_id', '=', record.x_origin_country_id.id),
-                        ('pol_id', '=', record.x_pol_id.id),
-                        ('pod_id', '=', record.x_pod_id.id),
-                        ('state', '=', 'active')
-                    ], order='create_date desc')
-                    # Tarifa de la NAVIERA registrada (la más costosa recibida);
-                    # fallback a la más reciente de la ruta si no hay match.
-                    tariff = candidates[:1]
-                    if 'x_naviera_id' in record._fields and record.x_naviera_id:
-                        nav = candidates.filtered(
-                            lambda t: t.naviera_id == record.x_naviera_id)
-                        if record.x_forwarder_id:
-                            navf = nav.filtered(
-                                lambda t: t.forwarder_id == record.x_forwarder_id)
-                            nav = navf or nav
-                        tariff = nav[:1] or tariff
+                    if missing_params or not gate_tariff:
+                        reason = (
+                            'faltan parámetros: ' + ', '.join(missing_params)
+                            if missing_params
+                            else 'no hay tarifa ACTIVA en el tarifario para País/POL/POD'
+                        )
+                        msg = (
+                            "⛔ CÁLCULO OMITIDO — %s. El costo conserva el último "
+                            "valor válido ($%.2f MXN)." % (
+                                reason, record.x_costo_mayor or 0.0)
+                        )
+                        # Silencioso a propósito: un parámetro faltante NO es un
+                        # intento de cálculo — nada de ruido en el log.
+                        record.x_logistics_calc_summary = msg
+                        record.x_cost_calc_summary = msg
+                        continue
 
-                    if tariff:
-                        freight_tariff_all_in_usd = tariff.all_in or 0.0
-                        logistics_cost_usd = freight_tariff_all_in_usd / record.x_container_capacity
+                    if (
+                        record.x_origin_country_id
+                        and record.x_pol_id
+                        and record.x_pod_id
+                        and record.x_container_capacity > 0
+                    ):
+                        candidates = self.env['freight.tariff'].search([
+                            ('country_id', '=', record.x_origin_country_id.id),
+                            ('pol_id', '=', record.x_pol_id.id),
+                            ('pod_id', '=', record.x_pod_id.id),
+                            ('state', '=', 'active')
+                        ], order='create_date desc')
+                        # Tarifa de la NAVIERA registrada (la más costosa recibida);
+                        # fallback a la más reciente de la ruta si no hay match.
+                        tariff = candidates[:1]
+                        if 'x_naviera_id' in record._fields and record.x_naviera_id:
+                            nav = candidates.filtered(
+                                lambda t: t.naviera_id == record.x_naviera_id)
+                            if record.x_forwarder_id:
+                                navf = nav.filtered(
+                                    lambda t: t.forwarder_id == record.x_forwarder_id)
+                                nav = navf or nav
+                            tariff = nav[:1] or tariff
 
-                        if usd_to_company_rate > 0:
-                            logistics_cost_mxn = logistics_cost_usd * usd_to_company_rate
-                        else:
-                            logistics_cost_mxn = 0.0
-                            _logger.warning(
-                                "COSTOS: No se pudo calcular logística para %s porque el TC USD->%s es 0.",
-                                record.display_name,
-                                company_currency.name,
+                        if tariff:
+                            freight_tariff_all_in_usd = tariff.all_in or 0.0
+                            logistics_cost_usd = freight_tariff_all_in_usd / record.x_container_capacity
+
+                            if usd_to_company_rate > 0:
+                                logistics_cost_mxn = logistics_cost_usd * usd_to_company_rate
+                            else:
+                                logistics_cost_mxn = 0.0
+                                _logger.warning(
+                                    "COSTOS: No se pudo calcular logística para %s porque el TC USD->%s es 0.",
+                                    record.display_name,
+                                    company_currency.name,
+                                )
+
+                            logistics_summary = (
+                                f"{freight_tariff_all_in_usd:.4f} USD / "
+                                f"{record.x_container_capacity:.4f} m² = "
+                                f"{logistics_cost_usd:.4f} USD/m² × "
+                                f"TC {usd_to_company_rate:.4f} = "
+                                f"{logistics_cost_mxn:.4f} MXN/m²"
                             )
 
-                        logistics_summary = (
-                            f"{freight_tariff_all_in_usd:.4f} USD / "
-                            f"{record.x_container_capacity:.4f} m² = "
-                            f"{logistics_cost_usd:.4f} USD/m² × "
-                            f"TC {usd_to_company_rate:.4f} = "
-                            f"{logistics_cost_mxn:.4f} MXN/m²"
-                        )
+                            _logger.info(
+                                "COSTOS: Logística %s | Tarifa All-In USD=%s | Capacidad=%s | "
+                                "USD/m²=%s | TC=%s | Logística %s/m²=%s",
+                                record.display_name,
+                                freight_tariff_all_in_usd,
+                                record.x_container_capacity,
+                                logistics_cost_usd,
+                                usd_to_company_rate,
+                                company_currency.name,
+                                logistics_cost_mxn,
+                            )
 
-                        _logger.info(
-                            "COSTOS: Logística %s | Tarifa All-In USD=%s | Capacidad=%s | "
-                            "USD/m²=%s | TC=%s | Logística %s/m²=%s",
-                            record.display_name,
-                            freight_tariff_all_in_usd,
-                            record.x_container_capacity,
-                            logistics_cost_usd,
-                            usd_to_company_rate,
-                            company_currency.name,
-                            logistics_cost_mxn,
-                        )
+                        else:
+                            logistics_summary = "No se encontró tarifa activa para País/POL/POD."
 
                     else:
-                        logistics_summary = "No se encontró tarifa activa para País/POL/POD."
+                        logistics_summary = "Configuración logística incompleta o capacidad de contenedor inválida."
 
-                else:
-                    logistics_summary = "Configuración logística incompleta o capacidad de contenedor inválida."
+                    if record.x_arancel_pct > 0:
+                        duty_cost_mxn = base_gross_cost_mxn * (record.x_arancel_pct / 100.0)
 
-                if record.x_arancel_pct > 0:
-                    duty_cost_mxn = base_gross_cost_mxn * (record.x_arancel_pct / 100.0)
-
-                all_in_cost_mxn = base_gross_cost_mxn + logistics_cost_mxn + duty_cost_mxn
+                    all_in_cost_mxn = base_gross_cost_mxn + logistics_cost_mxn + duty_cost_mxn
 
             base_gross_cost_usd = base_gross_cost_mxn / usd_to_company_rate if usd_to_company_rate > 0 else 0.0
             duty_cost_usd = duty_cost_mxn / usd_to_company_rate if usd_to_company_rate > 0 else 0.0
@@ -889,6 +935,9 @@ class ProductTemplate(models.Model):
             'x_pod_id',
             'x_container_capacity',
             'x_arancel_pct',
+            # Modo nacional (campos de logistica_tarifario)
+            'x_freight_mode',
+            'x_national_route_id',
         ]
 
         price_triggers = [
