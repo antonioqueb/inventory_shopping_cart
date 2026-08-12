@@ -310,8 +310,14 @@
                 <field name="x_cost_reviewed" widget="boolean_favorite" string="★" nolabel="1"/>
                 <field name="name" readonly="1"/>
                 <field name="categ_id" optional="hide" readonly="1"/>
+                <!-- Vaivén: editar cualquiera de los dos llena el otro con
+                     el TC Banorte de costeo (inverse del motor). El MXN es el
+                     costo nativo ALMACENADO: por él se ordena la lista
+                     (clic en el encabezado, asc/desc); el USD es cálculo al
+                     vuelo y comparte el mismo orden. -->
                 <field name="x_costo_usd_edit" string="Costo USD"/>
-                <field name="x_costo_mxn_edit" string="Costo MXN" optional="hide"/>
+                <field name="standard_price" string="Costo MXN" optional="show"/>
+                <field name="x_costo_mxn_edit" column_invisible="1"/>
                 <field name="x_costo_mayor_usd" string="All-In USD" readonly="1" optional="show"/>
                 <field name="x_costo_mayor" string="All-In MXN" readonly="1" optional="hide"/>
                 <field name="x_is_fixed_price" string="Fijo"/>
