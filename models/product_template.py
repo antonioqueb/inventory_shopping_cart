@@ -198,7 +198,7 @@ class ProductTemplate(models.Model):
         ('calculated', 'Calculado (Costo + Utilidad)'),
         ('fixed', 'Precio Fijo'),
     ], string='Modo de Precio', default='calculated',
-       help="Calculado: Precio = Costo × (1 + %Utilidad). "
+       help="Calculado: Precio = Costo / (1 - %Utilidad), utilidad sobre el PRECIO. "
             "Fijo: Se parte de un precio fijo base y se aplican las utilidades como niveles de descuento.")
 
     x_fixed_price = fields.Float(
@@ -239,33 +239,33 @@ class ProductTemplate(models.Model):
     x_utilidad = fields.Float(
         string='% Utilidad Alta',
         default=40.0,
-        help="Margen de utilidad para el Precio Alto (Nivel 1). Precio = Costo × (1 + %)."
+        help="Margen de utilidad para el Precio Alto (Nivel 1). Precio = Costo / (1 - %), utilidad sobre el precio."
     )
 
     x_utilidad_media = fields.Float(
         string='% Utilidad Media',
         default=35.0,
-        help="Margen de utilidad para el Precio Medio (Nivel 2). Precio = Costo × (1 + %)."
+        help="Margen de utilidad para el Precio Medio (Nivel 2). Precio = Costo / (1 - %), utilidad sobre el precio."
     )
 
     x_utilidad_minima = fields.Float(
         string='% Utilidad Nivel 3',
         default=30.0,
-        help="Margen de utilidad para el Precio Nivel 3. Precio = Costo × (1 + %)."
+        help="Margen de utilidad para el Precio Nivel 3. Precio = Costo / (1 - %), utilidad sobre el precio."
     )
 
     x_utilidad_4 = fields.Float(
         string='% Utilidad Nivel 4',
         default=25.0,
         help="Margen de utilidad para el Precio Nivel 4. Visible solo para vendedores mayoristas y autorizadores. "
-             "Precio = Costo × (1 + %)."
+             "Precio = Costo / (1 - %), utilidad sobre el precio."
     )
 
     x_utilidad_5 = fields.Float(
         string='% Utilidad Mínima (Nivel 5)',
         default=20.0,
         help="Margen de utilidad para el Precio Mínimo (Nivel 5). Visible solo para autorizadores. "
-             "Precio = Costo × (1 + %)."
+             "Precio = Costo / (1 - %), utilidad sobre el precio."
     )
 
     _UTILIDAD_FIELDS = (
@@ -288,32 +288,34 @@ class ProductTemplate(models.Model):
                         'MENOR a 100%% (capturaste %.2f%%).' % (
                             rec._fields[fname].string or fname, val))
 
-    # Margen equivalente SOBRE EL PRECIO (solo lectura, informativo):
-    # margen = utilidad / (100 + utilidad). Con utilidad 40% el margen
-    # sobre el precio de venta es 28.6%.
-    x_margen_1 = fields.Float(
-        string='Margen s/precio N1', compute='_compute_x_margen', digits=(6, 1))
-    x_margen_2 = fields.Float(
-        string='Margen s/precio N2', compute='_compute_x_margen', digits=(6, 1))
-    x_margen_3 = fields.Float(
-        string='Margen s/precio N3', compute='_compute_x_margen', digits=(6, 1))
-    x_margen_4 = fields.Float(
-        string='Margen s/precio N4', compute='_compute_x_margen', digits=(6, 1))
-    x_margen_5 = fields.Float(
-        string='Margen s/precio N5', compute='_compute_x_margen', digits=(6, 1))
+    # MARKUP equivalente SOBRE EL COSTO (solo lectura, referencia):
+    # markup = margen / (100 - margen). El % que MANDA es el margen sobre
+    # el precio (x_utilidad*); esto solo traduce: margen 40% ≡ markup 66.7%.
+    x_markup_1 = fields.Float(
+        string='Markup s/costo N1', compute='_compute_x_markup', digits=(6, 1))
+    x_markup_2 = fields.Float(
+        string='Markup s/costo N2', compute='_compute_x_markup', digits=(6, 1))
+    x_markup_3 = fields.Float(
+        string='Markup s/costo N3', compute='_compute_x_markup', digits=(6, 1))
+    x_markup_4 = fields.Float(
+        string='Markup s/costo N4', compute='_compute_x_markup', digits=(6, 1))
+    x_markup_5 = fields.Float(
+        string='Markup s/costo N5', compute='_compute_x_markup', digits=(6, 1))
 
     @api.depends('x_utilidad', 'x_utilidad_media', 'x_utilidad_minima',
                  'x_utilidad_4', 'x_utilidad_5')
-    def _compute_x_margen(self):
-        def margen(util):
-            util = util or 0.0
-            return (util / (100.0 + util) * 100.0) if util > 0 else 0.0
+    def _compute_x_markup(self):
+        def markup(margen):
+            margen = margen or 0.0
+            if margen <= 0 or margen >= 100:
+                return 0.0
+            return margen / (100.0 - margen) * 100.0
         for rec in self:
-            rec.x_margen_1 = margen(rec.x_utilidad)
-            rec.x_margen_2 = margen(rec.x_utilidad_media)
-            rec.x_margen_3 = margen(rec.x_utilidad_minima)
-            rec.x_margen_4 = margen(rec.x_utilidad_4)
-            rec.x_margen_5 = margen(rec.x_utilidad_5)
+            rec.x_markup_1 = markup(rec.x_utilidad)
+            rec.x_markup_2 = markup(rec.x_utilidad_media)
+            rec.x_markup_3 = markup(rec.x_utilidad_minima)
+            rec.x_markup_4 = markup(rec.x_utilidad_4)
+            rec.x_markup_5 = markup(rec.x_utilidad_5)
 
     # === CAMPOS DE PRECIOS CALCULADOS ===
 
@@ -928,13 +930,16 @@ class ProductTemplate(models.Model):
         banorte_rate = self._get_usd_to_company_rate_for_costing(self.env.company)
 
         def _price_from_utility(base, utility_pct):
-            # UTILIDAD SOBRE EL COSTO (lineal): Precio = Costo × (1 + %).
-            # La fórmula anterior (Costo / (1 - %)) era margen sobre el
-            # PRECIO: hiperbólica — 90% multiplicaba el costo ×10 y 100%
-            # (divisor recortado a 0.01) lo disparaba ×100, contradiciendo
-            # el diseño documentado ('precio = costo all-in + utilidad').
-            pct = max(utility_pct or 0.0, 0.0)
-            return math.ceil(base * (1 + pct / 100.0))
+            # MARGEN SOBRE EL PRECIO (fórmula oficial del negocio):
+            # Precio = Costo / (1 - %). El % capturado es la utilidad como
+            # proporción del PRECIO de venta. El caso 100% (divisor 0) es
+            # matemáticamente imposible y lo bloquea _check_utilidad_range
+            # ANTES de llegar aquí; el recorte del divisor queda solo como
+            # red de seguridad para datos históricos.
+            divisor = 1 - ((utility_pct or 0.0) / 100.0)
+            if divisor <= 0:
+                divisor = 0.01
+            return math.ceil(base / divisor)
 
         for record in self:
             mxn_1 = 0

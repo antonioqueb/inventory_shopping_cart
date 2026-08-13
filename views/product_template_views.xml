@@ -157,44 +157,45 @@
 
                             <separator string="Niveles de Utilidad"/>
 
-                            <!-- Escalera ordenada: utilidad EDITABLE a la
-                                 izquierda, margen equivalente sobre el
-                                 precio en SOLO LECTURA a la derecha. La
-                                 utilidad se restringe a [0%, 100%). -->
+                            <!-- Escalera ordenada: la utilidad (margen
+                                 sobre el PRECIO) es la que MANDA y se
+                                 captura a la izquierda; el markup sobre
+                                 costo es SOLO LECTURA de referencia a la
+                                 derecha. Restringida a [0%, 100%). -->
                             <div colspan="2" class="mt-2">
                                 <table class="table table-sm o_main_table" style="max-width: 560px;">
                                     <thead>
                                         <tr>
                                             <th style="width: 40%;">Nivel</th>
-                                            <th class="text-end" style="width: 30%;">% Utilidad (s/costo)</th>
-                                            <th class="text-end text-muted" style="width: 30%;">Margen s/precio</th>
+                                            <th class="text-end" style="width: 30%;">% Utilidad (s/precio)</th>
+                                            <th class="text-end text-muted" style="width: 30%;">Markup s/costo</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <tr>
                                             <td class="fw-bold">1 · Alta</td>
                                             <td class="text-end"><field name="x_utilidad" nolabel="1" class="oe_inline"/> %</td>
-                                            <td class="text-end text-muted"><field name="x_margen_1" nolabel="1" readonly="1" class="oe_inline"/> %</td>
+                                            <td class="text-end text-muted"><field name="x_markup_1" nolabel="1" readonly="1" class="oe_inline"/> %</td>
                                         </tr>
                                         <tr>
                                             <td class="fw-bold">2 · Media</td>
                                             <td class="text-end"><field name="x_utilidad_media" nolabel="1" class="oe_inline"/> %</td>
-                                            <td class="text-end text-muted"><field name="x_margen_2" nolabel="1" readonly="1" class="oe_inline"/> %</td>
+                                            <td class="text-end text-muted"><field name="x_markup_2" nolabel="1" readonly="1" class="oe_inline"/> %</td>
                                         </tr>
                                         <tr>
                                             <td class="fw-bold">3 · Nivel 3</td>
                                             <td class="text-end"><field name="x_utilidad_minima" nolabel="1" class="oe_inline"/> %</td>
-                                            <td class="text-end text-muted"><field name="x_margen_3" nolabel="1" readonly="1" class="oe_inline"/> %</td>
+                                            <td class="text-end text-muted"><field name="x_markup_3" nolabel="1" readonly="1" class="oe_inline"/> %</td>
                                         </tr>
                                         <tr>
                                             <td class="fw-bold">4 · Nivel 4</td>
                                             <td class="text-end"><field name="x_utilidad_4" nolabel="1" class="oe_inline"/> %</td>
-                                            <td class="text-end text-muted"><field name="x_margen_4" nolabel="1" readonly="1" class="oe_inline"/> %</td>
+                                            <td class="text-end text-muted"><field name="x_markup_4" nolabel="1" readonly="1" class="oe_inline"/> %</td>
                                         </tr>
                                         <tr>
                                             <td class="fw-bold">5 · Mínima</td>
                                             <td class="text-end"><field name="x_utilidad_5" nolabel="1" class="oe_inline"/> %</td>
-                                            <td class="text-end text-muted"><field name="x_margen_5" nolabel="1" readonly="1" class="oe_inline"/> %</td>
+                                            <td class="text-end text-muted"><field name="x_markup_5" nolabel="1" readonly="1" class="oe_inline"/> %</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -202,9 +203,9 @@
 
                             <div class="alert alert-info mt-2" role="alert" colspan="2">
                                 <small>
-                                    <strong>Modo Calculado:</strong> Precio = Costo × (1 + %Utilidad). La utilidad es sobre el costo y debe ser menor a 100%.<br/>
+                                    <strong>Modo Calculado:</strong> Precio = Costo ÷ (1 − %Utilidad). La utilidad es sobre el PRECIO de venta y debe ser menor a 100%.<br/>
                                     <strong>Modo Fijo:</strong> misma fórmula con el Precio Fijo como base.<br/>
-                                    <strong>Margen s/precio:</strong> equivalente informativo = Utilidad ÷ (100 + Utilidad).<br/>
+                                    <strong>Markup s/costo:</strong> referencia informativa = Utilidad ÷ (100 − Utilidad); utilidad 40% ≡ markup 66.7%.<br/>
                                     <strong>Visibilidad:</strong> Vendedor regular ve Nivel 1 y 2. Vendedor mayorista y Autorizador ven Niveles 1 a 5.
                                 </small>
                             </div>
