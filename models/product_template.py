@@ -197,7 +197,7 @@ class ProductTemplate(models.Model):
         ('calculated', 'Calculado (Costo + Utilidad)'),
         ('fixed', 'Precio Fijo'),
     ], string='Modo de Precio', default='calculated',
-       help="Calculado: Precio = Costo / (1 - %Utilidad). "
+       help="Calculado: Precio = Costo × (1 + %Utilidad). "
             "Fijo: Se parte de un precio fijo base y se aplican las utilidades como niveles de descuento.")
 
     x_fixed_price = fields.Float(
@@ -238,33 +238,33 @@ class ProductTemplate(models.Model):
     x_utilidad = fields.Float(
         string='% Utilidad Alta',
         default=40.0,
-        help="Margen de utilidad para el Precio Alto (Nivel 1). Precio = Costo / (1 - %)."
+        help="Margen de utilidad para el Precio Alto (Nivel 1). Precio = Costo × (1 + %)."
     )
 
     x_utilidad_media = fields.Float(
         string='% Utilidad Media',
         default=35.0,
-        help="Margen de utilidad para el Precio Medio (Nivel 2). Precio = Costo / (1 - %)."
+        help="Margen de utilidad para el Precio Medio (Nivel 2). Precio = Costo × (1 + %)."
     )
 
     x_utilidad_minima = fields.Float(
         string='% Utilidad Nivel 3',
         default=30.0,
-        help="Margen de utilidad para el Precio Nivel 3. Precio = Costo / (1 - %)."
+        help="Margen de utilidad para el Precio Nivel 3. Precio = Costo × (1 + %)."
     )
 
     x_utilidad_4 = fields.Float(
         string='% Utilidad Nivel 4',
         default=25.0,
         help="Margen de utilidad para el Precio Nivel 4. Visible solo para vendedores mayoristas y autorizadores. "
-             "Precio = Costo / (1 - %)."
+             "Precio = Costo × (1 + %)."
     )
 
     x_utilidad_5 = fields.Float(
         string='% Utilidad Mínima (Nivel 5)',
         default=20.0,
         help="Margen de utilidad para el Precio Mínimo (Nivel 5). Visible solo para autorizadores. "
-             "Precio = Costo / (1 - %)."
+             "Precio = Costo × (1 + %)."
     )
 
     # === CAMPOS DE PRECIOS CALCULADOS ===
@@ -880,12 +880,13 @@ class ProductTemplate(models.Model):
         banorte_rate = self._get_usd_to_company_rate_for_costing(self.env.company)
 
         def _price_from_utility(base, utility_pct):
-            divisor = 1 - (utility_pct / 100.0)
-
-            if divisor <= 0:
-                divisor = 0.01
-
-            return math.ceil(base / divisor)
+            # UTILIDAD SOBRE EL COSTO (lineal): Precio = Costo × (1 + %).
+            # La fórmula anterior (Costo / (1 - %)) era margen sobre el
+            # PRECIO: hiperbólica — 90% multiplicaba el costo ×10 y 100%
+            # (divisor recortado a 0.01) lo disparaba ×100, contradiciendo
+            # el diseño documentado ('precio = costo all-in + utilidad').
+            pct = max(utility_pct or 0.0, 0.0)
+            return math.ceil(base * (1 + pct / 100.0))
 
         for record in self:
             mxn_1 = 0

@@ -22,7 +22,7 @@ class ProductCategoryPricing(models.Model):
         ('calculated', 'Calculado (Costo + Utilidad)'),
         ('fixed', 'Precio Fijo'),
     ], string='Modo de Precio', default='calculated', required=True,
-       help="Calculado: Precio = Costo / (1 - %Utilidad). "
+       help="Calculado: Precio = Costo × (1 + %Utilidad). "
             "Fijo: Se parte de un precio fijo y se aplican las utilidades como niveles de descuento.")
 
     x_fixed_price = fields.Float(
