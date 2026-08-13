@@ -743,7 +743,7 @@
                 <button class="btn btn-primary btn-lg" t-on-click="createHolds" t-if="state.currentStep === 7" t-att-disabled="state.isCreating">
                     <t t-if="!state.isCreating">
                         <i class="fa fa-lock"></i>
-                        Apartar Todo
+                        Reservar Selección
                     </t>
                     <t t-else="">
                         <i class="fa fa-spinner fa-spin"></i>

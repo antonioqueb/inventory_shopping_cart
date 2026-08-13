@@ -124,3 +124,37 @@
         transform: translateY(0);
     }
 }
+/* ── MÓVIL: 7 pasos en una sola línea sin desbordarse ──
+   Las etiquetas se ocultan (cada paso ya trae su título dentro del
+   contenido); quedan solo los círculos compactos con sus conectores. */
+@media (max-width: 640px) {
+    .hold-wizard-content .steps-indicator {
+        padding-bottom: 10px;
+
+        .d-flex {
+            gap: 2px;
+            flex-wrap: nowrap;
+        }
+
+        .step-item {
+            gap: 0;
+
+            .step-number {
+                width: 24px;
+                height: 24px;
+                font-size: 10.5px;
+                box-shadow: none !important;
+            }
+
+            .step-label {
+                display: none;
+            }
+        }
+
+        .step-line {
+            flex: 0.4;
+            min-width: 6px;
+            margin-top: 0;
+        }
+    }
+}
