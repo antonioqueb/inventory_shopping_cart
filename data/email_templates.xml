@@ -60,7 +60,7 @@ Su solicitud de autorización ha sido APROBADA.
 
   Referencia:      ${object.name}
   Autorizado por:  ${object.authorizer_id.name}
-  Fecha:           ${format_datetime(object.authorization_date, dt_format='dd/MM/yyyy HH:mm')}
+  Fecha:           ${format_datetime(object.authorization_date, dt_format='dd MMM yyyy HH:mm')}
   Cliente:         ${object.partner_id.name}
 % if object.sale_order_id:
   Orden generada:  ${object.sale_order_id.name}
@@ -107,7 +107,7 @@ Su solicitud de autorización ha sido RECHAZADA.
 
   Referencia:      ${object.name}
   Rechazado por:   ${object.authorizer_id.name}
-  Fecha:           ${format_datetime(object.authorization_date, dt_format='dd/MM/yyyy HH:mm')}
+  Fecha:           ${format_datetime(object.authorization_date, dt_format='dd MMM yyyy HH:mm')}
   Cliente:         ${object.partner_id.name}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

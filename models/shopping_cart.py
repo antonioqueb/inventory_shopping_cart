@@ -3,6 +3,7 @@ import logging
 from datetime import timedelta
 
 from odoo import models, fields, api
+from odoo.addons.inventory_shopping_cart.models.som_date_format import som_format_date
 from odoo.models import Constraint
 
 _logger = logging.getLogger(__name__)
@@ -171,9 +172,12 @@ class ShoppingCart(models.Model):
                 ) % (
                     entry.quant_id.lot_id.name or '',
                     entry.user_id.name,
-                    fields.Datetime.context_timestamp(
-                        self, entry.added_at or entry.create_date
-                    ).strftime('%d/%m %H:%M'),
+                    som_format_date(
+                        fields.Datetime.context_timestamp(
+                            self, entry.added_at or entry.create_date
+                        ),
+                        with_time=True,
+                    ),
                     entry._som_hours_left(),
                 ),
             }

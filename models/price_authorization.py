@@ -5,6 +5,7 @@ import math
 from markupsafe import Markup
 
 from odoo import models, fields, api
+from odoo.addons.inventory_shopping_cart.models.som_date_format import som_format_date
 from odoo.exceptions import UserError
 from odoo.tools import html2plaintext
 
@@ -325,7 +326,9 @@ class PriceAuthorization(models.Model):
         def _dt(value):
             if not value:
                 return ''
-            return fields.Datetime.context_timestamp(self, value).strftime('%d/%m/%Y %H:%M')
+            return som_format_date(
+                fields.Datetime.context_timestamp(self, value),
+                empty='', with_time=True)
 
         return {
             'id': self.id,

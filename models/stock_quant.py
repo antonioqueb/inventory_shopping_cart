@@ -3,6 +3,7 @@
 import logging
 from odoo import models, fields, api
 from odoo.exceptions import UserError
+from odoo.addons.inventory_shopping_cart.models.som_date_format import som_format_date
 from datetime import datetime, timedelta
 import math
 
@@ -59,8 +60,8 @@ class StockQuant(models.Model):
                         'user_id': entry.user_id.id,
                         'user_name': entry.user_id.name,
                         'is_mine': entry.user_id.id == self.env.uid,
-                        'added_at': added_local.strftime('%d/%m/%Y %H:%M'),
-                        'last_activity': activity_local.strftime('%d/%m/%Y %H:%M'),
+                        'added_at': som_format_date(added_local, with_time=True),
+                        'last_activity': som_format_date(activity_local, with_time=True),
                         'hours_left': entry._som_hours_left(),
                         'quantity': entry.quantity,
                         'ttl_hours': Cart.CART_TTL_HOURS,
