@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from odoo.exceptions import ValidationError
 from odoo import models, fields, api
 from odoo.exceptions import UserError
 import logging
@@ -44,6 +45,20 @@ class ProductCategoryPricing(models.Model):
     x_utilidad_5 = fields.Float(string='% Utilidad Mínima (Nivel 5)', default=20.0,
                                 help="Margen de utilidad para el Precio Mínimo (Nivel 5). "
                                      "Visible solo para autorizadores.")
+
+    @api.constrains('x_utilidad', 'x_utilidad_media', 'x_utilidad_minima',
+                    'x_utilidad_4', 'x_utilidad_5')
+    def _check_utilidad_range(self):
+        for rec in self:
+            for fname in ('x_utilidad', 'x_utilidad_media',
+                          'x_utilidad_minima', 'x_utilidad_4',
+                          'x_utilidad_5'):
+                val = rec[fname] or 0.0
+                if val < 0 or val >= 100:
+                    raise ValidationError(
+                        'La utilidad "%s" debe ser mayor o igual a 0%% y '
+                        'MENOR a 100%% (capturaste %.2f%%).' % (
+                            rec._fields[fname].string or fname, val))
 
     # === ARANCEL ===
     x_arancel_pct = fields.Float(string='Arancel (%)', default=0.0,

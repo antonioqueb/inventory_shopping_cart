@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, time
 from markupsafe import Markup
 
 from odoo import models, fields, api
+from odoo.exceptions import ValidationError
 
 try:
     from zoneinfo import ZoneInfo
@@ -266,6 +267,53 @@ class ProductTemplate(models.Model):
         help="Margen de utilidad para el Precio Mínimo (Nivel 5). Visible solo para autorizadores. "
              "Precio = Costo × (1 + %)."
     )
+
+    _UTILIDAD_FIELDS = (
+        'x_utilidad', 'x_utilidad_media', 'x_utilidad_minima',
+        'x_utilidad_4', 'x_utilidad_5',
+    )
+
+    @api.constrains('x_utilidad', 'x_utilidad_media', 'x_utilidad_minima',
+                    'x_utilidad_4', 'x_utilidad_5')
+    def _check_utilidad_range(self):
+        """La utilidad es SOBRE EL COSTO y debe vivir en [0, 100):
+        100% (duplicar el costo) se reserva como tope prohibido por
+        pedido explícito, y los negativos venderían bajo costo."""
+        for rec in self:
+            for fname in self._UTILIDAD_FIELDS:
+                val = rec[fname] or 0.0
+                if val < 0 or val >= 100:
+                    raise ValidationError(
+                        'La utilidad "%s" debe ser mayor o igual a 0%% y '
+                        'MENOR a 100%% (capturaste %.2f%%).' % (
+                            rec._fields[fname].string or fname, val))
+
+    # Margen equivalente SOBRE EL PRECIO (solo lectura, informativo):
+    # margen = utilidad / (100 + utilidad). Con utilidad 40% el margen
+    # sobre el precio de venta es 28.6%.
+    x_margen_1 = fields.Float(
+        string='Margen s/precio N1', compute='_compute_x_margen', digits=(6, 1))
+    x_margen_2 = fields.Float(
+        string='Margen s/precio N2', compute='_compute_x_margen', digits=(6, 1))
+    x_margen_3 = fields.Float(
+        string='Margen s/precio N3', compute='_compute_x_margen', digits=(6, 1))
+    x_margen_4 = fields.Float(
+        string='Margen s/precio N4', compute='_compute_x_margen', digits=(6, 1))
+    x_margen_5 = fields.Float(
+        string='Margen s/precio N5', compute='_compute_x_margen', digits=(6, 1))
+
+    @api.depends('x_utilidad', 'x_utilidad_media', 'x_utilidad_minima',
+                 'x_utilidad_4', 'x_utilidad_5')
+    def _compute_x_margen(self):
+        def margen(util):
+            util = util or 0.0
+            return (util / (100.0 + util) * 100.0) if util > 0 else 0.0
+        for rec in self:
+            rec.x_margen_1 = margen(rec.x_utilidad)
+            rec.x_margen_2 = margen(rec.x_utilidad_media)
+            rec.x_margen_3 = margen(rec.x_utilidad_minima)
+            rec.x_margen_4 = margen(rec.x_utilidad_4)
+            rec.x_margen_5 = margen(rec.x_utilidad_5)
 
     # === CAMPOS DE PRECIOS CALCULADOS ===
 
