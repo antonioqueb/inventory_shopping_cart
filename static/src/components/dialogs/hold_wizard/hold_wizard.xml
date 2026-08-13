@@ -222,6 +222,7 @@
                         <h5>
                             <i class="fa fa-user-circle text-secondary"></i>
                             Seleccionar Embajador
+                            <span class="badge bg-light text-muted ms-2">Opcional</span>
                         </h5>
                         
                         <div class="btn-group w-100 mb-3" role="group">
@@ -576,7 +577,7 @@
                                     </div>
                                     <div class="col-md-6">
                                         <strong>Embajador:</strong><br/>
-                                        <t t-esc="state.selectedArchitectName"/>
+                                        <t t-esc="state.selectedArchitectName or 'Sin embajador'"/>
                                     </div>
                                     <div class="col-md-6">
                                         <strong>Vendedor:</strong><br/>
