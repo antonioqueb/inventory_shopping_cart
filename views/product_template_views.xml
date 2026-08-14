@@ -206,7 +206,7 @@
                                     <strong>Modo Calculado:</strong> Precio = Costo ÷ (1 − %Utilidad). La utilidad es sobre el PRECIO de venta y debe ser menor a 100%.<br/>
                                     <strong>Modo Fijo:</strong> misma fórmula con el Precio Fijo como base.<br/>
                                     <strong>Markup s/costo:</strong> referencia informativa = Utilidad ÷ (100 − Utilidad); utilidad 40% ≡ markup 66.7%.<br/>
-                                    <strong>Visibilidad:</strong> Vendedor regular ve Niveles 1 a 3 (el 3 es libre). Vendedor mayorista y Autorizador ven Niveles 1 a 5; autorización solo aplica en 4 y 5.
+                                    <strong>Visibilidad:</strong> Vendedor regular ve Nivel 1 y 2. Vendedor mayorista y Autorizador ven Niveles 1 a 5.
                                 </small>
                             </div>
                         </group>
@@ -241,7 +241,8 @@
                             <field name="x_price_mxn_3"
                                    readonly="1"
                                    force_save="1"
-                                   string="3. Precio Nivel 3"/>
+                                   string="3. Precio Nivel 3"
+                                   groups="inventory_shopping_cart.group_seller_mayorista,inventory_shopping_cart.group_price_authorizer"/>
                             <field name="x_price_mxn_4"
                                    readonly="1"
                                    force_save="1"
@@ -266,7 +267,8 @@
                             <field name="x_price_usd_3"
                                    readonly="1"
                                    force_save="1"
-                                   string="3. Precio Nivel 3"/>
+                                   string="3. Precio Nivel 3"
+                                   groups="inventory_shopping_cart.group_seller_mayorista,inventory_shopping_cart.group_price_authorizer"/>
                             <field name="x_price_usd_4"
                                    readonly="1"
                                    force_save="1"
