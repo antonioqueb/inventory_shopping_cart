@@ -4,7 +4,9 @@ import { Component, useEffect, useRef, useState } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 
-const MAYORISTA_LEVELS = new Set(["minimum", "level_4", "level_5"]);
+// El Precio 3 ('minimum') es LIBRE para todo vendedor; solo los
+// niveles 4 y 5 quedan reservados a mayoristas/autorizadores.
+const MAYORISTA_LEVELS = new Set(["level_4", "level_5"]);
 
 export class PriceLevelSelectorField extends Component {
     static template = "inventory_shopping_cart.PriceLevelSelectorField";

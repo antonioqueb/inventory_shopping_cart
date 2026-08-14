@@ -478,9 +478,9 @@ class SaleOrderLine(models.Model):
     )
 
     x_can_use_minimum_price = fields.Boolean(
-        string='Puede usar Precios 3-5',
+        string='Puede usar Precios 4-5',
         compute='_compute_x_price_permission_flags',
-        help="Indica si el usuario puede usar los niveles 3, 4 y 5 (vendedores mayoristas y autorizadores).",
+        help="Indica si el usuario puede usar los niveles 4 y 5 (vendedores mayoristas y autorizadores). El nivel 3 es libre para todos.",
     )
 
     @api.depends_context('uid')

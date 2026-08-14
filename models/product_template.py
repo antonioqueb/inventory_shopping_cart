@@ -1295,7 +1295,8 @@ class ProductTemplate(models.Model):
         Devuelve el nivel ('high', 'medium', 'minimum', 'level_4', 'level_5') por
         debajo del cual el usuario requiere solicitar autorización.
 
-        - Vendedor regular: medium (debajo del Precio 2 requiere autorización).
+        - Vendedor regular: minimum (el Precio 3 es LIBRE; autorización solo
+          por debajo — niveles 4/5 o personalizados menores).
         - Vendedor mayorista: level_4 (debajo del Precio 4 requiere autorización).
         - Autorizador: level_5 (debajo del Precio 5 requiere autorización).
         """
@@ -1304,7 +1305,7 @@ class ProductTemplate(models.Model):
             return 'level_5'
         if role == 'mayorista':
             return 'level_4'
-        return 'medium'
+        return 'minimum'
 
     @api.model
     def _get_price_level_value(self, tmpl, level, currency_code):
@@ -1359,14 +1360,35 @@ class ProductTemplate(models.Model):
 
     @api.model
     def get_price_tooltip_data(self, product_id):
+        """Precios de referencia por ROL (lo consume el Inventario Visual):
+        vendedor regular ve niveles 1-3; mayorista y autorizador, 1-5."""
         product = self.env['product.product'].browse(product_id)
 
         if not product.exists():
             return {}
 
         tmpl = product.product_tmpl_id
+        role = self._get_user_price_role()
+
+        levels = [
+            {'label': 'Alto', 'dot': '#28a745',
+             'usd': tmpl.x_price_usd_1, 'mxn': tmpl.x_price_mxn_1},
+            {'label': 'Medio', 'dot': '#ffc107',
+             'usd': tmpl.x_price_usd_2, 'mxn': tmpl.x_price_mxn_2},
+            {'label': 'Nivel 3', 'dot': '#fd7e14',
+             'usd': tmpl.x_price_usd_3, 'mxn': tmpl.x_price_mxn_3},
+        ]
+        if role in ('mayorista', 'authorizer'):
+            levels += [
+                {'label': 'Nivel 4', 'dot': '#6f42c1',
+                 'usd': tmpl.x_price_usd_4, 'mxn': tmpl.x_price_mxn_4},
+                {'label': 'Mínimo', 'dot': '#dc3545',
+                 'usd': tmpl.x_price_usd_5, 'mxn': tmpl.x_price_mxn_5},
+            ]
 
         return {
+            'levels': levels,
+            # Compatibilidad con consumidores viejos del tooltip
             'usd_high': tmpl.x_price_usd_1,
             'usd_medium': tmpl.x_price_usd_2,
             'mxn_high': tmpl.x_price_mxn_1,
@@ -1379,7 +1401,8 @@ class ProductTemplate(models.Model):
         Valida si una operación requiere autorización de precio.
 
         Regla por rol:
-        - Vendedor regular: autorización si el precio queda debajo del Precio 2.
+        - Vendedor regular: autorización si el precio queda debajo del Precio 3
+          (los niveles 1-3 son libres).
         - Vendedor mayorista: autorización si el precio queda debajo del Precio 4.
         - Autorizador/Administrador: autorización si el precio queda debajo del Precio 5.
         - Usuarios sin rol comercial explícito no disparan autorización desde este helper.
