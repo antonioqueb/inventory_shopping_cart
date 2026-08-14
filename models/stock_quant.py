@@ -348,29 +348,29 @@ class StockQuant(models.Model):
                 if label_format == '10x5':
                     # GIRADA 90°: media horizontal — 10 cm de ancho (800) ×
                     # 5 cm de alto (400), texto en orientación NORMAL (^A0N).
-                    # TODA la información va en la MITAD INFERIOR (y 200..392);
-                    # la mitad superior queda limpia.
+                    # ETIQUETA DOBLE: la MISMA información arriba y abajo
+                    # (mitades y 8..196 y 204..392) — al cortar la etiqueta a
+                    # la mitad quedan dos etiquetas idénticas y completas.
                     zpl_code += "^PW800^LL400"
-                    # Marco solo de la mitad inferior
-                    zpl_code += "^FO8,204^GB784,188,3^FS"
-                    # Nombre del material: 2 líneas centradas
-                    zpl_code += ("^FO10,214^A0N,36,36^FB780,2,4,C^FD"
-                                 + product_name + "^FS")
-                    # Cantidad a la izquierda
-                    zpl_code += "^FO25,320^A0N,55,55^FD" + qty_str + "^FS"
-                    # Código de barras al centro-derecha (sin línea de
-                    # interpretación: el número va aparte, UNA sola vez).
-                    # Se comprime a 48 dots para ceder espacio al número
-                    # GRANDE — todo dentro del marco de la mitad inferior
-                    # (y 204..392), sin invadir la mitad superior.
-                    zpl_code += ("^FO270,300^BY2,2,48^BCN,48,N,N,N^FD"
-                                 + lot_name + "^FS")
-                    # Número de lote legible, ÚNICO y GRANDE (38 dots ≈
-                    # 4.8 mm; termina en y≈390, al ras del marco).
-                    zpl_code += ("^FO270,352^A0N,38,38^FB360,1,0,C^FD"
-                                 + lot_name + "^FS")
-                    # Logo SOM al extremo derecho de la franja
-                    zpl_code += "^FO628,330" + SOM_LOGO_CANTO_ZPL + "^FS"
+                    for y0 in (8, 204):
+                        # Marco de la media etiqueta
+                        zpl_code += "^FO8,%d^GB784,188,3^FS" % y0
+                        # Nombre del material: 2 líneas centradas
+                        zpl_code += ("^FO10,%d^A0N,36,36^FB780,2,4,C^FD" % (y0 + 10)
+                                     + product_name + "^FS")
+                        # Cantidad a la izquierda
+                        zpl_code += ("^FO25,%d^A0N,55,55^FD" % (y0 + 116)
+                                     + qty_str + "^FS")
+                        # Código de barras al centro-derecha (sin línea de
+                        # interpretación: el número va aparte, UNA sola vez
+                        # por mitad)
+                        zpl_code += ("^FO270,%d^BY2,2,48^BCN,48,N,N,N^FD" % (y0 + 96)
+                                     + lot_name + "^FS")
+                        # Número de lote legible, GRANDE (38 dots ≈ 4.8 mm)
+                        zpl_code += ("^FO270,%d^A0N,38,38^FB360,1,0,C^FD" % (y0 + 148)
+                                     + lot_name + "^FS")
+                        # Logo SOM al extremo derecho de la franja
+                        zpl_code += ("^FO628,%d" % (y0 + 126)) + SOM_LOGO_CANTO_ZPL + "^FS"
 
                 elif label_format == '20x10':
                     # Media: 10 cm ancho (800) × 20 cm largo (1600)
