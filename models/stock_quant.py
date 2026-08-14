@@ -358,15 +358,16 @@ class StockQuant(models.Model):
                                  + product_name + "^FS")
                     # Cantidad a la izquierda
                     zpl_code += "^FO25,320^A0N,55,55^FD" + qty_str + "^FS"
-                    # Código de barras al centro-derecha, comprimido a 56
-                    # dots para ceder espacio al NÚMERO DE LOTE legible
-                    # debajo — todo dentro del marco de la mitad inferior
+                    # Código de barras al centro-derecha (sin línea de
+                    # interpretación: el número va aparte, UNA sola vez).
+                    # Se comprime a 48 dots para ceder espacio al número
+                    # GRANDE — todo dentro del marco de la mitad inferior
                     # (y 204..392), sin invadir la mitad superior.
-                    zpl_code += ("^FO270,306^BY2,2,56^BCN,56,N,N,N^FD"
+                    zpl_code += ("^FO270,300^BY2,2,48^BCN,48,N,N,N^FD"
                                  + lot_name + "^FS")
-                    # Número de lote legible bajo las barras (24 dots ≈ 3 mm,
-                    # termina en y≈390: al ras del marco, sin salirse).
-                    zpl_code += ("^FO270,366^A0N,24,24^FB350,1,0,C^FD"
+                    # Número de lote legible, ÚNICO y GRANDE (38 dots ≈
+                    # 4.8 mm; termina en y≈390, al ras del marco).
+                    zpl_code += ("^FO270,352^A0N,38,38^FB360,1,0,C^FD"
                                  + lot_name + "^FS")
                     # Logo SOM al extremo derecho de la franja
                     zpl_code += "^FO628,330" + SOM_LOGO_CANTO_ZPL + "^FS"
