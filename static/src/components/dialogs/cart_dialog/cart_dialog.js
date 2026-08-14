@@ -1,15 +1,70 @@
 /** @odoo-module **/
 
-import { Component } from "@odoo/owl";
+import { Component, useState } from "@odoo/owl";
 import { Dialog } from "@web/core/dialog/dialog";
 
 export class CartDialog extends Component {
     setup() {
         this.cart = this.props.cart;
+        // Selección por lote: la acción (apartar / vender / trasladar /
+        // etiquetas) aplica SOLO a lo palomeado — por default todo va
+        // seleccionado, el vendedor desmarca lo que no quiere enviar.
+        const sel = {};
+        for (const item of this.cart.items) {
+            sel[item.id] = true;
+        }
+        this.state = useState({ sel });
     }
-    
+
     get hasHolds() {
         return this.cart.items.some(item => item.tiene_hold);
+    }
+
+    // ── Selección ──
+    get selectedIds() {
+        return this.cart.items
+            .filter((item) => this.state.sel[item.id])
+            .map((item) => item.id);
+    }
+
+    get selCount() {
+        return this.selectedIds.length;
+    }
+
+    get selQuantity() {
+        return this.cart.items
+            .filter((item) => this.state.sel[item.id])
+            .reduce((a, item) => a + (item.quantity || 0), 0);
+    }
+
+    isSelected(lot) {
+        return !!this.state.sel[lot.id];
+    }
+
+    toggleLot(lot) {
+        this.state.sel[lot.id] = !this.state.sel[lot.id];
+    }
+
+    groupSelCount(group) {
+        return group.lots.filter((l) => this.state.sel[l.id]).length;
+    }
+
+    toggleGroup(group) {
+        const all = this.groupSelCount(group) === group.lots.length;
+        for (const l of group.lots) {
+            this.state.sel[l.id] = !all;
+        }
+    }
+
+    toggleAll() {
+        const all = this.selCount === this.cart.items.length;
+        for (const item of this.cart.items) {
+            this.state.sel[item.id] = !all;
+        }
+    }
+
+    _assertSelection() {
+        return this.selectedIds.length > 0;
     }
     
     removeHolds() {
@@ -25,8 +80,11 @@ export class CartDialog extends Component {
             this.props.close();
             return;
         }
+        if (!this._assertSelection()) {
+            return;
+        }
         this.props.close();
-        this.props.onCreateHolds();
+        this.props.onCreateHolds(this.selectedIds);
     }
     
     createSaleOrder() {
@@ -35,8 +93,11 @@ export class CartDialog extends Component {
             this.props.close();
             return;
         }
+        if (!this._assertSelection()) {
+            return;
+        }
         this.props.close();
-        this.props.onCreateSaleOrder();
+        this.props.onCreateSaleOrder(this.selectedIds);
     }
     
     createTransfer() {
@@ -45,14 +106,20 @@ export class CartDialog extends Component {
             this.props.close();
             return;
         }
+        if (!this._assertSelection()) {
+            return;
+        }
         this.props.close();
-        this.props.onCreateTransfer();
+        this.props.onCreateTransfer(this.selectedIds);
     }
     
     // ✅ NUEVO MÉTODO: IMPRIMIR ETIQUETAS
     printLabels() {
+        if (!this._assertSelection()) {
+            return;
+        }
         this.props.close();
-        this.props.onPrintLabels();
+        this.props.onPrintLabels(this.selectedIds);
     }
     
     formatNumber(num) {

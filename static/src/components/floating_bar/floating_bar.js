@@ -22,14 +22,57 @@ patch(InventoryVisualController.prototype, {
         this.dialog.add(CartDialog, {
             cart: this.cart,
             onRemoveHolds: () => this.removeLotsWithHold(),
-            onCreateHolds: () => this.openHoldWizard(),
-            onCreateSaleOrder: () => this.openSaleOrderWizard(),
-            onCreateTransfer: () => this.openTransferWizard(),
-            onPrintLabels: () => this.openLabelWizard()
+            onCreateHolds: (ids) => this.openHoldWizard(ids),
+            onCreateSaleOrder: (ids) => this.openSaleOrderWizard(ids),
+            onCreateTransfer: (ids) => this.openTransferWizard(ids),
+            onPrintLabels: (ids) => this.openLabelWizard(ids)
         });
     },
+
+    // ── Selección parcial del carrito ──
+    // La acción aplica SOLO a los lotes palomeados en el diálogo; el
+    // resto se queda VIVO en el carrito para otra acción.
+    _cartSubset(selectedIds) {
+        const ids = selectedIds && selectedIds.length
+            ? new Set(selectedIds) : null;
+        const items = ids
+            ? this.cart.items.filter((i) => ids.has(i.id))
+            : [...this.cart.items];
+        const groups = {};
+        for (const [pid, g] of Object.entries(this.cart.productGroups)) {
+            const lots = (g.lots || []).filter((l) => !ids || ids.has(l.id));
+            if (!lots.length) {
+                continue;
+            }
+            groups[pid] = {
+                ...g,
+                lots,
+                total_quantity: lots.reduce((a, l) => a + (l.quantity || 0), 0),
+            };
+        }
+        return { items, groups, partial: !!ids && items.length < this.cart.items.length };
+    },
+
+    async consumeCartItems(selectedIds) {
+        const sub = this._cartSubset(selectedIds);
+        if (!sub.partial) {
+            await this.clearCart();
+            return;
+        }
+        const ids = new Set(sub.items.map((i) => i.id));
+        for (const id of ids) {
+            try {
+                await this.orm.call("shopping.cart", "remove_from_cart", [id]);
+            } catch (e) {
+                console.warn("[CART] No se pudo retirar el item", id, e);
+            }
+        }
+        this.cart.items = this.cart.items.filter((i) => !ids.has(i.id));
+        // updateCartSummary también reconstruye productGroups
+        this.updateCartSummary();
+    },
     
-    async openHoldWizard() {
+    async openHoldWizard(selectedIds) {
         if (!this.cart.hasSalesPermissions) {
             this.notification.add(
                 "No tiene permisos para crear apartados. Contacte al administrador.",
@@ -39,18 +82,19 @@ patch(InventoryVisualController.prototype, {
         }
 
         await this.syncCartToDB();
+        const sub = this._cartSubset(selectedIds);
 
         this.dialog.add(HoldWizard, {
-            selectedLots: this.cart.items.map(item => item.id),
-            productGroups: this.cart.productGroups,
+            selectedLots: sub.items.map(item => item.id),
+            productGroups: sub.groups,
             onSuccess: async () => {
-                // Solo limpiar carrito. NO recargar aquí porque vamos a abrir la orden.
-                await this.clearCart();
+                // Solo lo palomeado sale del carrito; el resto sigue vivo.
+                await this.consumeCartItems(selectedIds);
             }
         });
     },
     
-    async openSaleOrderWizard() {
+    async openSaleOrderWizard(selectedIds) {
         if (!this.cart.hasSalesPermissions) {
             this.notification.add(
                 "No tiene permisos para crear órdenes de venta. Contacte al administrador.", 
@@ -59,26 +103,25 @@ patch(InventoryVisualController.prototype, {
             return;
         }
         
-        const lotsWithHold = this.cart.items.filter(item => item.tiene_hold);
-        
+        const sub = this._cartSubset(selectedIds);
+        const lotsWithHold = sub.items.filter(item => item.tiene_hold);
+
         if (lotsWithHold.length > 0) {
-            this.notification.add("Hay lotes apartados en el carrito. Use 'Eliminar Apartados' primero.", { type: "warning", sticky: true });
+            this.notification.add("Hay lotes apartados en tu selección. Desmárcalos o usa 'Eliminar Apartados'.", { type: "warning", sticky: true });
             return;
         }
-        
+
         await this.syncCartToDB();
-        
+
         this.dialog.add(SaleOrderWizard, {
-            productGroups: this.cart.productGroups,
+            productGroups: sub.groups,
             onSuccess: async () => {
-                // Solo limpiar el carrito. NO recargar la página, porque el wizard
-                // abrirá la orden de venta creada con doAction (igual que el apartado).
-                await this.clearCart();
+                await this.consumeCartItems(selectedIds);
             }
         });
     },
     
-    async openTransferWizard() {
+    async openTransferWizard(selectedIds) {
         if (!this.cart.hasInventoryPermissions) {
             this.notification.add(
                 "No tiene permisos para crear traslados. Contacte al administrador.", 
@@ -88,27 +131,28 @@ patch(InventoryVisualController.prototype, {
         }
         
         await this.syncCartToDB();
-        
+        const sub = this._cartSubset(selectedIds);
+
         this.dialog.add(TransferWizard, {
-            selectedLots: this.cart.items.map(item => item.id),
-            productGroups: this.cart.productGroups,
+            selectedLots: sub.items.map(item => item.id),
+            productGroups: sub.groups,
             onSuccess: async () => {
-                // El wizard abre el traslado con doAction, no recargamos aquí.
-                await this.clearCart();
+                await this.consumeCartItems(selectedIds);
             }
         });
     },
 
-    async openLabelWizard() {
+    async openLabelWizard(selectedIds) {
         if (this.cart.totalLots === 0) {
             this.notification.add("No hay items en el carrito para imprimir", { type: "warning" });
             return;
         }
         
         await this.syncCartToDB();
-        
+        const sub = this._cartSubset(selectedIds);
+
         this.dialog.add(LabelWizard, {
-            selectedLots: this.cart.items.map(item => item.id)
+            selectedLots: sub.items.map(item => item.id)
         });
     }
 });
