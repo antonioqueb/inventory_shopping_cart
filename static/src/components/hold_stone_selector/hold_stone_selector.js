@@ -402,6 +402,53 @@ export class HoldStoneExpandButton extends Component {
         await this._renderPopup(productId);
     }
 
+    // Orden del Inventario Visual: bloques del más NUEVO al más
+
+    // viejo (serie S primero, folio mayor = más nuevo) y placas en
+
+    // orden natural dentro del bloque.
+
+    _blockRecencyKey(name) {
+
+        const s = String(name || "").trim().toUpperCase();
+
+        const m2 = s.match(/^S\s*-?(\d+)/);
+
+        if (m2) { return [2, parseInt(m2[1], 10)]; }
+
+        const n = parseInt(s, 10);
+
+        if (!isNaN(n)) { return [1, n]; }
+
+        return [0, 0];
+
+    }
+
+
+    _sortQuantsLikeVisual(quants) {
+
+        return (quants || []).slice().sort((a, b) => {
+
+            const ka = this._blockRecencyKey(a.x_bloque);
+
+            const kb = this._blockRecencyKey(b.x_bloque);
+
+            if (kb[0] !== ka[0]) { return kb[0] - ka[0]; }
+
+            if (kb[1] !== ka[1]) { return kb[1] - ka[1]; }
+
+            const la = (a.lot_id && a.lot_id[1]) || "";
+
+            const lb = (b.lot_id && b.lot_id[1]) || "";
+
+            return String(la).localeCompare(String(lb), "es", { numeric: true });
+
+        });
+
+    }
+
+
+
     async _loadQuants(productId, filters = {}) {
         // El selector NO debe ofrecer placas comprometidas (reservadas en otra
         // SO/entrega o en otro hold activo). El filtrado vive en el servidor para
@@ -801,7 +848,8 @@ export class HoldStoneExpandButton extends Component {
             `;
 
             try {
-                state.quants = await this._loadQuants(productId, state.filters);
+                state.quants = this._sortQuantsLikeVisual(
+                    await this._loadQuants(productId, state.filters));
 
                 for (const quant of state.quants) {
                     const lotId = this._getLotIdFromQuant(quant);
