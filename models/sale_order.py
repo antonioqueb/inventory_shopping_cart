@@ -1137,9 +1137,15 @@ class SaleOrder(models.Model):
         'client_order_ref',
     )
     def _compute_has_low_prices(self):
+        # SIEMPRE con el rol del VENDEDOR de la orden: la bandera es
+        # almacenada y antes se calculaba con el rol de QUIEN disparara el
+        # recompute — un autorizador tocando la orden la evaluaba con
+        # umbral Precio 5 y un vendedor con Precio 2: dos verdades para el
+        # mismo documento.
         Product = self.env['product.template']
-        threshold_level = Product._get_user_threshold_level()
         for order in self:
+            threshold_level = Product._get_user_threshold_level(
+                user=order.user_id or self.env.user)
             if order._som_is_migrated_order():
                 order.x_has_low_prices = False
                 continue
@@ -1178,7 +1184,8 @@ class SaleOrder(models.Model):
         self.ensure_one()
 
         Product = self.env['product.template']
-        threshold_level = Product._get_user_threshold_level()
+        threshold_level = Product._get_user_threshold_level(
+            user=self.user_id or self.env.user)
         threshold_label_map = {
             'medium': 'Precio 2',
             'minimum': 'Precio 3',
@@ -2057,6 +2064,18 @@ class SaleOrder(models.Model):
                 return res
         return super().write(vals)
 
+    @api.model
+    def _som_recompute_low_price_flags(self):
+        """Recalcula x_has_low_prices de las órdenes activas con la regla
+        nueva (rol del VENDEDOR de la orden). Corre en cada -u: banderas
+        almacenadas con el criterio viejo quedaban pegadas."""
+        orders = self.search([('state', 'in', ('draft', 'sent', 'sale'))])
+        orders._compute_has_low_prices()
+        _logger.info(
+            '[PRECIOS] Bandera de precios bajos recalculada en %s órdenes '
+            'activas.', len(orders))
+        return True
+
     def action_request_authorization(self):
         self.ensure_one()
 
@@ -2070,10 +2089,17 @@ class SaleOrder(models.Model):
             )
 
         Product = self.env['product.template']
-        threshold_level = Product._get_user_threshold_level()
+        # El umbral se evalúa con el rol del VENDEDOR de la orden — la
+        # autorización protege SU venta. Antes se evaluaba con el rol de
+        # quien daba clic: un autorizador (umbral Precio 5) no 'veía'
+        # violaciones y el botón tronaba aunque la orden estuviera
+        # bloqueada para el vendedor.
+        threshold_level = Product._get_user_threshold_level(
+            user=self.user_id or self.env.user)
         currency_code = self.pricelist_id.currency_id.name or 'USD'
         product_prices = {}
         product_groups = {}
+        detail_rows = []
         has_low = False
 
         for line in self.order_line:
@@ -2087,6 +2113,12 @@ class SaleOrder(models.Model):
                 has_low = True
                 pid_str = str(line.product_id.id)
                 product_prices[pid_str] = line.price_unit
+                detail_rows.append(
+                    '• %s: precio %.2f vs mínimo permitido %.2f %s '
+                    '(faltan %.2f)' % (
+                        line.product_id.display_name, line.price_unit,
+                        threshold, currency_code,
+                        threshold - line.price_unit))
 
                 if pid_str not in product_groups:
                     product_groups[pid_str] = {
@@ -2098,7 +2130,18 @@ class SaleOrder(models.Model):
                 product_groups[pid_str]['total_quantity'] += line.product_uom_qty
 
         if not has_low:
-            raise UserError("No se detectaron precios por debajo del nivel permitido para su rol.")
+            threshold_labels = {
+                'high': 'Precio 1', 'medium': 'Precio 2',
+                'minimum': 'Precio 3', 'level_4': 'Precio 4',
+                'level_5': 'Precio 5',
+            }
+            raise UserError(
+                "No hay precios por debajo del nivel permitido del vendedor "
+                "de la orden (%s, umbral %s): no se requiere autorización.\n\n"
+                "Si la orden aparece bloqueada, guarda cualquier cambio para "
+                "recalcular la bandera de precios." % (
+                    (self.user_id.name or 'sin vendedor'),
+                    threshold_labels.get(threshold_level, threshold_level)))
 
         auth = self.env['price.authorization'].create({
             'seller_id': self.env.user.id,

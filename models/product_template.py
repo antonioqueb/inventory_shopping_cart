@@ -1263,13 +1263,15 @@ class ProductTemplate(models.Model):
     # ============================================================
 
     @api.model
-    def _get_user_price_role(self):
+    def _get_user_price_role(self, user=None):
         """
         Identifica el rol comercial del usuario para la escalera de precios.
+        Con `user` evalúa a ESE usuario (p. ej. el vendedor de la orden);
+        sin él, al usuario actual.
 
         Retorna uno de: 'authorizer', 'mayorista', 'seller', 'none'.
         """
-        user = self.env.user
+        user = user or self.env.user
         if user.has_group('inventory_shopping_cart.group_price_authorizer'):
             return 'authorizer'
         if user.has_group('inventory_shopping_cart.group_seller_mayorista'):
@@ -1290,7 +1292,7 @@ class ProductTemplate(models.Model):
         return ['high', 'medium']
 
     @api.model
-    def _get_user_threshold_level(self):
+    def _get_user_threshold_level(self, user=None):
         """
         Devuelve el nivel ('high', 'medium', 'minimum', 'level_4', 'level_5') por
         debajo del cual el usuario requiere solicitar autorización.
@@ -1299,7 +1301,7 @@ class ProductTemplate(models.Model):
         - Vendedor mayorista: level_4 (debajo del Precio 4 requiere autorización).
         - Autorizador: level_5 (debajo del Precio 5 requiere autorización).
         """
-        role = self._get_user_price_role()
+        role = self._get_user_price_role(user=user)
         if role == 'authorizer':
             return 'level_5'
         if role == 'mayorista':

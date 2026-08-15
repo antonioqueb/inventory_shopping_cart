@@ -5,4 +5,8 @@
          después de la primera pasada los espejos en SOL.write mantienen
          las tres copias iguales y esto no encuentra nada que corregir. -->
     <function model="sale.order.line" name="_som_fix_stone_cart_desync"/>
+
+    <!-- Recalcular la bandera de precios bajos con la regla nueva (rol
+         del VENDEDOR de la orden) — banderas viejas quedaban pegadas -->
+    <function model="sale.order" name="_som_recompute_low_price_flags"/>
 </odoo>
