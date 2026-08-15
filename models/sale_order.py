@@ -502,7 +502,16 @@ class SaleOrderLine(models.Model):
             line.x_can_use_level_5_price = can_use_level_5
 
     @api.depends('product_id', 'order_id.pricelist_id', 'order_id.pricelist_id.currency_id')
+    @api.depends_context('uid')
     def _compute_price_level_values(self):
+        # Los montos de los niveles que el usuario NO puede ver se van en
+        # CERO: si no, viajaban al navegador dentro del payload de la línea
+        # (los campos van column_invisible, que oculta pero igual manda el
+        # dato) y bastaba abrir la red para leerlos.
+        visible = self.env['product.template']._get_user_visible_price_levels()
+        show_3 = 'minimum' in visible
+        show_4 = 'level_4' in visible
+        show_5 = 'level_5' in visible
         for line in self:
             currency_name = 'USD'
 
@@ -532,6 +541,13 @@ class SaleOrderLine(models.Model):
                 line.x_price_2_value = 0.0
                 line.x_price_3_value = 0.0
                 line.x_price_4_value = 0.0
+                line.x_price_5_value = 0.0
+
+            if not show_3:
+                line.x_price_3_value = 0.0
+            if not show_4:
+                line.x_price_4_value = 0.0
+            if not show_5:
                 line.x_price_5_value = 0.0
 
             line.x_price_level_currency = currency_name
@@ -1307,10 +1323,11 @@ class SaleOrder(models.Model):
             if order._som_is_migrated_order():
                 continue
 
-            if (self.env.user.has_group(
-                    'inventory_shopping_cart.group_price_authorizer')
-                    or self.env.user.has_group(
-                        'inventory_shopping_cart.group_dashboard_viewer')):
+            # Quién se salta el candado se decide por ROL, no por grupo
+            # suelto: un "Vendedor con Precios Limitados" que además tenga
+            # el Visor del Dashboard NO es dirección — con el has_group a
+            # pelo se brincaba el bloqueo de precios bajos.
+            if self.env['product.template']._get_user_price_role() == 'authorizer':
                 continue
 
             violating = order._get_violating_products()

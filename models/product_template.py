@@ -398,6 +398,32 @@ class ProductTemplate(models.Model):
         default=''
     )
 
+    # Visibilidad de la ESCALERA por rol. El `groups=` de la vista no basta:
+    # un "Vendedor con Precios Limitados" que además traiga el Visor del
+    # Dashboard pertenece al grupo y vería 3/4/5. Estos flags reusan
+    # _get_user_price_role(), que sí aplica el tope duro del vendedor
+    # limitado, para que la escalera diga lo mismo que el selector y el
+    # tooltip del Inventario Visual.
+    x_som_can_see_level_3_4 = fields.Boolean(
+        string='Ve Precios 3 y 4',
+        compute='_compute_som_price_level_visibility',
+        help='Técnico: mayorista, autorizador o visor del Dashboard.',
+    )
+    x_som_can_see_level_5 = fields.Boolean(
+        string='Ve Precio 5',
+        compute='_compute_som_price_level_visibility',
+        help='Técnico: solo autorizador de precios y visor del Dashboard.',
+    )
+
+    @api.depends_context('uid')
+    def _compute_som_price_level_visibility(self):
+        levels = self._get_user_visible_price_levels()
+        can_3_4 = 'level_4' in levels
+        can_5 = 'level_5' in levels
+        for rec in self:
+            rec.x_som_can_see_level_3_4 = can_3_4
+            rec.x_som_can_see_level_5 = can_5
+
     # ============================================================
     # HELPERS TIPO DE CAMBIO
     # ============================================================
@@ -1270,19 +1296,39 @@ class ProductTemplate(models.Model):
         sin él, al usuario actual.
 
         Retorna uno de: 'authorizer', 'mayorista', 'seller', 'none'.
+
+        PRECEDENCIA (15 ago 2026 — se reportaron vendedores limitados
+        viendo los 5 niveles):
+
+        1. Autorizador de Precios Mínimos: manda siempre. Tiene que ver el
+           piso absoluto para poder autorizar.
+        2. "Vendedor con Precios Limitados" (group_seller SIN mayorista) es
+           un TOPE DURO: 2 niveles en todos lados, aunque además traiga el
+           Visor del Dashboard. Antes el visor lo promovía a 'authorizer' y
+           el vendedor terminaba viendo la escalera completa —y saltándose
+           los candados de precio— con solo tener el dashboard prendido.
+        3. Visor del Dashboard sin nivel de vendedor: dirección, ve 1-5.
+        4. Mayorista: 1-4.
         """
         user = user or self.env.user
         if user.has_group('inventory_shopping_cart.group_price_authorizer'):
             return 'authorizer'
+
+        is_mayorista = user.has_group(
+            'inventory_shopping_cart.group_seller_mayorista')
+        # OJO: group_seller_mayorista IMPLICA group_seller, por eso el
+        # "limitado" se define como seller Y NO mayorista.
+        if user.has_group('inventory_shopping_cart.group_seller') \
+                and not is_mayorista:
+            return 'seller'
+
         # Visor del Dashboard Personalizado: nivel dirección — opera
         # precios sin solicitar autorización (mismo trato que el
         # autorizador para la escalera y los candados de precio).
         if user.has_group('inventory_shopping_cart.group_dashboard_viewer'):
             return 'authorizer'
-        if user.has_group('inventory_shopping_cart.group_seller_mayorista'):
+        if is_mayorista:
             return 'mayorista'
-        if user.has_group('inventory_shopping_cart.group_seller'):
-            return 'seller'
         return 'none'
 
     @api.model

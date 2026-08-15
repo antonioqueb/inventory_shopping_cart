@@ -1322,7 +1322,15 @@ class StockLotHoldOrderLine(models.Model):
 
     @api.depends('product_id', 'order_id.currency_id',
                  'order_id.x_exchange_rate_source')
+    @api.depends_context('uid')
     def _compute_price_level_values(self):
+        # Mismo criterio que en sale.order.line: los niveles que el usuario
+        # no puede ver no viajan al navegador (column_invisible oculta, pero
+        # el dato igual se manda).
+        visible = self.env['product.template']._get_user_visible_price_levels()
+        show_3 = 'minimum' in visible
+        show_4 = 'level_4' in visible
+        show_5 = 'level_5' in visible
         for line in self:
             currency_code = line._get_currency_code()
             tmpl = line.product_id.product_tmpl_id if line.product_id else False
@@ -1346,6 +1354,13 @@ class StockLotHoldOrderLine(models.Model):
                 line.x_price_2_value = 0.0
                 line.x_price_3_value = 0.0
                 line.x_price_4_value = 0.0
+                line.x_price_5_value = 0.0
+
+            if not show_3:
+                line.x_price_3_value = 0.0
+            if not show_4:
+                line.x_price_4_value = 0.0
+            if not show_5:
                 line.x_price_5_value = 0.0
 
             line.x_price_level_currency = currency_code

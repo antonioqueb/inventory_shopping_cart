@@ -61,13 +61,11 @@ export class PriceLevelSelectorField extends Component {
     }
 
     get canUseMayoristaPrices() {
-        const explicitFlag = this.props.record.data.x_can_use_minimum_price;
-
-        if (explicitFlag === undefined) {
-            return this.canUseCustomPrice;
-        }
-
-        return Boolean(explicitFlag);
+        // Sin el campo en la vista se NIEGA. Antes caía a
+        // canUseCustomPrice, que siempre es true: cualquier vista que
+        // olvidara declarar x_can_use_minimum_price le abría los niveles
+        // 3 y 4 al vendedor con precios limitados.
+        return Boolean(this.props.record.data.x_can_use_minimum_price);
     }
 
     get canUseLevel5Price() {
