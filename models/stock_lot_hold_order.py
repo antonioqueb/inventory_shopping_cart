@@ -493,10 +493,10 @@ class StockLotHoldOrder(models.Model):
         - Vendedor regular: solo ve Precios 1 y 2. Requiere autorización si el precio
           final queda por debajo del Precio 2. Si por vista heredada llega a usar un
           selector 3/4/5, también cae en autorización.
-        - Vendedor mayorista: ve Precios 1..5. Requiere autorización solo si el precio
+        - Vendedor mayorista: ve Precios 1..4. Requiere autorización solo si el precio
           queda por debajo del Precio 4.
-        - Autorizador: ve Precios 1..5. Requiere autorización solo si el precio
-          queda por debajo del Precio 5 (precio mínimo absoluto).
+        - Autorizador (y visor del Dashboard): ve Precios 1..5. Requiere autorización
+          solo si el precio queda por debajo del Precio 5 (mínimo absoluto).
         - Servicios: no participan en la escalera ni en autorización de precio.
         """
         self.ensure_one()
@@ -536,6 +536,15 @@ class StockLotHoldOrder(models.Model):
             if role == 'seller' and selector in ('minimum', 'level_4', 'level_5'):
                 reason = (
                     f"selector {selector} requiere autorización para vendedor regular "
+                    f"(umbral {threshold_label}: {threshold:.2f})"
+                )
+
+            # Mayorista: el Precio 5 es piso de autorizador. Se atrapa aquí
+            # aunque el monto empate con el Precio 4 (el chequeo por importe
+            # no lo vería).
+            if not reason and role == 'mayorista' and selector == 'level_5':
+                reason = (
+                    f"selector level_5 requiere autorización para vendedor mayorista "
                     f"(umbral {threshold_label}: {threshold:.2f})"
                 )
 
@@ -1181,6 +1190,13 @@ class StockLotHoldOrderLine(models.Model):
         compute='_compute_x_price_permission_flags',
     )
 
+    x_can_use_level_5_price = fields.Boolean(
+        string='Puede usar Precio 5',
+        compute='_compute_x_price_permission_flags',
+        help="El Precio 5 (mínimo absoluto) solo lo ven autorizadores de "
+             "precio y visores del Dashboard.",
+    )
+
     cantidad_m2 = fields.Float(
         string='Cantidad m²',
         digits='Product Unit of Measure',
@@ -1277,14 +1293,18 @@ class StockLotHoldOrderLine(models.Model):
         El Personalizado debe estar disponible desde el formulario manual,
         igual que en el carrito. La autorización se decide al confirmar.
 
-        Los Precios 3, 4 y 5 se exponen para vendedores mayoristas y autorizadores.
-        El vendedor regular solo puede usar Precio 1 y Precio 2.
+        Los Precios 3 y 4 se exponen para vendedores mayoristas y autorizadores.
+        El vendedor regular solo puede usar Precio 1 y Precio 2. El Precio 5
+        (mínimo absoluto) queda reservado a autorizadores de precio y visores
+        del Dashboard.
         """
         role = self.env['product.template']._get_user_price_role()
         can_use_mayorista = role in ('authorizer', 'mayorista')
+        can_use_level_5 = role == 'authorizer'
         for line in self:
             line.x_can_use_custom_price = True
             line.x_can_use_minimum_price = can_use_mayorista
+            line.x_can_use_level_5_price = can_use_level_5
 
     def _get_currency_code(self):
         self.ensure_one()

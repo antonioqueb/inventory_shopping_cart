@@ -1290,10 +1290,17 @@ class ProductTemplate(models.Model):
         """
         Devuelve la lista de niveles ('high', 'medium', 'minimum', 'level_4', 'level_5')
         que el usuario actual puede ver en los selectores.
+
+        - Vendedor regular: 1-2.
+        - Vendedor mayorista: 1-4 (el Precio 5 es el piso absoluto y NO se le
+          muestra; para bajar de ahí pide autorización).
+        - Autorizador y visor del Dashboard: 1-5.
         """
         role = self._get_user_price_role()
-        if role in ('authorizer', 'mayorista'):
+        if role == 'authorizer':
             return ['high', 'medium', 'minimum', 'level_4', 'level_5']
+        if role == 'mayorista':
+            return ['high', 'medium', 'minimum', 'level_4']
         return ['high', 'medium']
 
     @api.model
@@ -1367,7 +1374,8 @@ class ProductTemplate(models.Model):
     @api.model
     def get_price_tooltip_data(self, product_id):
         """Precios de referencia por ROL (lo consume el Inventario Visual):
-        vendedor regular ve niveles 1-2; mayorista y autorizador, 1-5."""
+        vendedor regular ve niveles 1-2; mayorista, 1-4; autorizador y visor
+        del Dashboard, 1-5."""
         product = self.env['product.product'].browse(product_id)
 
         if not product.exists():
@@ -1388,6 +1396,11 @@ class ProductTemplate(models.Model):
                  'usd': tmpl.x_price_usd_3, 'mxn': tmpl.x_price_mxn_3},
                 {'label': 'Nivel 4', 'dot': '#6f42c1',
                  'usd': tmpl.x_price_usd_4, 'mxn': tmpl.x_price_mxn_4},
+            ]
+        # El Precio 5 (mínimo absoluto) es exclusivo del autorizador y del
+        # visor del Dashboard: el mayorista NO lo ve.
+        if role == 'authorizer':
+            levels += [
                 {'label': 'Mínimo', 'dot': '#dc3545',
                  'usd': tmpl.x_price_usd_5, 'mxn': tmpl.x_price_mxn_5},
             ]

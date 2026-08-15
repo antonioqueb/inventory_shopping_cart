@@ -4,7 +4,10 @@ import { Component, useEffect, useRef, useState } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 
-const MAYORISTA_LEVELS = new Set(["minimum", "level_4", "level_5"]);
+// Niveles reservados al mayorista/autorizador (3 y 4). El Precio 5 es el
+// piso absoluto y se filtra aparte: solo autorizadores de precio y visores
+// del Dashboard lo ven.
+const MAYORISTA_LEVELS = new Set(["minimum", "level_4"]);
 
 export class PriceLevelSelectorField extends Component {
     static template = "inventory_shopping_cart.PriceLevelSelectorField";
@@ -35,6 +38,7 @@ export class PriceLevelSelectorField extends Component {
                 this.props.record.data.x_price_level_currency,
                 this.props.record.data.x_can_use_custom_price,
                 this.props.record.data.x_can_use_minimum_price,
+                this.props.record.data.x_can_use_level_5_price,
             ]
         );
     }
@@ -64,6 +68,12 @@ export class PriceLevelSelectorField extends Component {
         }
 
         return Boolean(explicitFlag);
+    }
+
+    get canUseLevel5Price() {
+        // Sin el campo en la vista, el Precio 5 NO se ofrece: es el piso
+        // absoluto y su ausencia es el default seguro.
+        return Boolean(this.props.record.data.x_can_use_level_5_price);
     }
 
     // ── Precio personalizado inline (opción {'inline_price': true}) ──────────
@@ -124,6 +134,10 @@ export class PriceLevelSelectorField extends Component {
         return this.rawSelection
             .filter(([val]) => {
                 if (MAYORISTA_LEVELS.has(val) && !this.canUseMayoristaPrices) {
+                    return false;
+                }
+
+                if (val === "level_5" && !this.canUseLevel5Price) {
                     return false;
                 }
 

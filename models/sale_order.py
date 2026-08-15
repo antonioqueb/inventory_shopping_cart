@@ -478,9 +478,16 @@ class SaleOrderLine(models.Model):
     )
 
     x_can_use_minimum_price = fields.Boolean(
-        string='Puede usar Precios 3-5',
+        string='Puede usar Precios 3-4',
         compute='_compute_x_price_permission_flags',
-        help="Indica si el usuario puede usar los niveles 3, 4 y 5 (vendedores mayoristas y autorizadores).",
+        help="Indica si el usuario puede usar los niveles 3 y 4 (vendedores mayoristas y autorizadores).",
+    )
+
+    x_can_use_level_5_price = fields.Boolean(
+        string='Puede usar Precio 5',
+        compute='_compute_x_price_permission_flags',
+        help="El Precio 5 (mínimo absoluto) solo lo ven autorizadores de "
+             "precio y visores del Dashboard.",
     )
 
     @api.depends_context('uid')
@@ -488,9 +495,11 @@ class SaleOrderLine(models.Model):
         Product = self.env['product.template']
         role = Product._get_user_price_role()
         can_use_mayorista = role in ('authorizer', 'mayorista')
+        can_use_level_5 = role == 'authorizer'
         for line in self:
             line.x_can_use_custom_price = True
             line.x_can_use_minimum_price = can_use_mayorista
+            line.x_can_use_level_5_price = can_use_level_5
 
     @api.depends('product_id', 'order_id.pricelist_id', 'order_id.pricelist_id.currency_id')
     def _compute_price_level_values(self):
