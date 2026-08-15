@@ -1278,7 +1278,10 @@ class SaleOrder(models.Model):
             if order._som_is_migrated_order():
                 continue
 
-            if self.env.user.has_group('inventory_shopping_cart.group_price_authorizer'):
+            if (self.env.user.has_group(
+                    'inventory_shopping_cart.group_price_authorizer')
+                    or self.env.user.has_group(
+                        'inventory_shopping_cart.group_dashboard_viewer')):
                 continue
 
             violating = order._get_violating_products()

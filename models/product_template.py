@@ -1274,6 +1274,11 @@ class ProductTemplate(models.Model):
         user = user or self.env.user
         if user.has_group('inventory_shopping_cart.group_price_authorizer'):
             return 'authorizer'
+        # Visor del Dashboard Personalizado: nivel dirección — opera
+        # precios sin solicitar autorización (mismo trato que el
+        # autorizador para la escalera y los candados de precio).
+        if user.has_group('inventory_shopping_cart.group_dashboard_viewer'):
+            return 'authorizer'
         if user.has_group('inventory_shopping_cart.group_seller_mayorista'):
             return 'mayorista'
         if user.has_group('inventory_shopping_cart.group_seller'):
