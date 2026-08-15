@@ -620,6 +620,26 @@ class SaleOrder(models.Model):
         compute='_compute_has_low_prices',
         store=True,
     )
+    x_low_price_details = fields.Text(
+        string="Detalle de precios bajos",
+        compute='_compute_x_low_price_details',
+        help="Qué producto y qué precio están por debajo del nivel "
+             "permitido del vendedor de la orden (para el banner).",
+    )
+
+    @api.depends('x_has_low_prices', 'order_line.price_unit',
+                 'order_line.product_id', 'user_id')
+    def _compute_x_low_price_details(self):
+        for order in self:
+            if not order.x_has_low_prices:
+                order.x_low_price_details = False
+                continue
+            try:
+                violating = order._get_violating_products()
+                order.x_low_price_details = (
+                    '\n'.join('• %s' % v for v in violating) or False)
+            except Exception:
+                order.x_low_price_details = False
 
     x_exchange_rate_source = fields.Selection([
         ('banorte', 'Banorte'),
