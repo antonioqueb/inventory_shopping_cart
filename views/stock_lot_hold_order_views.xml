@@ -63,6 +63,12 @@
                             class="btn-warning"
                             invisible="state != 'confirmed' or sale_order_id or not x_can_renew"/>
 
+                    <button name="action_send_hold_confirmation_email"
+                            string="Enviar Correo"
+                            type="object"
+                            icon="fa-envelope-o"
+                            invisible="state != 'confirmed'"/>
+
                     <button name="action_done"
                             string="Finalizar"
                             type="object"
