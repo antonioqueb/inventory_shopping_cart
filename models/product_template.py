@@ -1398,12 +1398,15 @@ class ProductTemplate(models.Model):
         visible_levels = self._get_user_visible_price_levels()
         threshold_level = self._get_user_threshold_level()
 
+        # Mismo nombre que en el tooltip del Inventario Visual, en las
+        # autorizaciones y en la ficha del producto: "Precio 1"…"Precio 5".
+        # (Antes traían doble espacio y paréntesis: 'Precio  (1)'.)
         labels = {
-            'high': 'Precio  (1)',
-            'medium': 'Precio  (2)',
-            'minimum': 'Precio  (3)',
-            'level_4': 'Precio  (4)',
-            'level_5': 'Precio  (5)',
+            'high': 'Precio 1',
+            'medium': 'Precio 2',
+            'minimum': 'Precio 3',
+            'level_4': 'Precio 4',
+            'level_5': 'Precio 5',
         }
 
         prices = []
@@ -1430,24 +1433,30 @@ class ProductTemplate(models.Model):
         tmpl = product.product_tmpl_id
         role = self._get_user_price_role()
 
+        # Las etiquetas van NUMERADAS ('Precio 1'…'Precio 5'), que es como
+        # se le nombra a la escalera en toda la casa. Antes decían
+        # 'Alto'/'Medio'/'Mínimo' y el vendedor tenía que traducir: en el
+        # carrito, en las autorizaciones y en la orden se habla de Precio 1
+        # y Precio 2. El color del punto sigue marcando qué tan abajo va
+        # cada nivel (verde arriba → rojo en el piso).
         levels = [
-            {'label': 'Alto', 'dot': '#28a745',
+            {'label': 'Precio 1', 'dot': '#28a745',
              'usd': tmpl.x_price_usd_1, 'mxn': tmpl.x_price_mxn_1},
-            {'label': 'Medio', 'dot': '#ffc107',
+            {'label': 'Precio 2', 'dot': '#ffc107',
              'usd': tmpl.x_price_usd_2, 'mxn': tmpl.x_price_mxn_2},
         ]
         if role in ('mayorista', 'authorizer'):
             levels += [
-                {'label': 'Nivel 3', 'dot': '#fd7e14',
+                {'label': 'Precio 3', 'dot': '#fd7e14',
                  'usd': tmpl.x_price_usd_3, 'mxn': tmpl.x_price_mxn_3},
-                {'label': 'Nivel 4', 'dot': '#6f42c1',
+                {'label': 'Precio 4', 'dot': '#6f42c1',
                  'usd': tmpl.x_price_usd_4, 'mxn': tmpl.x_price_mxn_4},
             ]
         # El Precio 5 (mínimo absoluto) es exclusivo del autorizador y del
         # visor del Dashboard: el mayorista NO lo ve.
         if role == 'authorizer':
             levels += [
-                {'label': 'Mínimo', 'dot': '#dc3545',
+                {'label': 'Precio 5', 'dot': '#dc3545',
                  'usd': tmpl.x_price_usd_5, 'mxn': tmpl.x_price_mxn_5},
             ]
 
