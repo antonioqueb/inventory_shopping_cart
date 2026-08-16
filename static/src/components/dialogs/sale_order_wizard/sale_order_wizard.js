@@ -1,11 +1,18 @@
 /** @odoo-module **/
 
-import { Component, useState } from "@odoo/owl";
+import { Component, useState, onMounted, onWillUnmount } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
 import { Dialog } from "@web/core/dialog/dialog";
 
 export class SaleOrderWizard extends Component {
     setup() {
+        // Medición SOM: mientras este diálogo esté abierto el tiempo
+        // se atribuye a esta pantalla y no a la de atrás. Si el
+        // módulo de medición no está instalado, nadie escucha y ya.
+        onMounted(() => this.env.bus.trigger("SOM_ACTIVITY:SCREEN",
+            { key: "cotizacion_captura", label: "Captura de orden de venta" }));
+        onWillUnmount(() => this.env.bus.trigger("SOM_ACTIVITY:SCREEN", {}));
+
         this.orm = useService("orm");
         this.notification = useService("notification");
         this.action = useService("action");

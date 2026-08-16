@@ -1,10 +1,17 @@
 /** @odoo-module **/
 
-import { Component, useState } from "@odoo/owl";
+import { Component, useState, onMounted, onWillUnmount } from "@odoo/owl";
 import { Dialog } from "@web/core/dialog/dialog";
 
 export class CartDialog extends Component {
     setup() {
+        // Medición SOM: mientras este diálogo esté abierto el tiempo
+        // se atribuye a esta pantalla y no a la de atrás. Si el
+        // módulo de medición no está instalado, nadie escucha y ya.
+        onMounted(() => this.env.bus.trigger("SOM_ACTIVITY:SCREEN",
+            { key: "carrito", label: "Carrito" }));
+        onWillUnmount(() => this.env.bus.trigger("SOM_ACTIVITY:SCREEN", {}));
+
         this.cart = this.props.cart;
         // Selección por lote: la acción (apartar / vender / trasladar /
         // etiquetas) aplica SOLO a lo palomeado — por default todo va
