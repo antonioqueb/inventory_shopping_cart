@@ -237,6 +237,15 @@
                  notebook). Siguen SIEMPRE llenas a nivel de datos: vaciarlas rompe
                  las reglas fiscales/de entrega de Odoo. -->
             <xpath expr="//group[@name='partner_details']" position="inside">
+                <!-- Contacto del cliente a la vista: son related EDITABLES
+                     sobre partner_id, así que capturar aquí un correo que
+                     falta lo guarda en la ficha del cliente. Odoo 19 ya no
+                     tiene `mobile` en res.partner. -->
+                <field name="x_partner_email" string="Correo" widget="email"
+                       placeholder="correo@cliente.com"/>
+                <field name="x_partner_phone" string="Teléfono" widget="phone"
+                       placeholder="+52 81 0000 0000"/>
+
                 <field name="x_project_id" string="Job Name / Proyecto"
                        domain="['|', ('partner_id', '=', False), ('partner_id', 'child_of', partner_id)]"
                        context="{'default_partner_id': partner_id}"/>
