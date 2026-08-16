@@ -178,16 +178,10 @@ class PriceAuthorization(models.Model):
             f"</ul>"
         )
 
-        for authorizer in authorizers:
-            self.activity_schedule(
-                activity_type_id=activity_type.id,
-                summary=f'Autorización {self.name}',
-                note=note,
-                user_id=authorizer.id,
-            )
-
-        # Mención en el chatter → notificación de inbox/correo real. La
-        # actividad sola vive en el systray y era fácil de no ver.
+        # SIN ACTIVIDAD a propósito. Se creaba una por autorizador y nadie
+        # la cerraba al autorizar: quedaban abiertas para siempre y el reloj
+        # del systray dejaba de significar algo. La mención de abajo ya
+        # notifica de verdad (inbox y correo) a los mismos autorizadores.
         self.message_post(
             body=Markup(
                 '<p><b>🔐 Autorización de precios mínimos requerida: %s</b></p>%s'
@@ -220,16 +214,19 @@ class PriceAuthorization(models.Model):
         if self.authorization_notes:
             message_text += f"<p><strong>Comentarios:</strong><br/>{self.authorization_notes}</p>"
 
-        activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
-        if not activity_type:
-            activity_type = self.env['mail.activity.type'].search([('name', '=', 'To Do')], limit=1)
-
-        self.activity_schedule(
-            activity_type_id=activity_type.id,
-            summary=activity_summary,
-            note=message_text,
-            user_id=self.seller_id.id,
-        )
+        # Mención de chatter, NO actividad: el resultado es un aviso que el
+        # vendedor lee, no una tarea que alguien cierre. Como actividad se
+        # quedaba abierta para siempre — y encima se sumaba a la del
+        # autorizador, que tampoco se cerraba. Así llega igual por inbox y
+        # correo, y el reloj queda limpio.
+        if self.seller_id.partner_id:
+            self.message_post(
+                body=Markup('<p><b>%s</b></p>%s') % (
+                    activity_summary, Markup(message_text)),
+                partner_ids=self.seller_id.partner_id.ids,
+                message_type='comment',
+                subtype_xmlid='mail.mt_comment',
+            )
 
     # ------------------------------------------------------------------
     # ORDEN/COTIZACIÓN VINCULADA
