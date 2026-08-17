@@ -234,6 +234,15 @@
                                            required="1"
                                            context="{'hold_hide_services_default': 1}"/>
 
+                                    <!-- Máscara comercial: igual que en la venta. Al
+                                         convertir el hold en orden de venta viaja a la
+                                         línea (x_mask_name + name) y los documentos
+                                         imprimen la máscara en lugar del nombre real. -->
+                                    <field name="x_mask_name"
+                                           string="Máscara"
+                                           optional="show"
+                                           placeholder="Nombre comercial para esta venta"/>
+
                                     <!-- Contador de placas: oculto como columna pero se
                                          mantiene en la vista porque 'm²' lo usa en su
                                          modificador readonly. -->
