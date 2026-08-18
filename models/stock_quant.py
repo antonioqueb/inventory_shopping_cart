@@ -712,12 +712,47 @@ class StockQuant(models.Model):
                         continue
 
                     if hasattr(quant, 'x_tiene_hold') and quant.x_tiene_hold:
-                        error_count += 1
-                        failed_lots.append({
-                            'lot_name': quant.lot_id.name,
-                            'error': 'Ya tiene apartado',
-                        })
-                        continue
+                        # PARCIALIDADES (FORMATO/PIEZA): un hold ajeno solo
+                        # retiene SU parte; el remanente libre del lote sí se
+                        # puede apartar (misma regla que HoldValidator con
+                        # som_hold_free_qty). El chequeo anterior era
+                        # todo-o-nada y rechazaba el lote completo aunque
+                        # quedara cantidad libre. Las PLACAS siguen siendo
+                        # todo-o-nada.
+                        tipo = str(getattr(
+                            quant.lot_id, 'x_tipo', '') or 'placa').lower()
+                        free_qty = (
+                            quant.som_hold_free_qty()
+                            if hasattr(quant, 'som_hold_free_qty') else 0.0
+                        )
+                        requested = selected_qty_by_quant.get(
+                            quant.id, quant.quantity or 0.0)
+
+                        if tipo not in ('formato', 'pieza') \
+                                or free_qty <= 0.0001:
+                            error_count += 1
+                            failed_lots.append({
+                                'lot_name': quant.lot_id.name,
+                                'error': 'Ya tiene apartado' + (
+                                    ' (sin remanente libre)'
+                                    if tipo in ('formato', 'pieza') else ''),
+                            })
+                            continue
+
+                        if requested > free_qty + 0.0001:
+                            error_count += 1
+                            failed_lots.append({
+                                'lot_name': quant.lot_id.name,
+                                'error': (
+                                    'Solo quedan %.2f libres de %.2f (el '
+                                    'resto ya está apartado); ajusta tu '
+                                    'parcialidad a máximo %.2f.'
+                                ) % (free_qty, quant.quantity or 0.0,
+                                     free_qty),
+                            })
+                            continue
+                        # Cabe en el remanente libre: el apartado parcial
+                        # procede con la cantidad seleccionada.
 
                     selected_qty = selected_qty_by_quant.get(quant.id, quant.quantity or 0.0)
                     pid = quant.product_id.id
