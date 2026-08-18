@@ -178,10 +178,23 @@ class PriceAuthorization(models.Model):
             f"</ul>"
         )
 
-        # SIN ACTIVIDAD a propósito. Se creaba una por autorizador y nadie
-        # la cerraba al autorizar: quedaban abiertas para siempre y el reloj
-        # del systray dejaba de significar algo. La mención de abajo ya
-        # notifica de verdad (inbox y correo) a los mismos autorizadores.
+        # UNA actividad por autorizador + mención en chatter. Las
+        # actividades se CIERRAN SOLAS al aprobar/rechazar (todas, no solo
+        # la del que decidió) vía _som_close_open_activities — así el reloj
+        # del systray avisa de verdad y no acumula pendientes falsos.
+        for authorizer in authorizers:
+            try:
+                self.activity_schedule(
+                    'mail.mail_activity_data_todo',
+                    summary=f'Autorizar precios · {self.name}',
+                    note=note,
+                    user_id=authorizer.id,
+                )
+            except Exception:
+                _logger.exception(
+                    '[PRICE AUTH] No se pudo agendar la actividad de %s '
+                    'para %s.', self.name, authorizer.name)
+
         self.message_post(
             body=Markup(
                 '<p><b>🔐 Autorización de precios mínimos requerida: %s</b></p>%s'
@@ -190,6 +203,21 @@ class PriceAuthorization(models.Model):
             message_type='comment',
             subtype_xmlid='mail.mt_comment',
         )
+
+    def _som_close_open_activities(self, feedback):
+        """Cierra TODAS las actividades abiertas de la solicitud — las de
+        todos los autorizadores, no solo la del usuario que decidió (antes
+        cada quien cerraba la suya y las demás quedaban colgadas)."""
+        for rec in self:
+            activities = rec.sudo().activity_ids
+            if not activities:
+                continue
+            try:
+                activities.action_feedback(feedback=feedback)
+            except Exception:
+                _logger.exception(
+                    '[PRICE AUTH] No se pudieron cerrar las actividades '
+                    'de %s.', rec.name)
 
     def _notify_seller(self, approved=True):
         """Notifica al vendedor sobre la decisión"""
@@ -371,7 +399,8 @@ class PriceAuthorization(models.Model):
         if not self.env.user.has_group('inventory_shopping_cart.group_price_authorizer'):
             raise UserError("No tiene permisos para autorizar precios")
 
-        self.activity_ids.filtered(lambda a: a.user_id == self.env.user).action_done()
+        self._som_close_open_activities(
+            f'Aprobada por {self.env.user.name}')
 
         self.write({
             'state': 'approved',
@@ -404,7 +433,8 @@ class PriceAuthorization(models.Model):
         if not self.env.user.has_group('inventory_shopping_cart.group_price_authorizer'):
             raise UserError("No tiene permisos para rechazar precios")
 
-        self.activity_ids.filtered(lambda a: a.user_id == self.env.user).action_done()
+        self._som_close_open_activities(
+            f'Rechazada por {self.env.user.name}')
 
         self.write({
             'state': 'rejected',
