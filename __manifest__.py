@@ -33,7 +33,11 @@
         'views/whatsapp_send_views.xml',
         'views/product_category_pricing_views.xml',
         'data/fix_stone_cart_sync.xml',
+        'views/ptt_channel_views.xml',
     ],
+    'external_dependencies': {
+        'python': ['jwt'],
+    },
     'assets': {
         'web.assets_backend': [
             'inventory_shopping_cart/static/src/js/som_share_pdf.js',

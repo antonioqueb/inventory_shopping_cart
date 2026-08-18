@@ -11,3 +11,5 @@ from . import ir_actions_report
 from . import product_category_pricing
 from . import banorte_rate_log
 from . import project_client
+from . import ptt_channel
+from . import ptt_presence
