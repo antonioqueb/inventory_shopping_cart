@@ -89,6 +89,29 @@
         <field name="view_mode">list</field>
     </record>
 
+    <record id="view_sto_ptt_call_list" model="ir.ui.view">
+        <field name="name">sto.ptt.call.list</field>
+        <field name="model">sto.ptt.call</field>
+        <field name="arch" type="xml">
+            <list string="Llamadas" create="false" edit="false">
+                <field name="create_date" string="Inicio"/>
+                <field name="caller_id"/>
+                <field name="callee_id"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'active'"
+                       decoration-danger="state in ('rejected', 'missed')"/>
+                <field name="answered_at" optional="hide"/>
+                <field name="ended_at" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_sto_ptt_call" model="ir.actions.act_window">
+        <field name="name">Llamadas</field>
+        <field name="res_model">sto.ptt.call</field>
+        <field name="view_mode">list</field>
+    </record>
+
     <!-- Menú raíz propio, con icono SVG -->
     <menuitem id="menu_sto_ptt_root"
               name="Radio"
@@ -101,6 +124,12 @@
               parent="menu_sto_ptt_root"
               action="action_sto_ptt_channel"
               sequence="10"/>
+
+    <menuitem id="menu_sto_ptt_call"
+              name="Llamadas"
+              parent="menu_sto_ptt_root"
+              action="action_sto_ptt_call"
+              sequence="15"/>
 
     <menuitem id="menu_sto_ptt_presence"
               name="Quién está en línea"

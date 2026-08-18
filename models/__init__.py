@@ -13,3 +13,4 @@ from . import banorte_rate_log
 from . import project_client
 from . import ptt_channel
 from . import ptt_presence
+from . import ptt_call

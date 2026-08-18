@@ -177,50 +177,9 @@ class PttChannel(models.Model):
         if not channel._user_can_listen(user):
             raise AccessError(_('No tienes acceso al canal %s.') % channel.name)
 
-        params = self.env['ir.config_parameter'].sudo()
-        server_url = params.get_param('sto_ptt.livekit_url')
-        api_key = params.get_param('sto_ptt.livekit_api_key')
-        api_secret = params.get_param('sto_ptt.livekit_api_secret')
-        if not (server_url and api_key and api_secret):
-            raise UserError(_(
-                'La radio no está configurada. Faltan los parámetros del sistema '
-                'sto_ptt.livekit_url, sto_ptt.livekit_api_key y sto_ptt.livekit_api_secret.'
-            ))
-
-        ttl_hours = int(params.get_param('sto_ptt.token_ttl_hours', 6))
-        now = int(time.time())
-        exp = now + ttl_hours * 3600
-        identity = 'uid:%s' % user.id
-        can_talk = channel._user_can_talk(user)
-
-        payload = {
-            'iss': api_key,
-            'sub': identity,
-            'nbf': now,
-            'exp': exp,
-            'name': user.name,
-            'video': {
-                'room': channel.room_name,
-                'roomJoin': True,
-                # El "solo escucha" se aplica aquí: LiveKit rechaza la
-                # publicación de audio en el servidor, no en la app.
-                'canPublish': can_talk,
-                'canSubscribe': True,
-                'canPublishData': True,
-            },
-        }
-        token = jwt.encode(payload, api_secret, algorithm='HS256')
-        if isinstance(token, bytes):  # PyJWT < 2.0
-            token = token.decode('utf-8')
-
-        return {
-            'server_url': server_url,
-            'token': token,
-            'identity': identity,
-            'expires_at': fields.Datetime.to_string(
-                fields.Datetime.add(fields.Datetime.now(), hours=ttl_hours)
-            ),
-        }
+        return sign_livekit_token(
+            self.env, channel.room_name, user, channel._user_can_talk(user)
+        )
 
     @api.model
     def report_presence(self, channel_id):
@@ -235,3 +194,56 @@ class PttChannel(models.Model):
         except Exception as exc:  # noqa: BLE001
             _logger.warning('PTT: no se pudo registrar la presencia: %s', exc)
         return True
+
+
+def sign_livekit_token(env, room_name, user, can_publish):
+    """Firma un JWT de LiveKit. Único punto donde se toca el API secret.
+
+    Lo usan tanto los canales de radio como las llamadas 1 a 1: si algún día
+    cambia el formato del token, cambia aquí y en ningún otro sitio.
+    """
+    if jwt is None:
+        raise UserError(_('Falta la librería PyJWT en el servidor (pip install pyjwt).'))
+
+    params = env['ir.config_parameter'].sudo()
+    server_url = params.get_param('sto_ptt.livekit_url')
+    api_key = params.get_param('sto_ptt.livekit_api_key')
+    api_secret = params.get_param('sto_ptt.livekit_api_secret')
+    if not (server_url and api_key and api_secret):
+        raise UserError(_(
+            'La radio no está configurada. Faltan los parámetros del sistema '
+            'sto_ptt.livekit_url, sto_ptt.livekit_api_key y sto_ptt.livekit_api_secret.'
+        ))
+
+    ttl_hours = int(params.get_param('sto_ptt.token_ttl_hours', 6))
+    now = int(time.time())
+    identity = 'uid:%s' % user.id
+
+    payload = {
+        'iss': api_key,
+        'sub': identity,
+        'nbf': now,
+        'exp': now + ttl_hours * 3600,
+        'name': user.name,
+        'video': {
+            'room': room_name,
+            'roomJoin': True,
+            # El "solo escucha" se aplica aquí: LiveKit rechaza la publicación
+            # de audio en el servidor, no en la app.
+            'canPublish': can_publish,
+            'canSubscribe': True,
+            'canPublishData': True,
+        },
+    }
+    token = jwt.encode(payload, api_secret, algorithm='HS256')
+    if isinstance(token, bytes):  # PyJWT < 2.0
+        token = token.decode('utf-8')
+
+    return {
+        'server_url': server_url,
+        'token': token,
+        'identity': identity,
+        'expires_at': fields.Datetime.to_string(
+            fields.Datetime.add(fields.Datetime.now(), hours=ttl_hours)
+        ),
+    }

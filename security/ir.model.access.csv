@@ -19,3 +19,5 @@ access_sto_ptt_channel_user,sto.ptt.channel.user,model_sto_ptt_channel,base.grou
 access_sto_ptt_channel_manager,sto.ptt.channel.manager,model_sto_ptt_channel,inventory_shopping_cart.group_ptt_manager,1,1,1,1
 access_sto_ptt_presence_user,sto.ptt.presence.user,model_sto_ptt_presence,base.group_user,1,0,0,0
 access_sto_ptt_presence_manager,sto.ptt.presence.manager,model_sto_ptt_presence,inventory_shopping_cart.group_ptt_manager,1,1,1,1
+access_sto_ptt_call_user,sto.ptt.call.user,model_sto_ptt_call,base.group_user,1,0,0,0
+access_sto_ptt_call_manager,sto.ptt.call.manager,model_sto_ptt_call,inventory_shopping_cart.group_ptt_manager,1,1,1,1
