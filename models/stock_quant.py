@@ -862,7 +862,11 @@ class StockQuant(models.Model):
                 }
         else:
             if order:
+                # Tras el unlink el recordset sigue siendo truthy: leer
+                # order.name abajo tronaba con MissingError ("Record does
+                # not exist") y TAPABA la lista real de errores por lote.
                 order.unlink()
+                order = None
 
         return {
             'success': success_count,
