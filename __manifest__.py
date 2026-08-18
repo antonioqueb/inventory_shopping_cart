@@ -1,7 +1,7 @@
 # ./__manifest__.py
 {
     'name': 'Carrito de Compra para Inventario Visual',
-    'version': '19.0.26.9.0',
+    'version': '19.0.26.10.0',
     'category': 'Inventory/Inventory',
     'summary': 'Sistema de carrito de compra y apartado múltiple desde inventario visual',
     'author': 'Alphaqueb Consulting SAS',
@@ -35,9 +35,11 @@
         'data/fix_stone_cart_sync.xml',
         'views/ptt_channel_views.xml',
     ],
-    'external_dependencies': {
-        'python': ['jwt'],
-    },
+    # SIN external_dependencies para PyJWT: Odoo 19 valida por METADATA de la
+    # distribución ('jwt' no existe como dist — se llama PyJWT) y un nombre
+    # invalidable ABORTA el registry completo en el -u (servidor caído,
+    # 2026-08-18). El código ya degrada sin la librería (ptt_channel hace
+    # try/except y solo apaga la radio PTT con warning).
     'assets': {
         'web.assets_backend': [
             'inventory_shopping_cart/static/src/js/som_share_pdf.js',
