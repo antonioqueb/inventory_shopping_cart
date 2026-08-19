@@ -122,8 +122,14 @@ class ShoppingCart(models.Model):
         # - placa con hold: entra (puede ser para el mismo cliente, que aún no
         #   se conoce aquí) pero con AVISO de para quién está apartada.
         warning = ''
+        # Movedor de Ubicaciones: puede agregar placas COMPROMETIDAS
+        # (reservadas en venta/entrega, con hold, o en carrito de otro) para
+        # trasladarlas de ubicación — la reserva fuerte se traspasa al bin
+        # destino al validar el traslado.
+        is_location_mover = self.env.user.has_group(
+            'inventory_shopping_cart.group_cart_location_mover')
         quant = self.env['stock.quant'].sudo().browse(int(quant_id)).exists()
-        if quant:
+        if quant and not is_location_mover:
             free_qty = (quant.quantity or 0.0) - (quant.reserved_quantity or 0.0)
             if free_qty <= 0 and quant.lot_id:
                 # La reserva puede venir SOLO de un traslado interno de
@@ -159,8 +165,14 @@ class ShoppingCart(models.Model):
         # ESTADO DE CARRITO ENTRE VENDEDORES: si el lote vive en el carrito
         # ACTIVO de otro usuario, no se puede tomar — se informa de quién es
         # y cuánto le queda de vigencia (24h sin movimiento lo libera).
-        foreign = self._som_active_entries_for_lots(
-            [lot_id], exclude_user_id=self.env.user.id)
+        # El Movedor de Ubicaciones sí puede tomarlo: su fin es el traslado
+        # físico, no la venta, y la reserva débil se traspasa al bin destino.
+        foreign = (
+            self.env['shopping.cart']
+            if is_location_mover
+            else self._som_active_entries_for_lots(
+                [lot_id], exclude_user_id=self.env.user.id)
+        )
         if foreign:
             entry = foreign[0]
             return {

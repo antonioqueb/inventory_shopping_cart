@@ -221,6 +221,14 @@ class StockQuant(models.Model):
         return self.env.user.has_group('stock.group_stock_user')
 
     @api.model
+    def check_cart_location_mover(self):
+        """Grupo 'Carrito: Movedor de Ubicaciones': selecciona placas
+        comprometidas (hold/venta/carrito ajeno) para traslados aunque el
+        usuario también tenga rol de ventas."""
+        return self.env.user.has_group(
+            'inventory_shopping_cart.group_cart_location_mover')
+
+    @api.model
     def get_internal_locations(self, search_term=''):
         """Obtener ubicaciones internas para traslados"""
         domain = [('usage', '=', 'internal')]

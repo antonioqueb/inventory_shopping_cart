@@ -87,16 +87,26 @@ patch(InventoryVisualController.prototype, {
             console.error('[CART] Error verificando permisos de inventario:', error);
             this.cart.hasInventoryPermissions = false;
         }
+        try {
+            this.cart.isLocationMover = await this.orm.call(
+                'stock.quant', 'check_cart_location_mover', []);
+        } catch (error) {
+            console.error('[CART] Error verificando Movedor de Ubicaciones:', error);
+            this.cart.isLocationMover = false;
+        }
         this._updateBlockedSelectionPolicy();
     },
 
     /**
      * Define quién puede seleccionar placas ya comprometidas (hold u orden de venta).
-     * Solo el rol de inventario PURO: puede mover/imprimir pero NO apartar ni vender.
+     * - Rol de inventario PURO (mueve/imprime pero no aparta ni vende), o
+     * - Grupo 'Carrito: Movedor de Ubicaciones' — inventario especial que
+     *   selecciona comprometidas para traslados AUNQUE tenga rol de ventas.
      */
     _updateBlockedSelectionPolicy() {
         this.cart.canSelectBlocked =
-            this.cart.hasInventoryPermissions && !this.cart.hasSalesPermissions;
+            (this.cart.hasInventoryPermissions && !this.cart.hasSalesPermissions)
+            || !!this.cart.isLocationMover;
     },
     
     async loadCartFromDB() {

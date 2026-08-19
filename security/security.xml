@@ -53,6 +53,26 @@
         <field name="implied_ids" eval="[(4, ref('group_dashboard_viewer'))]"/>
     </record>
 
+    <!-- Inventario especial: selecciona placas COMPROMETIDAS (hold, venta,
+         carrito ajeno) desde el inventario visual para TRASLADOS de
+         ubicación, aunque el usuario también tenga rol de ventas. Sin este
+         grupo, la política es: solo inventario puro (stock user sin rol de
+         ventas) puede seleccionar bloqueadas. -->
+    <record id="privilege_location_mover" model="res.groups.privilege">
+        <field name="name">Movimientos de Ubicación</field>
+        <field name="category_id" ref="module_category_price_authorization"/>
+        <field name="sequence">30</field>
+    </record>
+
+    <record id="group_cart_location_mover" model="res.groups">
+        <field name="name">Carrito: Movedor de Ubicaciones</field>
+        <field name="privilege_id" ref="privilege_location_mover"/>
+        <field name="comment">Selecciona placas comprometidas (hold/venta/
+            carrito de otro) en el inventario visual para cambios de
+            ubicación, aunque tenga rol de ventas. Las reservas fuertes se
+            traspasan al bin destino al validar el traslado.</field>
+    </record>
+
     <!-- ══════════════════════════════════════════════════════
          Radio push-to-talk de la app STO Scanner.
          Mismo patrón que arriba: categoría propia + selector, para que
