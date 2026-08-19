@@ -1194,6 +1194,14 @@ class SaleOrder(models.Model):
             if order._som_is_migrated_order():
                 order.x_has_low_prices = False
                 continue
+            # VISOR DEL DASHBOARD como vendedor de la orden: exento del
+            # candado — sus precios no se bloquean por debajo del nivel
+            # que sea (imprime/confirma/envía sin flujo de autorización y
+            # sin botón de solicitar, porque la bandera nunca prende).
+            if Product._som_user_is_price_exempt(
+                    order.user_id or self.env.user):
+                order.x_has_low_prices = False
+                continue
             approved = bool(
                 order.x_price_authorization_id
                 and order.x_price_authorization_id.state == 'approved')
@@ -1328,6 +1336,12 @@ class SaleOrder(models.Model):
             # el Visor del Dashboard NO es dirección — con el has_group a
             # pelo se brincaba el bloqueo de precios bajos.
             if self.env['product.template']._get_user_price_role() == 'authorizer':
+                continue
+
+            # Visor del Dashboard: perfil dirección para el candado — sus
+            # acciones no se bloquean por precios bajos (aunque el rol de
+            # escalera lo tope como vendedor limitado).
+            if self.env['product.template']._som_user_is_price_exempt():
                 continue
 
             violating = order._get_violating_products()

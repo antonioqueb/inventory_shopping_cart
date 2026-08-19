@@ -1332,6 +1332,22 @@ class ProductTemplate(models.Model):
         return 'none'
 
     @api.model
+    def _som_user_is_price_exempt(self, user=None):
+        """Visor del Dashboard Personalizado: perfil dirección para el
+        CANDADO de precios — sus órdenes NUNCA se bloquean por precio bajo
+        ni disparan el flujo de autorización (puede imprimir, confirmar y
+        enviar con cualquier precio, y no ve el botón de solicitar
+        autorización porque su orden jamás se marca).
+
+        OJO: esto NO toca el rol de la escalera (_get_user_price_role):
+        el tope de VISIBILIDAD del 15 ago para vendedor limitado + visor
+        sigue igual (ve 2 niveles). Tampoco lo vuelve autorizador: aprobar
+        solicitudes de terceros sigue siendo del grupo Autorizador."""
+        user = user or self.env.user
+        return user.has_group(
+            'inventory_shopping_cart.group_dashboard_viewer')
+
+    @api.model
     def _get_user_visible_price_levels(self):
         """
         Devuelve la lista de niveles ('high', 'medium', 'minimum', 'level_4', 'level_5')
