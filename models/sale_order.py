@@ -375,7 +375,14 @@ class SaleOrderLine(models.Model):
                         rekeyed[ks] = v
                 if changed:
                     mirror_vals['x_lot_breakdown_json'] = rekeyed
-            line.with_context(som_skip_cart_mirror=True).write(mirror_vals)
+            # skip_tc_stock_cap: el realineo es PLOMERÍA (no cambia la
+            # asignación). Sin el skip, este write anidado re-disparaba el
+            # tope de stock SIN el contexto de desasignación y bloqueaba
+            # quitar placas ("supera el stock disponible... usa Pedir").
+            line.with_context(
+                som_skip_cart_mirror=True,
+                skip_tc_stock_cap=True,
+            ).write(mirror_vals)
 
     def _som_mirror_cart_to_stone(self):
         """Cambios de x_selected_lots en una línea confirmada se propagan a
