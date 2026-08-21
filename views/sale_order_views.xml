@@ -236,14 +236,19 @@
                  Se movieron a la pestaña "Entrega y Facturación" (al final del
                  notebook). Siguen SIEMPRE llenas a nivel de datos: vaciarlas rompe
                  las reglas fiscales/de entrega de Odoo. -->
-            <xpath expr="//group[@name='partner_details']" position="inside">
-                <!-- Contacto del cliente a la vista: son related EDITABLES
-                     sobre partner_id, así que capturar aquí un correo que
-                     falta lo guarda en la ficha del cliente. Odoo 19 ya no
-                     tiene `mobile` en res.partner. -->
+            <!-- Referencia + contacto del cliente ANTES de los vendedores:
+                 esta vista aplica al último (priority 130), así que insertar
+                 justo después de partner_id los deja ARRIBA de Vendedor 1/2
+                 (que insertó sale_order_second_salesperson). Correo/Teléfono
+                 son related EDITABLES sobre partner_id: capturar aquí un
+                 correo que falta lo guarda en la ficha del cliente. -->
+            <xpath expr="//field[@name='partner_id']" position="after">
+                <field name="client_order_ref" string="Referencia"/>
                 <field name="x_partner_email" string="Correo" widget="email"/>
                 <field name="x_partner_phone" string="Teléfono" widget="phone"/>
+            </xpath>
 
+            <xpath expr="//group[@name='partner_details']" position="inside">
                 <field name="x_project_id" string="Job Name / Proyecto"
                        domain="['|', ('partner_id', '=', False), ('partner_id', 'child_of', partner_id)]"
                        context="{'default_partner_id': partner_id}"/>
@@ -251,11 +256,6 @@
                 <field name="x_architect_id"
                        string="Embajador"
                        domain="[('x_es_arquitecto', '=', True)]"/>
-
-                <!-- Referencia (client_order_ref): movida desde "Otra información"
-                     al frente del formulario, DEBAJO de Embajador — más abajo
-                     se elimina la original de la pestaña. -->
-                <field name="client_order_ref" string="Referencia"/>
             </xpath>
 
             <!-- La Referencia original de "Otra información" se retira: ahora
