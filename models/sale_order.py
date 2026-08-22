@@ -2496,11 +2496,14 @@ class SaleOrder(models.Model):
             # aplica el umbral según el rol (vendedor: P2, mayorista: P4,
             # autorizador: P5). Debajo de su umbral, todos requieren solicitud.
             # PRECIOS BAJO EL UMBRAL: la orden SE CREA SIEMPRE — jamás se
-            # pierde la captura. Los precios bajos se TOPAN al umbral del rol
-            # (el precio más alto) y la solicitud de autorización nace ligada
-            # a la orden: al aprobarse, los precios BAJAN a lo solicitado
-            # (mismo mecanismo que la solicitud desde orden manual). Antes el
-            # flujo desviaba a solo-autorización y el vendedor perdía todo.
+            # pierde la captura — y CON LOS PRECIOS TAL CUAL SE CAPTURARON
+            # (política explícita: no se topan ni se sustituyen). La orden
+            # queda marcada con precios bajos: los candados de imprimir /
+            # confirmar / enviar la detienen hasta que la solicitud de
+            # autorización (que nace ligada aquí mismo) se apruebe. Igual
+            # que en la orden manual: guardar nunca se bloquea ni altera
+            # lo tecleado. (Antes se topaba al umbral y el vendedor veía
+            # precios que él no puso.)
             requested_low_prices = {}
             if not self.env.context.get('skip_auth_check'):
                 auth_result = self.env['product.template'].check_price_authorization_needed(
@@ -2521,7 +2524,6 @@ class SaleOrder(models.Model):
                             price = float(pd.get('price_unit') or 0.0)
                             if threshold > 0 and price < (threshold - 0.01):
                                 requested_low_prices[str(pd['product_id'])] = price
-                                pd['price_unit'] = threshold
 
             company_id = self.env.company.id
             invoice_id, shipping_id = self._resolve_partner_addresses(self.env, partner_id)
@@ -2650,9 +2652,9 @@ class SaleOrder(models.Model):
                     })
                 clamp_message = (
                     'Precios por debajo del nivel permitido: la orden se '
-                    'guardó con el precio del umbral y se creó la solicitud '
-                    f'{auth.name}; al aprobarse, los precios bajarán a lo '
-                    'solicitado.'
+                    'guardó CON LOS PRECIOS CAPTURADOS y quedó pendiente de '
+                    f'autorización ({auth.name}). No podrá imprimirse, '
+                    'confirmarse ni enviarse hasta que se apruebe.'
                 )
 
             return {
