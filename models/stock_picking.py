@@ -165,6 +165,9 @@ class StockPicking(models.Model):
             doomed = pending.filtered(lambda ml: ml.lot_id.id in lot_ids)
             if not doomed:
                 continue
+            # Nombres ANTES de tocar nada: la rama parcial hace unlink de
+            # las líneas y después ya no se pueden leer.
+            doomed_lot_names = sorted(doomed.mapped('lot_id.name'))
             if doomed == pending:
                 # Todo el traslado viejo era de estos lotes: se cancela.
                 # (action_cancel restaura las reservas desplazadas en su
@@ -208,6 +211,30 @@ class StockPicking(models.Model):
                     stale_picking.som_displaced_reservations_json = (
                         json.dumps(to_keep) if to_keep else False)
             stale_picking.message_post(body=reason or default_reason)
+            # AVISO EN VIVO al dueño del traslado: su reserva débil cedió
+            # material y antes se enteraba hasta encontrar el traslado
+            # cancelado/recortado sin explicación. Cosmético: nunca tumba
+            # el flujo fuerte que está liberando.
+            try:
+                owner = stale_picking.create_uid
+                if owner and owner.partner_id:
+                    self.env['bus.bus'].sudo()._sendone(
+                        owner.partner_id, 'simple_notification', {
+                            'type': 'warning',
+                            'sticky': True,
+                            'title': 'Traslado de carrito liberado',
+                            'message': (
+                                'Tu traslado %s cedió lo(s) lote(s) %s: '
+                                'los necesita una venta, apartado, taller '
+                                'o traslado nuevo. Mover de ubicación no '
+                                'compromete el material.' % (
+                                    stale_picking.name,
+                                    ', '.join(doomed_lot_names))),
+                        })
+            except Exception:
+                _logger.debug(
+                    '[CART RELEASE] No se pudo notificar al dueño',
+                    exc_info=True)
             touched |= stale_picking
         return touched
 

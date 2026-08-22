@@ -75,8 +75,96 @@ export class SaleOrderWizard extends Component {
         });
         
         this.searchTimeout = null;
-        this.loadPricelists();
+        this.loadPricelists().then(() => this._restoreDraft());
         this.checkAuthorizerStatus();
+
+        // CAPTURA A PRUEBA DE REFRESH: el borrador se guarda en el
+        // navegador; si la pagina se recarga a mitad de los 6 pasos, al
+        // reabrir el wizard con el mismo material se restaura todo.
+        this._draftSaver = () => this._saveDraft();
+        window.addEventListener("beforeunload", this._draftSaver);
+        onWillUnmount(() => {
+            this._saveDraft();
+            window.removeEventListener("beforeunload", this._draftSaver);
+        });
+    }
+
+    get _draftKey() {
+        const ids = [...this.productIds].sort((a, b) => a - b).join(",");
+        return `som_so_wizard_draft_v1:${ids}`;
+    }
+
+    _saveDraft() {
+        if (this._draftCleared) return;
+        try {
+            const st = this.state;
+            const draft = {
+                ts: Date.now(),
+                currentStep: st.currentStep,
+                selectedPartnerId: st.selectedPartnerId,
+                selectedPartnerName: st.selectedPartnerName,
+                selectedProjectId: st.selectedProjectId,
+                selectedProjectName: st.selectedProjectName,
+                selectedArchitectId: st.selectedArchitectId,
+                selectedArchitectName: st.selectedArchitectName,
+                selectedPricelistId: st.selectedPricelistId,
+                selectedCurrency: st.selectedCurrency,
+                productPrices: st.productPrices,
+                selectedServices: st.selectedServices,
+                notas: st.notas,
+                applyTax: st.applyTax,
+            };
+            // Sin nada capturado no vale la pena guardar.
+            if (!draft.selectedPartnerId && st.currentStep === 1) return;
+            window.localStorage.setItem(this._draftKey, JSON.stringify(draft));
+        } catch (e) {
+            /* almacenamiento lleno o bloqueado: el borrador es cosmetico */
+        }
+    }
+
+    _clearDraft() {
+        this._draftCleared = true;
+        try {
+            window.localStorage.removeItem(this._draftKey);
+        } catch (e) { /* nada */ }
+    }
+
+    _restoreDraft() {
+        let draft = null;
+        try {
+            const raw = window.localStorage.getItem(this._draftKey);
+            if (raw) draft = JSON.parse(raw);
+        } catch (e) {
+            return;
+        }
+        // 12 horas de vigencia: mas alla, la captura vieja estorba.
+        if (!draft || !draft.ts || (Date.now() - draft.ts) > 12 * 3600 * 1000) {
+            return;
+        }
+        const st = this.state;
+        for (const key of ["currentStep", "selectedPartnerId",
+                "selectedPartnerName", "selectedProjectId",
+                "selectedProjectName", "selectedArchitectId",
+                "selectedArchitectName", "selectedPricelistId",
+                "selectedCurrency", "selectedServices", "notas",
+                "applyTax"]) {
+            if (draft[key] !== undefined && draft[key] !== null) {
+                st[key] = draft[key];
+            }
+        }
+        // Precios: solo los productos que siguen en esta seleccion, y sin
+        // pisar opciones recien cargadas del servidor.
+        if (draft.productPrices) {
+            for (const pid of this.productIds) {
+                if (draft.productPrices[pid] !== undefined) {
+                    st.productPrices[pid] = draft.productPrices[pid];
+                }
+            }
+        }
+        this.notification.add(
+            "Se restauro tu captura anterior de esta orden (cliente, precios "
+            + "y notas). Revisa y continua donde ibas.",
+            { type: "info", sticky: false });
     }
 
     async checkAuthorizerStatus() {
@@ -551,12 +639,14 @@ export class SaleOrderWizard extends Component {
         if (this.state.currentStep < 6) {
             this.state.currentStep++;
         }
+        this._saveDraft();
     }
     
     prevStep() {
         if (this.state.currentStep > 1) {
             this.state.currentStep--;
         }
+        this._saveDraft();
     }
     
     // ========== CREAR ORDEN ==========
@@ -601,6 +691,7 @@ export class SaleOrderWizard extends Component {
             
             // MANEJAR CASO DE AUTORIZACIÓN REQUERIDA (solo para vendedores)
             if (result.needs_authorization) {
+                this._clearDraft();
                 this.notification.add(
                     `${result.message}\n\nPuede ver el estado en "Autorizaciones de Precio"`,
                     { type: "warning", sticky: true }
@@ -622,6 +713,7 @@ export class SaleOrderWizard extends Component {
             
             // CASO NORMAL: ORDEN CREADA
             if (result.success) {
+                this._clearDraft();
                 this.notification.add(`Orden ${result.order_name} creada exitosamente`, { type: "success" });
                 this.props.onSuccess();
                 this.props.close();

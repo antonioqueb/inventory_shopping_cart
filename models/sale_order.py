@@ -2352,7 +2352,12 @@ class SaleOrder(models.Model):
                 },
             }
 
-        raise UserError("No se pudieron agregar los items.")
+        raise UserError(
+            "No se pudieron agregar los items del carrito a la orden.\n\n"
+            "Qué hacer: revisa que el carrito tenga material vigente "
+            "(un lote pudo venderse o apartarse mientras cotizabas) y "
+            "vuelve a intentar. Si persiste, quita y re-agrega el "
+            "material desde el inventario visual.")
 
     @staticmethod
     def _resolve_partner_addresses(env, partner_id):
@@ -2671,7 +2676,10 @@ class SaleOrder(models.Model):
             raise
         except Exception as e:
             _logger.error("Error en create_from_shopping_cart: %s", str(e), exc_info=True)
-            raise UserError(f"Error al procesar la orden: {str(e)}")
+            raise UserError(
+                "No se pudo crear la orden — NADA se guardó y tu captura "
+                "sigue en el asistente; corrige y vuelve a dar Crear.\n\n"
+                f"Detalle técnico: {str(e)}")
 
     def _assign_specific_lots(self, pickings, product, selected_quants, breakdown=None):
         """
