@@ -2459,6 +2459,86 @@ class SaleOrder(models.Model):
         return auth
 
     @api.model
+    @api.model
+    def get_cart_pack_options(self, product_ids):
+        """EMPAQUES ESTÁNDAR para el wizard del carrito: por producto, sus
+        empaques activos y el default. El wizard no tenía selector y la
+        regla dura de standard_pack_som ('solo por empaque') mataba la
+        creación sin salida. Defensivo: sin el módulo instalado, vacío."""
+        out = {}
+        if 'has_standard_pack' not in self.env['product.template']._fields:
+            return out
+        Product = self.env['product.product']
+        ids = []
+        for pid in product_ids or []:
+            try:
+                ids.append(int(pid))
+            except (TypeError, ValueError):
+                continue
+        for prod in Product.browse(ids).exists():
+            tmpl = prod.product_tmpl_id
+            if not tmpl.has_standard_pack:
+                continue
+            packs = tmpl.standard_pack_ids.filtered('active')
+            if not packs:
+                continue
+            default = tmpl.default_pack_id if tmpl.default_pack_id in packs \
+                else packs[:1]
+            out[str(prod.id)] = {
+                'default_pack_id': default.id,
+                'packs': [{
+                    'id': p.id,
+                    'name': p.display_name or '',
+                    'qty_per_pack': p.qty_per_pack or 0.0,
+                } for p in packs],
+            }
+        return out
+
+    def _som_cart_apply_standard_pack(self, line_vals, product, qty,
+                                      pack_id=None):
+        """Asigna empaque estándar a una línea nacida del carrito.
+
+        Con pack elegido en el wizard se usa ese; si no, el default del
+        producto. La cantidad viene del MATERIAL real seleccionado: si no
+        es múltiplo exacto del empaque, el error dice con números a cuánto
+        ajustar (la regla dura de standard_pack_som no admite fracciones)."""
+        SaleLine = self.env['sale.order.line']
+        if 'standard_pack_id' not in SaleLine._fields:
+            return
+        tmpl = product.product_tmpl_id
+        if not getattr(tmpl, 'has_standard_pack', False):
+            return
+        pack = None
+        if pack_id:
+            pack = self.env['standard.pack'].browse(int(pack_id)).exists()
+        if not pack:
+            packs = tmpl.standard_pack_ids.filtered('active')
+            pack = tmpl.default_pack_id if tmpl.default_pack_id in packs \
+                else packs[:1]
+        if not pack:
+            raise UserError(
+                'El producto "%s" solo puede venderse por empaque, pero no '
+                'tiene ningún empaque estándar activo configurado. Pide al '
+                'administrador configurarlo en el producto.'
+                % product.display_name)
+        qpp = pack.qty_per_pack or 0.0
+        if qpp <= 0:
+            return
+        qty = float(qty or 0.0)
+        packs_n = qty / qpp
+        if abs(packs_n - round(packs_n)) > 0.001 or round(packs_n) <= 0:
+            low = max(int(packs_n), 0)
+            high = low + 1
+            raise UserError(
+                'El producto "%s" solo se vende por empaque (%s).\n\n'
+                'La cantidad seleccionada en el carrito (%.2f) no es un '
+                'múltiplo exacto: ajusta el material a %s empaques (%.2f) '
+                'o %s empaques (%.2f).' % (
+                    product.display_name, pack.display_name, qty,
+                    low, low * qpp, high, high * qpp))
+        line_vals['standard_pack_id'] = pack.id
+        line_vals['pack_qty'] = float(round(packs_n))
+
     def create_from_shopping_cart(
         self,
         partner_id=None,
@@ -2574,6 +2654,13 @@ class SaleOrder(models.Model):
                 # instalado, por eso la comprobación es defensiva.
                 if pd.get('to_be_purchased') and 'auto_transit_assign' in self.env['sale.order.line']._fields:
                     line_vals['auto_transit_assign'] = True
+
+                # EMPAQUE ESTÁNDAR: el wizard manda el empaque elegido (o se
+                # usa el default del producto); sin esto, la regla dura de
+                # 'solo por empaque' abortaba la creación sin selector.
+                self._som_cart_apply_standard_pack(
+                    line_vals, rec, pd.get('quantity'),
+                    pack_id=pd.get('standard_pack_id'))
 
                 # Máscara comercial (hold → SO): nombre personalizado de la
                 # venta. Se escribe también en name para que TODOS los

@@ -453,6 +453,23 @@
                                         <tr>
                                             <td>
                                                 <strong t-esc="group.name"></strong>
+                                                <!-- Venta por EMPAQUE: selector + cuadre contra el material -->
+                                                <t t-set="packOpt" t-value="state.productPackOptions[productId]"/>
+                                                <div t-if="packOpt" class="mt-1">
+                                                    <select class="form-select form-select-sm"
+                                                            t-model.number="state.productPacks[productId]">
+                                                        <t t-foreach="packOpt.packs" t-as="pk" t-key="pk.id">
+                                                            <option t-att-value="pk.id">
+                                                                <t t-esc="pk.name"/>
+                                                            </option>
+                                                        </t>
+                                                    </select>
+                                                    <t t-set="fit" t-value="packFit(productId)"/>
+                                                    <small t-if="fit"
+                                                           t-att-class="fit.exact ? 'text-success fw-bold' : 'text-danger fw-bold'">
+                                                        <t t-esc="fit.label"/>
+                                                    </small>
+                                                </div>
                                             </td>
                                             <td class="text-end">
                                                 <t t-esc="formatNumber(group.total_quantity)"/> m²

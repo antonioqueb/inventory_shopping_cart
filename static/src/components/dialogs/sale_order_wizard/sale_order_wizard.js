@@ -48,6 +48,10 @@ export class SaleOrderWizard extends Component {
             newArchitectVat: '',
             newArchitectRef: '',
             
+            // Empaques estándar (standard_pack_som): {pid: {default_pack_id, packs:[...]}}
+            productPackOptions: {},
+            productPacks: {},
+
             // Precios
             selectedCurrency: 'USD',
             pricelists: [],
@@ -75,6 +79,7 @@ export class SaleOrderWizard extends Component {
         });
         
         this.searchTimeout = null;
+        this.loadPackOptions();
         this.loadPricelists().then(() => this._restoreDraft());
         this.checkAuthorizerStatus();
 
@@ -110,6 +115,7 @@ export class SaleOrderWizard extends Component {
                 selectedPricelistId: st.selectedPricelistId,
                 selectedCurrency: st.selectedCurrency,
                 productPrices: st.productPrices,
+                productPacks: st.productPacks,
                 selectedServices: st.selectedServices,
                 notas: st.notas,
                 applyTax: st.applyTax,
@@ -161,10 +167,62 @@ export class SaleOrderWizard extends Component {
                 }
             }
         }
+        if (draft.productPacks) {
+            for (const pid of this.productIds) {
+                if (draft.productPacks[pid] !== undefined) {
+                    st.productPacks[pid] = draft.productPacks[pid];
+                }
+            }
+        }
         this.notification.add(
             "Se restauro tu captura anterior de esta orden (cliente, precios "
             + "y notas). Revisa y continua donde ibas.",
             { type: "info", sticky: false });
+    }
+
+    async loadPackOptions() {
+        // Productos que SOLO se venden por empaque: el selector vive en el
+        // paso de precios. Defensivo: sin el módulo de empaques, vacío.
+        try {
+            const opts = await this.orm.call(
+                "sale.order", "get_cart_pack_options", [this.productIds]);
+            this.state.productPackOptions = opts || {};
+            for (const [pid, opt] of Object.entries(this.state.productPackOptions)) {
+                if (!this.state.productPacks[pid]) {
+                    this.state.productPacks[pid] = opt.default_pack_id;
+                }
+            }
+        } catch (e) {
+            console.warn("[WIZARD] Sin opciones de empaque:", e);
+            this.state.productPackOptions = {};
+        }
+    }
+
+    // Ajuste cantidad↔empaque: cuántos empaques exactos caben en el
+    // material seleccionado. exact=false => no es múltiplo (se bloquea el
+    // avance con números accionables).
+    packFit(productId) {
+        const opt = this.state.productPackOptions[productId];
+        if (!opt) return null;
+        const packId = this.state.productPacks[productId] || opt.default_pack_id;
+        const pack = (opt.packs || []).find((p) => p.id === packId) || opt.packs[0];
+        if (!pack || !pack.qty_per_pack) return null;
+        const group = this.props.productGroups[productId];
+        const qty = group ? group.total_quantity : 0;
+        const packs = qty / pack.qty_per_pack;
+        const rounded = Math.round(packs);
+        const exact = rounded > 0 && Math.abs(packs - rounded) <= 0.001;
+        if (exact) {
+            return { exact, label: `= ${rounded} empaque(s) de ${pack.qty_per_pack}` };
+        }
+        const low = Math.max(Math.floor(packs), 0);
+        const high = low + 1;
+        return {
+            exact,
+            label: `⚠ ${qty.toFixed(2)} no es múltiplo de ${pack.qty_per_pack}: `
+                + `ajusta a ${low}× (${(low * pack.qty_per_pack).toFixed(2)}) `
+                + `o ${high}× (${(high * pack.qty_per_pack).toFixed(2)})`,
+        };
     }
 
     async checkAuthorizerStatus() {
@@ -625,6 +683,19 @@ export class SaleOrderWizard extends Component {
                 return;
             }
 
+            // Empaques: todo producto con venta por empaque debe cuadrar en
+            // múltiplos exactos ANTES de avanzar (el backend lo re-valida).
+            for (const pid of Object.keys(this.state.productPackOptions)) {
+                const fit = this.packFit(pid);
+                if (fit && !fit.exact) {
+                    const g = this.props.productGroups[pid];
+                    this.notification.add(
+                        `${g ? g.name : pid}: ${fit.label}`,
+                        { type: "danger", sticky: true });
+                    return;
+                }
+            }
+
             // === NUEVO: Detectar precios bajos para mostrar warning informativo al autorizador ===
             const lowProducts = this._detectLowPriceProducts();
             if (lowProducts.length > 0) {
@@ -661,6 +732,7 @@ export class SaleOrderWizard extends Component {
                 products.push({
                     product_id: parseInt(productId),
                     quantity: group.total_quantity,
+                    standard_pack_id: this.state.productPacks[productId] || null,
                     price_unit: parseFloat(this.state.productPrices[productId]),
                     selected_lots: group.lots.map(lot => lot.id),
                     lots_breakdown: group.lots.map(lot => ({ 
