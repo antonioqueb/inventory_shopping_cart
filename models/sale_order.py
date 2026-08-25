@@ -1049,6 +1049,26 @@ class SaleOrder(models.Model):
                         f"No se puede usar en esta operación."
                     )
 
+            # COMPROMETIDO A TALLER (defensivo: solo con el integrador de
+            # taller instalado): un lote con selección ACTIVA de taller de
+            # una venta confirmada está apartado para producir — nadie más
+            # lo usa, aunque su reserva física aún no exista (p. ej. recién
+            # recibido de tránsito). La propia orden dueña sí pasa.
+            if 'sale.stone.workshop.input.selection' in self.env:
+                sel = self.env['sale.stone.workshop.input.selection'].sudo().search([
+                    ('lot_id', '=', quant.lot_id.id),
+                    ('state', 'in', ('selected', 'reserved', 'moved_to_workshop')),
+                    ('sale_order_id.state', 'in', ('sale', 'done')),
+                ], limit=1)
+                if sel and not (allowed_order and sel.sale_order_id.id == allowed_order.id):
+                    raise UserError(
+                        f"El lote {quant.lot_id.name} está COMPROMETIDO A TALLER "
+                        f"para la orden {sel.sale_order_id.name}.\n\n"
+                        f"No se puede usar en otra operación. Si el compromiso ya "
+                        f"no aplica, libera primero la selección de taller en esa "
+                        f"venta."
+                    )
+
             blockers = self._get_native_reservation_blockers(
                 quant,
                 allowed_order=allowed_order,
