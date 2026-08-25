@@ -338,6 +338,12 @@ class StockQuant(models.Model):
                 product_name = quant.product_id.name[:60] if quant.product_id.name else ''
                 lot_name = lot.name or ''
                 qty_str = ('%g' % (quant.quantity or 0)) + ' m2'
+                # BLOQUE del lote: en piso se aparta/arma por bloque, así que
+                # la etiqueta debe decirlo. Solo se imprime si existe.
+                block_raw = getattr(lot, 'x_bloque', '') or ''
+                if hasattr(block_raw, 'name'):
+                    block_raw = block_raw.name
+                block_str = str(block_raw or '').strip()[:30]
 
                 zpl_code += "^XA^CI28"
 
@@ -366,6 +372,10 @@ class StockQuant(models.Model):
                         # Nombre del material: 2 líneas centradas
                         zpl_code += ("^FO10,%d^A0N,36,36^FB780,2,4,C^FD" % (y0 + 10)
                                      + product_name + "^FS")
+                        # BLOQUE entre el nombre y la cantidad (solo si hay)
+                        if block_str:
+                            zpl_code += ("^FO25,%d^A0N,26,26^FDBLOQUE: " % (y0 + 88)
+                                         + block_str + "^FS")
                         # Cantidad a la izquierda
                         zpl_code += ("^FO25,%d^A0N,55,55^FD" % (y0 + 116)
                                      + qty_str + "^FS")
@@ -398,6 +408,10 @@ class StockQuant(models.Model):
                                  + lot_name + "^FS")
                     zpl_code += "^FO421,980" + SOM_LOGO_ZPL + "^FS"
                     zpl_code += "^FO130,70^A0R,125,125^FD" + qty_str + "^FS"
+                    # BLOQUE en el espacio libre entre cantidad y lote
+                    if block_str:
+                        zpl_code += ("^FO330,70^A0R,60,60^FDBLOQUE: "
+                                     + block_str + "^FS")
                     # Barras un poco más angostas para dar lugar al NÚMERO DE
                     # LOTE legible (se perdió en el rediseño 'sin números' del
                     # 2026-08-07 y en piso se necesita leerlo a ojo).
