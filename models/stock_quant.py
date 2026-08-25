@@ -374,7 +374,7 @@ class StockQuant(models.Model):
                                      + product_name + "^FS")
                         # BLOQUE entre el nombre y la cantidad (solo si hay)
                         if block_str:
-                            zpl_code += ("^FO25,%d^A0N,26,26^FDBLOQUE: " % (y0 + 88)
+                            zpl_code += ("^FO25,%d^A0N,26,26^FD" % (y0 + 88)
                                          + block_str + "^FS")
                         # Cantidad a la izquierda
                         zpl_code += ("^FO25,%d^A0N,55,55^FD" % (y0 + 116)
@@ -410,7 +410,7 @@ class StockQuant(models.Model):
                     zpl_code += "^FO130,70^A0R,125,125^FD" + qty_str + "^FS"
                     # BLOQUE en el espacio libre entre cantidad y lote
                     if block_str:
-                        zpl_code += ("^FO330,70^A0R,60,60^FDBLOQUE: "
+                        zpl_code += ("^FO330,70^A0R,60,60^FD"
                                      + block_str + "^FS")
                     # Barras un poco más angostas para dar lugar al NÚMERO DE
                     # LOTE legible (se perdió en el rediseño 'sin números' del
