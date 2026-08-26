@@ -41,16 +41,21 @@
                     <field name="description" placeholder="Para qué se usa este canal…"/>
                     <notebook>
                         <page string="Quién escucha" name="listeners">
+                            <field name="member_ids" widget="many2many_tags"
+                                   options="{'no_create': True}"/>
+                            <separator string="Por grupos (opcional)"/>
                             <field name="listener_group_ids" widget="many2many_tags"/>
-                            <separator string="Altas puntuales fuera de grupo"/>
-                            <field name="member_ids" widget="many2many_tags"/>
                         </page>
                         <page string="Quién habla" name="talkers">
                             <div class="alert alert-info" role="alert">
-                                Quien no esté en estos grupos entra al canal en modo
-                                <strong>solo escucha</strong>. La restricción la aplica
-                                el servidor de voz, no la app.
+                                Quien no esté aquí entra al canal en modo
+                                <strong>solo escucha</strong>. Un usuario que habla
+                                también escucha automáticamente. La restricción la
+                                aplica el servidor de voz, no la app.
                             </div>
+                            <field name="talker_user_ids" widget="many2many_tags"
+                                   options="{'no_create': True}"/>
+                            <separator string="Por grupos (opcional)"/>
                             <field name="talker_group_ids" widget="many2many_tags"/>
                         </page>
                     </notebook>

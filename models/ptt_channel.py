@@ -58,8 +58,16 @@ class PttChannel(models.Model):
         'res.users',
         'sto_ptt_channel_user_rel',
         'channel_id', 'user_id',
-        string='Miembros adicionales',
-        help='Altas puntuales fuera de grupo.',
+        string='Usuarios que escuchan',
+        help='Asignación directa por usuario (no requiere grupo).',
+    )
+    talker_user_ids = fields.Many2many(
+        'res.users',
+        'sto_ptt_channel_talker_user_rel',
+        'channel_id', 'user_id',
+        string='Usuarios que hablan',
+        help='Asignación directa por usuario: pueden hablar y escuchar '
+             'aunque no estén en ningún grupo.',
     )
 
     member_count = fields.Integer(string='Miembros', compute='_compute_member_count')
@@ -75,7 +83,7 @@ class PttChannel(models.Model):
     # Cómputos
     # ──────────────────────────────────────────────
 
-    @api.depends('listener_group_ids', 'member_ids')
+    @api.depends('listener_group_ids', 'member_ids', 'talker_user_ids')
     def _compute_member_count(self):
         for channel in self:
             channel.member_count = len(channel._member_users())
@@ -117,21 +125,24 @@ class PttChannel(models.Model):
         return self.env['res.groups']
 
     def _member_users(self):
-        """Usuarios con acceso al canal: por grupo o por alta puntual."""
+        """Usuarios con acceso al canal: directos (escucha o habla) o por grupo."""
         self.ensure_one()
-        users = self.member_ids
+        users = self.member_ids | self.talker_user_ids
         for group in self.listener_group_ids:
             users |= self._som_group_users(group)
         return users
 
     def _user_can_listen(self, user):
         self.ensure_one()
-        if user in self.member_ids:
+        # Quien puede hablar, escucha: la asignación directa de habla basta.
+        if user in self.member_ids or user in self.talker_user_ids:
             return True
         return bool(self.listener_group_ids & self._som_user_groups(user))
 
     def _user_can_talk(self, user):
         self.ensure_one()
+        if user in self.talker_user_ids:
+            return True
         if not self._user_can_listen(user):
             return False
         return bool(self.talker_group_ids & self._som_user_groups(user))
