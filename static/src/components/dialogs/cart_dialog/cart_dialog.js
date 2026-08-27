@@ -12,7 +12,9 @@ export class CartDialog extends Component {
             { key: "carrito", label: "Carrito" }));
         onWillUnmount(() => this.env.bus.trigger("SOM_ACTIVITY:SCREEN", {}));
 
-        this.cart = this.props.cart;
+        // useState sobre el carrito reactivo del visual: al quitar lotes el
+        // diálogo se actualiza en sitio sin cerrarse.
+        this.cart = useState(this.props.cart);
         // Selección por lote: la acción (apartar / vender / trasladar /
         // etiquetas) aplica SOLO a lo palomeado — por default todo va
         // seleccionado, el vendedor desmarca lo que no quiere enviar.
@@ -74,6 +76,31 @@ export class CartDialog extends Component {
         return this.selectedIds.length > 0;
     }
     
+    // ── Quitar del carrito ──
+    async removeLot(lot) {
+        await this._removeIds([lot.id]);
+    }
+
+    async removeSelected() {
+        if (!this._assertSelection()) {
+            return;
+        }
+        await this._removeIds(this.selectedIds);
+    }
+
+    async _removeIds(ids) {
+        if (!this.props.onRemoveItems || !ids.length) {
+            return;
+        }
+        await this.props.onRemoveItems(ids);
+        for (const id of ids) {
+            delete this.state.sel[id];
+        }
+        if (this.cart.totalLots === 0) {
+            this.props.close();
+        }
+    }
+
     removeHolds() {
         this.props.onRemoveHolds();
         if (this.cart.totalLots === 0) {
@@ -140,6 +167,7 @@ CartDialog.props = {
     close: Function,
     cart: Object,
     onRemoveHolds: Function,
+    onRemoveItems: { type: Function, optional: true },
     onCreateHolds: Function,
     onCreateSaleOrder: Function,
     onCreateTransfer: Function,

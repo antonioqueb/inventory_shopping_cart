@@ -222,6 +222,17 @@ class ShoppingCart(models.Model):
         return {'success': False}
     
     @api.model
+    def remove_many_from_cart(self, quant_ids):
+        """Quitar varios items del carrito del usuario (desde el diálogo)."""
+        ids = [int(q) for q in (quant_ids or []) if q]
+        if not ids:
+            return {'success': False, 'removed': 0}
+        items = self.search([('user_id', '=', self.env.user.id), ('quant_id', 'in', ids)])
+        removed = len(items)
+        items.unlink()
+        return {'success': True, 'removed': removed}
+
+    @api.model
     def clear_cart(self):
         """Limpiar carrito del usuario"""
         items = self.search([('user_id', '=', self.env.user.id)])

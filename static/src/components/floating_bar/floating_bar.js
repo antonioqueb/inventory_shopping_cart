@@ -22,6 +22,7 @@ patch(InventoryVisualController.prototype, {
         this.dialog.add(CartDialog, {
             cart: this.cart,
             onRemoveHolds: () => this.removeLotsWithHold(),
+            onRemoveItems: (ids) => this.removeItemsFromCart(ids),
             onCreateHolds: (ids) => this.openHoldWizard(ids),
             onCreateSaleOrder: (ids) => this.openSaleOrderWizard(ids),
             onCreateTransfer: (ids) => this.openTransferWizard(ids),

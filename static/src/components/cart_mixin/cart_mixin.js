@@ -459,6 +459,51 @@ patch(InventoryVisualController.prototype, {
         }
     },
     
+    /**
+     * Quita lotes concretos del carrito (papelera / "Quitar" del diálogo).
+     * Optimista en UI, persiste en BD y refresca los productos expandidos
+     * para que el visual deje de mostrarlos como "en carrito".
+     */
+    async removeItemsFromCart(quantIds) {
+        const ids = new Set((quantIds || []).map((i) => parseInt(i)));
+        if (!ids.size) {
+            return;
+        }
+        this.cart.items = this.cart.items.filter((item) => !ids.has(item.id));
+        this.updateCartSummary();
+        try {
+            await this.orm.call('shopping.cart', 'remove_many_from_cart', [[...ids]]);
+        } catch (e) {
+            console.error('[CART] No se pudieron quitar los lotes', e);
+            await this.loadCartFromDB();
+            this.notification.add("No se pudo quitar del carrito. Se recargó la selección.", { type: "danger" });
+            return;
+        }
+        this.notification.add(
+            ids.size === 1 ? "Lote quitado del carrito" : `${ids.size} lotes quitados del carrito`,
+            { type: "success" }
+        );
+        await this._refreshExpandedProducts();
+    },
+
+    async _refreshExpandedProducts() {
+        const expandedProductIds = Array.from(this.state.expandedProducts || []);
+        if (!expandedProductIds.length) {
+            return;
+        }
+        this.state.expandedProducts.clear();
+        this.state.expandedProducts = new Set(this.state.expandedProducts);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        for (const productId of expandedProductIds) {
+            const product = this.state.products.find((p) => p.product_id === productId);
+            if (product) {
+                this.state.expandedProducts.add(productId);
+                await this.loadProductDetails(productId, product.quant_ids);
+            }
+        }
+        this.state.expandedProducts = new Set(this.state.expandedProducts);
+    },
+
     async removeLotsWithHold() {
         const before = this.cart.items.length;
         this.cart.items = this.cart.items.filter(item => !item.tiene_hold);
