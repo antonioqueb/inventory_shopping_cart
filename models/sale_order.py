@@ -213,6 +213,9 @@ class SaleOrderLine(models.Model):
                 if violations:
                     order._som_alert_floor_violation(violations)
 
+        if 'price_unit' in vals or 'product_id' in vals:
+            self.order_id._som_price_auth_auto_request()
+
         # ESPEJO carrito ⇄ selector de placas en órdenes confirmadas.
         # x_selected_lots era una TERCERA copia de la selección que se
         # congelaba con lo elegido en el carrito: al quitar material desde
@@ -1241,13 +1244,10 @@ class SaleOrder(models.Model):
                 if not line.product_id or line.display_type or line.product_id.type == 'service':
                     continue
 
-                # El piso autorizado manda SIEMPRE, aun con autorización
-                # aprobada: bajar de lo autorizado re-bloquea la orden.
-                floor = float(floors.get(str(line.product_id.id), 0) or 0)
-                if floor > 0 and line.price_unit < (floor - 0.01):
-                    has_low = True
-                    break
-
+                # AUTORIZACIÓN APROBADA = puerta abierta (decisión 28 ago
+                # 2026): la orden ya no se vuelve a bloquear aunque un
+                # precio baje del piso autorizado; en ese caso solo se
+                # avisa a los autorizadores (_som_alert_floor_violation).
                 if approved:
                     continue
 
@@ -1285,14 +1285,6 @@ class SaleOrder(models.Model):
             if not line.product_id or line.display_type or line.product_id.type == 'service':
                 continue
 
-            floor = float(floors.get(str(line.product_id.id), 0) or 0)
-            if floor > 0 and line.price_unit < (floor - 0.01):
-                violating.append(
-                    f"{line.product_id.display_name} "
-                    f"(Precio: {line.price_unit:.2f}, Precio autorizado: {floor:.2f})"
-                )
-                continue
-
             if approved:
                 continue
 
@@ -1327,13 +1319,14 @@ class SaleOrder(models.Model):
 
     def _som_alert_floor_violation(self, violations):
         """El vendedor bajó un precio por debajo de lo autorizado: la orden
-        queda re-bloqueada y los autorizadores deben aprobar de nuevo."""
+        NO se bloquea (ya cuenta con autorización), pero queda constancia y
+        los autorizadores reciben aviso."""
         self.ensure_one()
         listado = "\n".join(f"• {v}" for v in violations)
         self.message_post(body=Markup(
-            f"<p>🚫 <b>Precio por debajo de lo autorizado</b> — la orden "
-            f"queda BLOQUEADA (enviar/imprimir/confirmar) hasta contar con "
-            f"una nueva autorización.</p><pre>{listado}</pre>"
+            f"<p>⚠️ <b>Precio por debajo de lo autorizado</b> — la orden "
+            f"sigue autorizada y puede continuar; los autorizadores fueron "
+            f"avisados.</p><pre>{listado}</pre>"
         ))
         group = self.env.ref(
             'inventory_shopping_cart.group_price_authorizer',
@@ -1341,11 +1334,11 @@ class SaleOrder(models.Model):
         if group:
             self._som_notify_users(
                 self._som_group_users(group),
-                f"Re-autorizar precios: {self.name}",
+                f"Precio bajo lo autorizado: {self.name}",
                 f"{self.env.user.name} bajó precios por debajo de lo YA "
                 f"autorizado en la orden {self.name} "
                 f"(cliente {self.partner_id.display_name or ''}). La orden "
-                f"está bloqueada hasta una nueva autorización.\n{listado}",
+                f"sigue autorizada; revisa si procede.\n{listado}",
             )
 
     def _check_seller_low_price_block(self, action_name="realizar esta acción"):
@@ -2039,7 +2032,9 @@ class SaleOrder(models.Model):
             if vals.get('name', 'New') in default_names:
                 vals['name'] = self.env['ir.sequence'].next_by_code('sale.quotation') or 'New'
 
-        return super().create(vals_list)
+        orders = super().create(vals_list)
+        orders._som_price_auth_auto_request()
+        return orders
 
     @api.onchange('pricelist_id')
     def _onchange_pricelist_id_custom_prices(self):
@@ -2165,6 +2160,31 @@ class SaleOrder(models.Model):
             '[PRECIOS] Bandera de precios bajos recalculada en %s órdenes '
             'activas.', len(orders))
         return True
+
+    def _som_price_auth_auto_request(self):
+        """Cotización/orden con precios bajos → la solicitud de autorización
+        se crea SOLA al guardar (28 ago 2026), sin esperar el botón. Una por
+        orden mientras haya una pendiente o aprobada."""
+        if self.env.context.get('som_price_auth_auto'):
+            return
+        for order in self:
+            if order.state not in ('draft', 'sent', 'sale') or not order.x_has_low_prices:
+                continue
+            if getattr(order, 'x_is_quote_backup', False):
+                continue
+            auth = order.x_price_authorization_id
+            if auth and auth.state in ('pending', 'approved'):
+                continue
+            try:
+                order.with_context(som_price_auth_auto=True).action_request_authorization()
+            except UserError as e:
+                _logger.info('[PRECIOS] Sin solicitud automática en %s: %s', order.name, e)
+                continue
+            if order.x_price_authorization_id:
+                order.message_post(body=Markup(
+                    '<p>📝 Solicitud de autorización de precios creada automáticamente: '
+                    '<b>%s</b>. La orden queda pendiente de autorización.</p>'
+                ) % order.x_price_authorization_id.name)
 
     def action_request_authorization(self):
         self.ensure_one()

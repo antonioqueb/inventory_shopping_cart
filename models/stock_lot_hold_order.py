@@ -14,6 +14,12 @@ _logger = logging.getLogger(__name__)
 class StockLotHoldOrder(models.Model):
     _inherit = 'stock.lot.hold.order'
 
+    # Autorización de precios ligada al apartado (pendiente o aprobada). Se
+    # solicita SOLA al crear/editar el apartado con precios bajos y, al
+    # convertir a orden de venta, la orden la hereda para no pedirla de nuevo.
+    x_price_authorization_id = fields.Many2one(
+        'price.authorization', string='Autorización de precios', copy=False, readonly=True)
+
     # Utilidad global de la reserva (suma de líneas). Mismo candado de
     # grupo que la utilidad por línea.
     x_utilidad_total = fields.Monetary(
@@ -391,6 +397,7 @@ class StockLotHoldOrder(models.Model):
 
         records = super().create(vals_list)
         records._sync_manual_defaults_and_lines()
+        records._som_hold_auto_request()
         return records
 
     def write(self, vals):
@@ -416,6 +423,9 @@ class StockLotHoldOrder(models.Model):
                 break
 
         res = super().write(vals)
+
+        if {'line_ids', 'hold_line_ids', 'partner_id', 'currency_id'} & set(vals):
+            self._som_hold_auto_request()
 
         if not self.env.context.get('skip_hold_order_sync'):
             if any(field in vals for field in ['fecha_orden', 'currency_id', 'x_hold_business_days']):
@@ -575,6 +585,8 @@ class StockLotHoldOrder(models.Model):
 
     def _find_pending_manual_hold_authorization(self):
         self.ensure_one()
+        if self.x_price_authorization_id and self.x_price_authorization_id.state == 'pending':
+            return self.x_price_authorization_id
 
         authorizations = self.env['price.authorization'].search([
             ('operation_type', '=', 'hold'),
@@ -674,6 +686,7 @@ class StockLotHoldOrder(models.Model):
                 'level_5_price': Product._get_price_level_value(tmpl, 'level_5', currency_code),
             })
 
+        self.x_price_authorization_id = auth.id
         self.message_post(
             body=(
                 f"Se creó la solicitud de autorización de precio "
@@ -683,11 +696,32 @@ class StockLotHoldOrder(models.Model):
 
         return auth
 
+    def _som_hold_auto_request(self):
+        """Apartado en borrador con precios bajos → solicitud automática al
+        crear/editar (28 ago 2026), no solo al confirmar."""
+        if self.env.context.get('skip_authorization_check'):
+            return
+        for order in self:
+            if order.state not in ('draft', 'borrador'):
+                continue
+            auth = order.x_price_authorization_id
+            if auth and auth.state in ('pending', 'approved'):
+                continue
+            try:
+                violations = order._get_manual_price_violations()
+            except Exception:  # noqa: BLE001
+                continue
+            if violations:
+                order._create_manual_hold_price_authorization(violations)
+
     def _request_manual_hold_authorization_if_needed(self):
         if self.env.context.get('skip_authorization_check'):
             return False
 
         self.ensure_one()
+        # Ya autorizado: puerta abierta, no se vuelve a pedir.
+        if self.x_price_authorization_id and self.x_price_authorization_id.state == 'approved':
+            return False
         violations = self._get_manual_price_violations()
         if not violations:
             return False
@@ -1071,6 +1105,24 @@ class StockLotHoldOrder(models.Model):
                 continue
 
             order._stone_apply_hold_payload_to_sale_order(sale_order, payload)
+
+            # La orden HEREDA la autorización aprobada del apartado: no se
+            # vuelve a pedir al convertir (queja del cliente, 28 ago 2026).
+            auth = order.x_price_authorization_id
+            if auth and auth.state == 'approved' and not sale_order.x_price_authorization_id:
+                floors = dict(sale_order.x_authorized_floor_json or {})
+                for aline in auth.line_ids:
+                    if aline.product_id and aline.authorized_price:
+                        floors[str(aline.product_id.id)] = aline.authorized_price
+                sale_order.sudo().write({
+                    'x_price_authorization_id': auth.id,
+                    'x_authorized_floor_json': floors or False,
+                })
+                if not auth.sale_order_id:
+                    auth.sudo().write({'sale_order_id': sale_order.id})
+                sale_order.message_post(body=(
+                    f"Autorización de precios <b>{auth.name}</b> heredada del apartado "
+                    f"{order.name}: la orden no requiere nueva autorización."))
 
         return result
 

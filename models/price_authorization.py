@@ -738,6 +738,13 @@ class PriceAuthorization(models.Model):
                 error_msg += f"• {failed.get('lot_name', 'Lote')}: {failed.get('error', 'Error desconocido')}\n"
             raise UserError(error_msg)
 
+        # El apartado creado queda ligado a esta autorización: al convertirlo
+        # a orden de venta, la orden la hereda y no la vuelve a pedir.
+        if result.get('order_id'):
+            hold = self.env['stock.lot.hold.order'].browse(result['order_id']).exists()
+            if hold and 'x_price_authorization_id' in hold._fields:
+                hold.sudo().write({'x_price_authorization_id': self.id})
+
     def _confirm_existing_hold_order_from_authorization(self, temp_data):
         """
         Aplica una autorización aprobada sobre un apartado manual existente.
@@ -792,6 +799,8 @@ class PriceAuthorization(models.Model):
                 f"{self.authorizer_id.name}. Se aplicaron los precios autorizados."
             )
         )
+        if 'x_price_authorization_id' in order._fields:
+            order.x_price_authorization_id = self.id
 
         order.with_context(skip_authorization_check=True).action_confirm()
 
