@@ -78,6 +78,12 @@
                             <span class="pa-product-cost pa-product-cost--allin" t-if="d.is_authorizer and line.cost_allin_usd">
                                 All-In: $<t t-esc="num(line.cost_allin_usd)"/> USD
                             </span>
+                            <button type="button" class="pa-matrix-toggle" t-if="d.is_authorizer and line.matrix"
+                                    t-att-class="{ 'is-open': isOpen(line) }"
+                                    t-on-click.stop="() => this.toggleMatrix(line)">
+                                <i t-att-class="'fa ' + (isOpen(line) ? 'fa-chevron-up' : 'fa-table')"/>
+                                Precios y costos USD / MXN
+                            </button>
                         </span>
                         <span class="pa-col pa-col--qty">
                             <t t-esc="num(line.quantity)"/> <small t-esc="line.uom"/>
@@ -103,6 +109,47 @@
                             <span class="pa-amount pa-amount--strong" t-esc="money(line.subtotal)"/>
                             <small class="pa-cur" t-esc="d.currency"/>
                         </span>
+                    </div>
+
+                    <!-- ═══ MATRIZ USD / MXN por producto (autorizador) ═══ -->
+                    <div class="pa-matrix" t-if="d.is_authorizer and line.matrix and isOpen(line)">
+                        <div class="pa-matrix-head">
+                            <span><i class="fa fa-table"/> <t t-esc="line.product"/></span>
+                            <span class="pa-matrix-rate" t-if="line.matrix.rate">TC del día: 1 USD = $<t t-esc="num(line.matrix.rate)"/> MXN · ≈ = derivado con TC</span>
+                        </div>
+                        <table class="pa-matrix-table">
+                            <thead>
+                                <tr><th>Concepto</th><th class="num">USD</th><th class="num">MXN</th><th class="num">Margen s/ ALL-IN</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="line.matrix.levels" t-as="lv" t-key="lv.key" class="pa-matrix-level">
+                                    <td><t t-esc="lv.label"/></td>
+                                    <td class="num"><t t-if="lv.usd_derived">≈ </t><t t-esc="money(lv.usd)"/></td>
+                                    <td class="num"><t t-if="lv.mxn_derived">≈ </t><t t-esc="money(lv.mxn)"/></td>
+                                    <td class="num"><span t-att-class="'pa-margin pa-margin--' + marginTone(lv.margin)" t-esc="pct(lv.margin)"/></td>
+                                </tr>
+                                <tr class="pa-matrix-sep"><td colspan="4"/></tr>
+                                <tr class="pa-matrix-req">
+                                    <td><t t-esc="line.matrix.requested.label"/> <small>(<t t-esc="d.currency"/>)</small></td>
+                                    <td class="num"><t t-if="line.matrix.requested.usd_derived">≈ </t><t t-esc="money(line.matrix.requested.usd)"/></td>
+                                    <td class="num"><t t-if="line.matrix.requested.mxn_derived">≈ </t><t t-esc="money(line.matrix.requested.mxn)"/></td>
+                                    <td class="num"><span t-att-class="'pa-margin pa-margin--' + marginTone(line.matrix.requested.margin)" t-esc="pct(line.matrix.requested.margin)"/></td>
+                                </tr>
+                                <tr class="pa-matrix-auth">
+                                    <td><t t-esc="line.matrix.authorized.label"/> <small>(<t t-esc="d.currency"/>)</small></td>
+                                    <td class="num"><t t-if="line.matrix.authorized.usd_derived">≈ </t><t t-esc="money(line.matrix.authorized.usd)"/></td>
+                                    <td class="num"><t t-if="line.matrix.authorized.mxn_derived">≈ </t><t t-esc="money(line.matrix.authorized.mxn)"/></td>
+                                    <td class="num"><span t-att-class="'pa-margin pa-margin--' + marginTone(line.matrix.authorized.margin)" t-esc="pct(line.matrix.authorized.margin)"/></td>
+                                </tr>
+                                <tr class="pa-matrix-sep"><td colspan="4"/></tr>
+                                <tr t-foreach="line.matrix.costs" t-as="c" t-key="c.label" class="pa-matrix-cost">
+                                    <td><t t-esc="c.label"/></td>
+                                    <td class="num"><t t-if="c.usd_derived">≈ </t><t t-esc="money(c.usd)"/></td>
+                                    <td class="num"><t t-if="c.mxn_derived">≈ </t><t t-esc="money(c.mxn)"/></td>
+                                    <td class="num">—</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </t>
 

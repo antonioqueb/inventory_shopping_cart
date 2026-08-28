@@ -307,6 +307,44 @@ class PriceAuthorization(models.Model):
             'inventory_shopping_cart.group_price_authorizer')
         currency = self.currency_code or 'USD'
 
+        # Tipo de cambio del día para mostrar cada nivel/costo en AMBAS
+        # divisas (derivado cuando solo está capturado en una).
+        usd = self.env.ref('base.USD', raise_if_not_found=False)
+        mxn = self.env.ref('base.MXN', raise_if_not_found=False)
+        rate = 0.0
+        if usd and mxn:
+            try:
+                rate = usd._convert(1.0, mxn, self.env.company, fields.Date.context_today(self)) or 0.0
+            except Exception:  # noqa: BLE001
+                rate = 0.0
+
+        def _pair(usd_val, mxn_val):
+            """{usd, mxn, usd_derived, mxn_derived}: completa la divisa faltante."""
+            usd_val = float(usd_val or 0.0)
+            mxn_val = float(mxn_val or 0.0)
+            out = {'usd': usd_val, 'mxn': mxn_val, 'usd_derived': False, 'mxn_derived': False}
+            if rate:
+                if not mxn_val and usd_val:
+                    out['mxn'] = usd_val * rate
+                    out['mxn_derived'] = True
+                if not usd_val and mxn_val:
+                    out['usd'] = mxn_val / rate
+                    out['usd_derived'] = True
+            return out
+
+        def _to_both(value, code):
+            value = float(value or 0.0)
+            if code == 'MXN':
+                return {'usd': (value / rate) if rate else 0.0, 'mxn': value,
+                        'usd_derived': True, 'mxn_derived': False}
+            return {'usd': value, 'mxn': value * rate if rate else 0.0,
+                    'usd_derived': False, 'mxn_derived': True}
+
+        def _margin(price_usd, cost_usd):
+            if price_usd and cost_usd:
+                return round((price_usd - cost_usd) / price_usd * 100.0, 1)
+            return None
+
         lines = []
         total_requested = 0.0
         total_authorized = 0.0
@@ -346,6 +384,28 @@ class PriceAuthorization(models.Model):
                     'cost_base_usd': cost_base_usd,
                     'cost_allin_usd': cost_allin_usd,
                 })
+                # Matriz completa en USD y MXN: 5 niveles + costos + prometido/autorizado.
+                if tmpl:
+                    allin = _pair(getattr(tmpl, 'x_costo_mayor_usd', 0.0), getattr(tmpl, 'x_costo_mayor', 0.0))
+                    base = _pair(getattr(tmpl, 'x_costo_usd_edit', 0.0), getattr(tmpl, 'x_costo_mxn_edit', 0.0))
+                    levels = []
+                    for n in range(1, 6):
+                        pr = _pair(getattr(tmpl, 'x_price_usd_%d' % n, 0.0), getattr(tmpl, 'x_price_mxn_%d' % n, 0.0))
+                        pr.update({'key': str(n), 'label': 'Precio %d' % n,
+                                   'margin': _margin(pr['usd'], allin['usd'])})
+                        levels.append(pr)
+                    req_pair = _to_both(req, currency)
+                    auth_pair = _to_both(auth, currency)
+                    item['matrix'] = {
+                        'rate': rate,
+                        'levels': levels,
+                        'costs': [
+                            dict(base, label='Costo base'),
+                            dict(allin, label='Costo ALL-IN'),
+                        ],
+                        'requested': dict(req_pair, label='Prometido', margin=_margin(req_pair['usd'], allin['usd'])),
+                        'authorized': dict(auth_pair, label='Autorizado', margin=_margin(auth_pair['usd'], allin['usd'])),
+                    }
             lines.append(item)
 
         def _dt(value):
@@ -366,6 +426,7 @@ class PriceAuthorization(models.Model):
             'seller': self.seller_id.name or '',
             'authorizer': self.authorizer_id.name or '',
             'currency': currency,
+            'usd_rate': rate,
             'create_date': _dt(self.create_date),
             'authorization_date': _dt(self.authorization_date),
             'sale_order': self.sale_order_id.name or '',

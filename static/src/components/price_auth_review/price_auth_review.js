@@ -20,7 +20,7 @@ export class PriceAuthReview extends Component {
     setup() {
         this.orm = useService("orm");
         this.notification = useService("notification");
-        this.state = useState({ data: null, busy: false });
+        this.state = useState({ data: null, busy: false, open: {} });
         onWillStart(() => this.load());
     }
 
@@ -48,6 +48,24 @@ export class PriceAuthReview extends Component {
         } catch {
             // El registro se refresca al navegar; el widget ya está al día.
         }
+    }
+
+    // Matriz USD/MXN por producto (solo autorizador)
+    toggleMatrix(line) {
+        this.state.open[line.id] = !this.state.open[line.id];
+    }
+    isOpen(line) {
+        return !!this.state.open[line.id];
+    }
+    pct(v) {
+        if (v === null || v === undefined) return "—";
+        return parseFloat(v).toFixed(1) + "%";
+    }
+    marginTone(v) {
+        if (v === null || v === undefined) return "";
+        if (v < 0) return "danger";
+        if (v < 15) return "warn";
+        return "ok";
     }
 
     currencyName() {
