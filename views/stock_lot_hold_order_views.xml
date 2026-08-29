@@ -79,9 +79,6 @@
                             type="object"
                             invisible="state in ['done', 'cancel']"/>
 
-                    <button name="action_open_whatsapp_send" type="object"
-                            string="WhatsApp" icon="fa-whatsapp"
-                            invisible="state == 'cancel'"/>
                     <field name="state" widget="statusbar" statusbar_visible="draft,confirmed,done,cancel"/>
                 </header>
 

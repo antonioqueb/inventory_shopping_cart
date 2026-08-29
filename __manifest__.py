@@ -1,7 +1,7 @@
 # ./__manifest__.py
 {
     'name': 'Carrito de Compra para Inventario Visual',
-    'version': '19.0.26.25.0',
+    'version': '19.0.26.26.0',
     'category': 'Inventory/Inventory',
     'summary': 'Sistema de carrito de compra y apartado múltiple desde inventario visual',
     'author': 'Alphaqueb Consulting SAS',
@@ -30,7 +30,6 @@
         'views/price_authorization_views.xml',
         'views/sale_order_views.xml',
         'views/stock_lot_hold_order_views.xml',
-        'views/whatsapp_send_views.xml',
         'views/product_category_pricing_views.xml',
         'data/fix_stone_cart_sync.xml',
         'views/ptt_channel_views.xml',
@@ -42,8 +41,6 @@
     # try/except y solo apaga la radio PTT con warning).
     'assets': {
         'web.assets_backend': [
-            'inventory_shopping_cart/static/src/js/som_share_pdf.js',
-            'inventory_shopping_cart/static/src/js/som_share_pdf.xml',
             'inventory_shopping_cart/static/src/components/floating_bar/floating_bar.scss',
             'inventory_shopping_cart/static/src/components/dialogs/hold_wizard/hold_wizard.scss',
             'inventory_shopping_cart/static/src/components/dialogs/sale_order_wizard/sale_order_wizard.scss',
