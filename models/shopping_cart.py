@@ -235,7 +235,11 @@ class ShoppingCart(models.Model):
         # completos (nunca fracciones). Antes el carrito aceptaba cualquier
         # m² y la venta reventaba al final con "no es múltiplo exacto".
         pack_note = ''
-        pack_info = self._som_pack_for_quant(quant, product_id)
+        # El Movedor de Ubicaciones NO vende: toma placas comprometidas para
+        # trasladarlas y etiquetarlas, tal cual están. La regla de empaques
+        # es de VENTA y se aplica al vendedor (y como candado al crear la
+        # orden/apartado), no al movimiento físico.
+        pack_info = None if is_location_mover else self._som_pack_for_quant(quant, product_id)
         if pack_info:
             pack, qpp = pack_info
             free_avail = quant.quantity - quant.reserved_quantity if quant else float(quantity)
