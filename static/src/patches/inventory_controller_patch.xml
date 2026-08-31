@@ -59,8 +59,13 @@
                                 t-on-change="(ev) => props.onInputManualQuantity ? props.onInputManualQuantity(detail, ev.target.value) : null"
                                 placeholder="Total"
                                 min="0"
+                                t-att-step="(props.product and props.product.pack_qty) ? props.product.pack_qty : 'any'"
                                 t-att-max="detail.quantity"
+                                t-att-title="(props.product and props.product.pack_qty) ? ('Se vende por empaque: ' + props.product.pack_name + ' — la cantidad se ajusta a empaques completos') : ''"
                             />
+                            <span t-if="props.product and props.product.pack_qty" class="badge text-bg-light" style="font-size: 9px;" t-att-title="'Empaque: ' + props.product.pack_name">
+                                x<t t-esc="props.product.pack_qty"/>
+                            </span>
                             <span style="font-size: 9px; font-weight: bold; color: #666;">
                                 <t t-if="detail.tipo === 'pieza' or detail.tipo === 'Pieza'">pzas</t>
                                 <t t-else="">m²</t>

@@ -308,13 +308,32 @@ patch(InventoryVisualController.prototype, {
         }
 
         try {
-            await this.orm.call('shopping.cart', 'add_to_cart', [], {
+            const res = await this.orm.call('shopping.cart', 'add_to_cart', [], {
                 quant_id: detail.id,
                 lot_id: detail.lot_id,
                 product_id: this.getCurrentProductId(detail),
                 quantity: quantity,
                 location_name: detail.location_name
             });
+            if (res && res.success === false) {
+                // El servidor rechazó (p.ej. no completa ni un empaque):
+                // se revierte lo local y se explica.
+                const idx = this.cart.items.findIndex(item => item.id === detail.id);
+                if (idx >= 0) this.cart.items.splice(idx, 1);
+                delete this.state.manualInputValues[detail.id];
+                this.notification.add(res.message || "No se pudo agregar al carrito", { type: "danger", sticky: true });
+                return;
+            }
+            if (res && res.adjusted && res.quantity) {
+                // Venta por empaque: la cantidad válida la fija el servidor
+                // (empaques completos). Se refleja en el carrito y en el input.
+                const idx = this.cart.items.findIndex(item => item.id === detail.id);
+                if (idx >= 0) this.cart.items[idx].quantity = res.quantity;
+                this.state.manualInputValues[detail.id] = res.quantity;
+                if (Math.abs(res.quantity - quantity) > 1e-6) {
+                    this.notification.add(res.message, { type: "info" });
+                }
+            }
         } catch (error) {
             console.error('[CART] Error agregando/actualizando en carrito:', error);
             // Revertir si es nuevo y falló

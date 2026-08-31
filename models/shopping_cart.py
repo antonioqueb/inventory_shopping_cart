@@ -117,6 +117,37 @@ class ShoppingCart(models.Model):
         return result
     
     @api.model
+
+    @api.model
+    def _som_pack_for_quant(self, quant, product_id):
+        """(empaque, m² por empaque) del producto para la compañía del
+        material, o None si el producto se vende libre. Defensivo: sin el
+        módulo de empaques instalado, None."""
+        product = quant.product_id if quant else self.env['product.product'].browse(int(product_id)).exists()
+        tmpl = product.product_tmpl_id if product else None
+        if not tmpl or 'has_standard_pack' not in tmpl._fields or not tmpl.has_standard_pack:
+            return None
+        company = quant.company_id if quant and quant.company_id else self.env.company
+        packs = tmpl._som_standard_packs_for_company(company) if hasattr(tmpl, '_som_standard_packs_for_company') else tmpl.sudo().standard_pack_ids.filtered('active')
+        if not packs:
+            return None
+        default = tmpl.sudo().default_pack_id
+        pack = default if default and default in packs else packs[:1]
+        qpp = pack.qty_per_pack or 0.0
+        return (pack, qpp) if qpp > 0 else None
+
+    @staticmethod
+    def _som_snap_quantity_to_pack(quantity, available, qpp):
+        """Cantidad en empaques COMPLETOS: hacia abajo respecto a lo pedido y
+        sin rebasar lo disponible. None si no cabe ni un empaque."""
+        eps = 1e-6
+        max_packs = int((available + eps) // qpp) if available > 0 else 0
+        wanted = int((quantity + eps) // qpp) if quantity > 0 else 0
+        packs = min(wanted, max_packs) if wanted > 0 else max_packs
+        if packs < 1:
+            return None
+        return round(packs * qpp, 6)
+
     def add_to_cart(self, quant_id=None, lot_id=None, product_id=None, quantity=None, location_name=None):
         """Agregar item al carrito o actualizar cantidad si ya existe"""
         if not all([quant_id, lot_id, product_id, quantity is not None]):
@@ -199,13 +230,43 @@ class ShoppingCart(models.Model):
                 ),
             }
 
+        # EMPAQUE ESTÁNDAR: si el producto se vende por empaque, la cantidad
+        # que entra al carrito se ajusta AQUÍ, al elegirla, a empaques
+        # completos (nunca fracciones). Antes el carrito aceptaba cualquier
+        # m² y la venta reventaba al final con "no es múltiplo exacto".
+        pack_note = ''
+        pack_info = self._som_pack_for_quant(quant, product_id)
+        if pack_info:
+            pack, qpp = pack_info
+            free_avail = quant.quantity - quant.reserved_quantity if quant else float(quantity)
+            snapped = self._som_snap_quantity_to_pack(float(quantity), free_avail, qpp)
+            if snapped is None:
+                return {
+                    'success': False,
+                    'message': (
+                        'El producto %s se vende por empaque (%s = %g m²) y esta '
+                        'pieza/lote solo tiene %.2f m² disponibles: no completa '
+                        'ni un empaque.'
+                    ) % (quant.product_id.display_name if quant else '', pack.display_name, qpp, free_avail),
+                }
+            packs_n = int(round(snapped / qpp))
+            if abs(snapped - float(quantity)) > 1e-6:
+                pack_note = (
+                    ' Cantidad ajustada a %s empaque(s) = %g m² (%s: se vende '
+                    'por empaques completos).'
+                ) % (packs_n, snapped, pack.display_name)
+            else:
+                pack_note = ' = %s empaque(s) de %g m² (%s).' % (packs_n, qpp, pack.display_name)
+            quantity = snapped
+
         # Buscar si ya existe
         existing = self.search([('user_id', '=', self.env.user.id), ('quant_id', '=', quant_id)])
         
         if existing:
             # Si ya existe, actualizamos la cantidad
             existing.write({'quantity': quantity})
-            return {'success': True, 'message': 'Cantidad actualizada' + warning}
+            return {'success': True, 'message': 'Cantidad actualizada' + warning + pack_note,
+                    'quantity': quantity, 'adjusted': bool(pack_info)}
 
         # Si no existe, creamos
         self.create({
@@ -215,7 +276,7 @@ class ShoppingCart(models.Model):
             'quantity': quantity,
             'location_name': location_name or ''
         })
-        return {'success': True, 'message': ('Agregado al carrito.' + warning) if warning else ''}
+        return {'success': True, 'message': ('Agregado al carrito.' + warning) if warning else '' + pack_note, 'quantity': quantity, 'adjusted': bool(pack_info)}
     
     @api.model
     def remove_from_cart(self, quant_id):
