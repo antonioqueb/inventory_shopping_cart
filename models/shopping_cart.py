@@ -117,8 +117,6 @@ class ShoppingCart(models.Model):
         return result
     
     @api.model
-
-    @api.model
     def _som_pack_for_quant(self, quant, product_id):
         """(empaque, m² por empaque) del producto para la compañía del
         material, o None si el producto se vende libre. Defensivo: sin el
@@ -149,6 +147,7 @@ class ShoppingCart(models.Model):
             return None
         return round(packs * qpp, 6)
 
+    @api.model
     def add_to_cart(self, quant_id=None, lot_id=None, product_id=None, quantity=None, location_name=None, pack_choice=None):
         """Agregar item al carrito o actualizar cantidad si ya existe"""
         if not all([quant_id, lot_id, product_id, quantity is not None]):
