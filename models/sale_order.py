@@ -2413,7 +2413,7 @@ class SaleOrder(models.Model):
                 'product_uom_qty': data['total_qty'],
                 'price_unit': price_unit,
                 'x_price_selector': 'high',
-                'tax_ids': [(6, 0, product.taxes_id.ids)],
+                'tax_ids': [(6, 0, product.sudo().taxes_id.filtered(lambda t: t.company_id.id == company_id).ids)],  # solo impuestos de la compañía de la orden
                 'x_selected_lots': [(6, 0, data['lots'])],
                 'x_lot_breakdown_json': data['breakdown'],
                 'company_id': company_id,
@@ -2723,7 +2723,7 @@ class SaleOrder(models.Model):
 
             for pd in (products or []):
                 rec = self.env['product.product'].browse(pd['product_id'])
-                tax_ids = [(6, 0, rec.taxes_id.ids)] if apply_tax else [(5, 0, 0)]
+                tax_ids = [(6, 0, rec.sudo().taxes_id.filtered(lambda t: t.company_id == company).ids)] if apply_tax else [(5, 0, 0)]  # solo impuestos de la compañía de la orden
 
                 breakdown_json = {
                     str(l['id']): float(l['quantity'])
@@ -2769,7 +2769,7 @@ class SaleOrder(models.Model):
 
             for sd in (services or []):
                 rec = self.env['product.product'].browse(sd['product_id'])
-                tax_ids = [(6, 0, rec.taxes_id.ids)] if apply_tax else [(5, 0, 0)]
+                tax_ids = [(6, 0, rec.sudo().taxes_id.filtered(lambda t: t.company_id == company).ids)] if apply_tax else [(5, 0, 0)]  # solo impuestos de la compañía de la orden
 
                 service_vals = {
                     'order_id': sale_order.id,
