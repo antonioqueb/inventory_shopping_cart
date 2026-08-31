@@ -7,7 +7,8 @@ import { standardFieldProps } from "@web/views/fields/standard_field_props";
 // Niveles reservados al mayorista/autorizador (3 y 4). El Precio 5 es el
 // piso absoluto y se filtra aparte: solo autorizadores de precio y visores
 // del Dashboard lo ven.
-const MAYORISTA_LEVELS = new Set(["minimum", "level_4"]);
+// P3 ("minimum") abierto a toda la fuerza de ventas (31 ago 2026); P4 sigue siendo de mayoristas.
+const MAYORISTA_LEVELS = new Set(["level_4"]);
 
 export class PriceLevelSelectorField extends Component {
     static template = "inventory_shopping_cart.PriceLevelSelectorField";
@@ -65,6 +66,11 @@ export class PriceLevelSelectorField extends Component {
         // canUseCustomPrice, que siempre es true: cualquier vista que
         // olvidara declarar x_can_use_minimum_price le abría los niveles
         // 3 y 4 al vendedor con precios limitados.
+        return Boolean(this.props.record.data.x_can_use_level_4_price
+            ?? this.props.record.data.x_can_use_minimum_price);
+    }
+
+    get canUseMinimumPrice() {
         return Boolean(this.props.record.data.x_can_use_minimum_price);
     }
 
@@ -131,6 +137,9 @@ export class PriceLevelSelectorField extends Component {
 
         return this.rawSelection
             .filter(([val]) => {
+                if (val === "minimum" && !this.canUseMinimumPrice) {
+                    return false;
+                }
                 if (MAYORISTA_LEVELS.has(val) && !this.canUseMayoristaPrices) {
                     return false;
                 }

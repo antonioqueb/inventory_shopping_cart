@@ -404,6 +404,11 @@ class ProductTemplate(models.Model):
     # _get_user_price_role(), que sí aplica el tope duro del vendedor
     # limitado, para que la escalera diga lo mismo que el selector y el
     # tooltip del Inventario Visual.
+    x_som_can_see_level_3 = fields.Boolean(
+        string='Puede ver Precio 3',
+        compute='_compute_som_can_see_levels',
+        help='Precio 3 abierto a toda la fuerza de ventas (política 31 ago 2026).',
+    )
     x_som_can_see_level_3_4 = fields.Boolean(
         string='Ve Precios 3 y 4',
         compute='_compute_som_price_level_visibility',
@@ -418,9 +423,11 @@ class ProductTemplate(models.Model):
     @api.depends_context('uid')
     def _compute_som_price_level_visibility(self):
         levels = self._get_user_visible_price_levels()
+        can_3 = 'minimum' in levels
         can_3_4 = 'level_4' in levels
         can_5 = 'level_5' in levels
         for rec in self:
+            rec.x_som_can_see_level_3 = can_3
             rec.x_som_can_see_level_3_4 = can_3_4
             rec.x_som_can_see_level_5 = can_5
 
@@ -1483,7 +1490,9 @@ class ProductTemplate(models.Model):
             return ['high', 'medium', 'minimum', 'level_4', 'level_5']
         if role == 'mayorista':
             return ['high', 'medium', 'minimum', 'level_4']
-        return ['high', 'medium']
+        # Política 31 ago 2026: el Precio 3 se abre a TODA la fuerza de
+        # ventas (P4 sigue siendo de mayoristas y P5 del autorizador).
+        return ['high', 'medium', 'minimum']
 
     @api.model
     def _get_user_threshold_level(self, user=None):
@@ -1491,7 +1500,8 @@ class ProductTemplate(models.Model):
         Devuelve el nivel ('high', 'medium', 'minimum', 'level_4', 'level_5') por
         debajo del cual el usuario requiere solicitar autorización.
 
-        - Vendedor regular: medium (debajo del Precio 2 requiere autorización).
+        - Vendedor regular: minimum (el Precio 3 es libre; DEBAJO de él
+          requiere autorización — política 31 ago 2026).
         - Vendedor mayorista: level_4 (debajo del Precio 4 requiere autorización).
         - Autorizador: level_5 (debajo del Precio 5 requiere autorización).
         """
@@ -1500,7 +1510,7 @@ class ProductTemplate(models.Model):
             return 'level_5'
         if role == 'mayorista':
             return 'level_4'
-        return 'medium'
+        return 'minimum'
 
     @api.model
     def _get_price_level_value(self, tmpl, level, currency_code, company=None):
@@ -1588,10 +1598,13 @@ class ProductTemplate(models.Model):
             {'label': 'Precio 2', 'dot': '#ffc107',
              'usd': tmpl.x_price_usd_2, 'mxn': tmpl.x_price_mxn_2},
         ]
+        # Precio 3: abierto a toda la fuerza de ventas (política 31 ago 2026).
+        levels += [
+            {'label': 'Precio 3', 'dot': '#fd7e14',
+             'usd': tmpl.x_price_usd_3, 'mxn': tmpl.x_price_mxn_3},
+        ]
         if role in ('mayorista', 'authorizer'):
             levels += [
-                {'label': 'Precio 3', 'dot': '#fd7e14',
-                 'usd': tmpl.x_price_usd_3, 'mxn': tmpl.x_price_mxn_3},
                 {'label': 'Precio 4', 'dot': '#6f42c1',
                  'usd': tmpl.x_price_usd_4, 'mxn': tmpl.x_price_mxn_4},
             ]

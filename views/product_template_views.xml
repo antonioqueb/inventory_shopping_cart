@@ -235,6 +235,7 @@
                          segundo, un "Vendedor con Precios Limitados" que
                          además tenga el Visor del Dashboard vería 3/4/5.
                          ============================================================ -->
+                    <field name="x_som_can_see_level_3" invisible="1"/>
                     <field name="x_som_can_see_level_3_4" invisible="1"/>
                     <field name="x_som_can_see_level_5" invisible="1"/>
                     <group>
@@ -251,8 +252,7 @@
                                    readonly="1"
                                    force_save="1"
                                    string="3. Precio Nivel 3"
-                                   invisible="not x_som_can_see_level_3_4"
-                                   groups="inventory_shopping_cart.group_seller_mayorista,inventory_shopping_cart.group_dashboard_viewer"/>
+                                   invisible="not x_som_can_see_level_3"/>
                             <field name="x_price_mxn_4"
                                    readonly="1"
                                    force_save="1"
@@ -280,8 +280,7 @@
                                    readonly="1"
                                    force_save="1"
                                    string="3. Precio Nivel 3"
-                                   invisible="not x_som_can_see_level_3_4"
-                                   groups="inventory_shopping_cart.group_seller_mayorista,inventory_shopping_cart.group_dashboard_viewer"/>
+                                   invisible="not x_som_can_see_level_3"/>
                             <field name="x_price_usd_4"
                                    readonly="1"
                                    force_save="1"
