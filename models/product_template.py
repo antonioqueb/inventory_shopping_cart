@@ -406,7 +406,7 @@ class ProductTemplate(models.Model):
     # tooltip del Inventario Visual.
     x_som_can_see_level_3 = fields.Boolean(
         string='Puede ver Precio 3',
-        compute='_compute_som_can_see_levels',
+        compute='_compute_som_price_level_visibility',
         help='Precio 3 abierto a toda la fuerza de ventas (política 31 ago 2026).',
     )
     x_som_can_see_level_3_4 = fields.Boolean(
