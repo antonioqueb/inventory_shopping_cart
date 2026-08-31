@@ -184,8 +184,12 @@ export class SaleOrderWizard extends Component {
         // Productos que SOLO se venden por empaque: el selector vive en el
         // paso de precios. Defensivo: sin el módulo de empaques, vacío.
         try {
+            const quantIds = [];
+            for (const g of Object.values(this.props.productGroups || {})) {
+                for (const lot of (g.lots || [])) quantIds.push(lot.id);
+            }
             const opts = await this.orm.call(
-                "sale.order", "get_cart_pack_options", [this.productIds]);
+                "sale.order", "get_cart_pack_options", [this.productIds, quantIds]);
             this.state.productPackOptions = opts || {};
             for (const [pid, opt] of Object.entries(this.state.productPackOptions)) {
                 if (!this.state.productPacks[pid]) {
@@ -211,7 +215,23 @@ export class SaleOrderWizard extends Component {
         const qty = group ? group.total_quantity : 0;
         const packs = qty / pack.qty_per_pack;
         const rounded = Math.round(packs);
-        const exact = rounded > 0 && Math.abs(packs - rounded) <= 0.001;
+        let exact = rounded > 0 && Math.abs(packs - rounded) <= 0.001;
+        // LOTE COMPLETO siempre válido (cajas físicas aunque el empaque esté
+        // redondeado): si cada lote del grupo se toma entero o en múltiplos,
+        // cuadra. Las cantidades reales llegan en quant_full_qty.
+        if (!exact && group && group.lots && group.lots.length) {
+            const full = (opt.quant_full_qty || {});
+            const ok = group.lots.every((lot) => {
+                const f = parseFloat(full[String(lot.id)]);
+                const q = parseFloat(lot.quantity) || 0;
+                if (!isNaN(f) && f > 0 && Math.abs(q - f) <= 0.011) return true;
+                const n = q / pack.qty_per_pack;
+                return n >= 1 && Math.abs(n - Math.round(n)) <= 0.001;
+            });
+            if (ok) {
+                return { exact: true, label: `= lote(s) completo(s), ${rounded || 1} empaque(s)` };
+            }
+        }
         if (exact) {
             return { exact, label: `= ${rounded} empaque(s) de ${pack.qty_per_pack}` };
         }

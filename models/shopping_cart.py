@@ -246,6 +246,8 @@ class ShoppingCart(models.Model):
             eps = 1e-6
             max_packs = int((free_avail + eps) // qpp) if free_avail > 0 else 0
             pname = quant.product_id.display_name if quant else ''
+            if max_packs < 1 and free_avail > 0 and float(quantity) >= free_avail - 1e-6:
+                max_packs = 1  # lote completo menor a una caja: se vende como está
             if max_packs < 1:
                 return {
                     'success': False,
@@ -255,7 +257,14 @@ class ShoppingCart(models.Model):
                         'ni un empaque.'
                     ) % (pname, pack.display_name, qpp, free_avail),
                 }
-            if pack_choice:
+            whole_lot = float(quantity) >= free_avail - 1e-6
+            if whole_lot:
+                # LOTE COMPLETO: cajas físicas, válido aunque el empaque
+                # redondeado no dé múltiplo exacto (60 cajas de 2.166 =
+                # 129.96 ≠ 60 × 2.17). Se toma tal cual, sin preguntar.
+                quantity = round(free_avail, 6)
+                packs_n = max(1, int(round(quantity / qpp)))
+            elif pack_choice:
                 # El vendedor ya decidió cuántos empaques.
                 packs_n = max(1, min(int(pack_choice), max_packs))
                 quantity = round(packs_n * qpp, 6)
@@ -285,7 +294,7 @@ class ShoppingCart(models.Model):
                     }
                 packs_n = int(round(packs_f))
                 quantity = round(packs_n * qpp, 6)
-            pack_note = ' = %s empaque(s) de %g m² (%s).' % (packs_n, qpp, pack.display_name)
+            pack_note = (' = lote completo, %s empaque(s) (%s).' if whole_lot else ' = %s empaque(s) de %g m² (%s).') % ((packs_n, pack.display_name) if whole_lot else (packs_n, qpp, pack.display_name))
 
         # Buscar si ya existe
         existing = self.search([('user_id', '=', self.env.user.id), ('quant_id', '=', quant_id)])

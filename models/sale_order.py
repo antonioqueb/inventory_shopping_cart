@@ -2549,7 +2549,7 @@ class SaleOrder(models.Model):
 
     @api.model
     @api.model
-    def get_cart_pack_options(self, product_ids):
+    def get_cart_pack_options(self, product_ids, quant_ids=None):
         """EMPAQUES ESTÁNDAR para el wizard del carrito: por producto, sus
         empaques activos y el default. El wizard no tenía selector y la
         regla dura de standard_pack_som ('solo por empaque') mataba la
@@ -2573,8 +2573,14 @@ class SaleOrder(models.Model):
                 continue
             default = tmpl.default_pack_id if tmpl.default_pack_id in packs \
                 else packs[:1]
+            full = {}
+            if quant_ids:
+                for q in self.env['stock.quant'].sudo().browse([int(x) for x in quant_ids if x]).exists():
+                    if q.product_id == prod:
+                        full[str(q.id)] = q.quantity or 0.0
             out[str(prod.id)] = {
                 'default_pack_id': default.id,
+                'quant_full_qty': full,
                 'packs': [{
                     'id': p.id,
                     'name': p.display_name or '',
@@ -2583,8 +2589,37 @@ class SaleOrder(models.Model):
             }
         return out
 
+
+    def _som_cart_qty_covered_by_whole_lots(self, qty, quant_ids, breakdown, qpp):
+        """True si qty = suma de los quants elegidos donde cada uno se toma
+        completo (cantidad real del lote) o en múltiplo exacto del empaque."""
+        if not quant_ids:
+            return False
+        quants = self.env['stock.quant'].sudo().browse([int(q) for q in quant_ids]).exists()
+        if not quants:
+            return False
+        bd = {}
+        for item in (breakdown or []):
+            try:
+                bd[int(item['id'])] = float(item.get('quantity') or 0.0)
+            except Exception:
+                continue
+        total = 0.0
+        for q in quants:
+            full = q.quantity or 0.0
+            taken = bd.get(q.id, full)
+            if taken <= 0:
+                continue
+            whole = abs(taken - full) <= 0.011
+            n = taken / qpp if qpp else 0
+            multiple = qpp and abs(n - round(n)) <= 0.001 and round(n) >= 1
+            if not (whole or multiple):
+                return False
+            total += taken
+        return total > 0 and abs(total - qty) <= 0.011 * max(1, len(quants))
+
     def _som_cart_apply_standard_pack(self, line_vals, product, qty,
-                                      pack_id=None):
+                                      pack_id=None, quant_ids=None, breakdown=None):
         """Asigna empaque estándar a una línea nacida del carrito.
 
         Con pack elegido en el wizard se usa ese; si no, el default del
@@ -2615,6 +2650,13 @@ class SaleOrder(models.Model):
             return
         qty = float(qty or 0.0)
         packs_n = qty / qpp
+        # LOTES COMPLETOS: si la cantidad está cubierta por los quants
+        # elegidos tomados enteros (o parciales en múltiplos), es válida
+        # aunque el empaque redondeado no dé múltiplo exacto.
+        if self._som_cart_qty_covered_by_whole_lots(qty, quant_ids, breakdown, qpp):
+            line_vals['standard_pack_id'] = pack.id
+            line_vals['pack_qty'] = float(max(1, round(packs_n)))
+            return
         if abs(packs_n - round(packs_n)) > 0.001 or round(packs_n) <= 0:
             low = max(int(packs_n), 0)
             high = low + 1
@@ -2773,7 +2815,8 @@ class SaleOrder(models.Model):
                 # 'solo por empaque' abortaba la creación sin selector.
                 self._som_cart_apply_standard_pack(
                     line_vals, rec, pd.get('quantity'),
-                    pack_id=pd.get('standard_pack_id'))
+                    pack_id=pd.get('standard_pack_id'),
+                    quant_ids=pd.get('selected_lots'), breakdown=pd.get('lots_breakdown'))
 
                 # Máscara comercial (hold → SO): nombre personalizado de la
                 # venta. Se escribe también en name para que TODOS los
