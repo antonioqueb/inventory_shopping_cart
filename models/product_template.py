@@ -1631,7 +1631,8 @@ class ProductTemplate(models.Model):
         Valida si una operación requiere autorización de precio.
 
         Regla por rol:
-        - Vendedor regular: autorización si el precio queda debajo del Precio 2.
+        - Vendedor regular: autorización si el precio queda debajo del Precio 3
+          (política 31 ago 2026: el Precio 3 es libre para toda la fuerza de ventas).
         - Vendedor mayorista: autorización si el precio queda debajo del Precio 4.
         - Autorizador/Administrador: autorización si el precio queda debajo del Precio 5.
         - Usuarios sin rol comercial explícito no disparan autorización desde este helper.
