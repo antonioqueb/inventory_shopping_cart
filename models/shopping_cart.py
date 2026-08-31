@@ -142,8 +142,9 @@ class ShoppingCart(models.Model):
         sin rebasar lo disponible. None si no cabe ni un empaque."""
         eps = 1e-6
         max_packs = int((available + eps) // qpp) if available > 0 else 0
-        wanted = int((quantity + eps) // qpp) if quantity > 0 else 0
-        packs = min(wanted, max_packs) if wanted > 0 else max_packs
+        # Pedir menos de un empaque = un empaque (mínimo vendible).
+        wanted = max(int((quantity + eps) // qpp), 1) if quantity > 0 else max_packs
+        packs = min(wanted, max_packs)
         if packs < 1:
             return None
         return round(packs * qpp, 6)
