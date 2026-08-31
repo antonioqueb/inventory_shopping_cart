@@ -582,6 +582,49 @@ class ProductTemplate(models.Model):
         self._compute_costo_all_in()
         self._calculate_escalera_precios()
 
+    @api.model
+    def _som_current_logistics_mxn(self, record, usd_to_company_rate):
+        """Logística VIGENTE por m² en MXN para un producto (espejo del
+        bloque de flete de _compute_costo_all_in, solo la cifra, sin
+        resúmenes ni compuertas). Se usa para descontarla de la SEMILLA:
+        el costo migrado (SPS) ya venía entregado (logística incluida) y
+        sin este descuento se duplicaba al sumarla de nuevo en el ALL-IN.
+        Devuelve 0.0 si falta configuración o tarifa."""
+        try:
+            freight_mode = getattr(record, 'x_freight_mode', False) or 'international'
+            if freight_mode == 'national':
+                nat = getattr(record, 'x_national_route_id', False)
+                if not nat or not nat.active:
+                    return 0.0
+                cap = (nat.capacidad or 0.0) or (record.x_container_capacity or 0.0)
+                if cap <= 1.0:
+                    return 0.0
+                return (nat.costo or 0.0) / cap
+            if not (record.x_origin_country_id and record.x_pol_id
+                    and record.x_pod_id
+                    and (record.x_container_capacity or 0.0) > 1.0
+                    and usd_to_company_rate > 0):
+                return 0.0
+            candidates = self.env['freight.tariff'].search([
+                ('country_id', '=', record.x_origin_country_id.id),
+                ('pol_id', '=', record.x_pol_id.id),
+                ('pod_id', '=', record.x_pod_id.id),
+                ('state', '=', 'active'),
+            ], order='create_date desc')
+            tariff = candidates[:1]
+            if 'x_naviera_id' in record._fields and record.x_naviera_id:
+                nav = candidates.filtered(lambda t: t.naviera_id == record.x_naviera_id)
+                if record.x_forwarder_id:
+                    navf = nav.filtered(lambda t: t.forwarder_id == record.x_forwarder_id)
+                    nav = navf or nav
+                tariff = nav[:1] or tariff
+            if not tariff:
+                return 0.0
+            return (tariff.all_in or 0.0) / record.x_container_capacity * usd_to_company_rate
+        except Exception:
+            _logger.exception('COSTOS: no se pudo estimar la logística de la semilla para %s', record.display_name)
+            return 0.0
+
     def _compute_costo_all_in(self):
         """
         Calcula el costo ALL-IN.
@@ -669,6 +712,17 @@ class ProductTemplate(models.Model):
                 # primera compra activada); si no hay ajustes, con el peso de
                 # la primera compra (promedio parejo).
                 seed_cost = record.standard_price or 0.0
+                # El costo migrado YA incluye la logística (SPS costeaba
+                # ENTREGADO): con compras aplicadas se le descuenta la
+                # logística VIGENTE por m² para sembrar un costo BASE
+                # comparable con las compras — la logística se suma UNA
+                # sola vez al final del ALL-IN. Sin compras no aplica
+                # (el estándar se usa tal cual y no se suma logística).
+                seed_logistics = self._som_current_logistics_mxn(
+                    record, usd_to_company_rate)
+                seed_cost_gross = seed_cost
+                if seed_logistics > 0 and seed_cost > seed_logistics:
+                    seed_cost -= seed_logistics
                 if seed_cost > 0:
                     first_line = purchase_lines[0]
                     first_date = first_line.order_id.date_approve or first_line.order_id.date_order
@@ -690,8 +744,13 @@ class ProductTemplate(models.Model):
                     total_qty = seed_qty
                     total_val_mxn = seed_qty * seed_cost
                     max_avg = seed_cost
-                    cost_summary_lines.append(
-                        f"• Carga inicial (semilla): {seed_qty:,.2f} × ${seed_cost:,.2f} MXN (costo estándar migrado)")
+                    if seed_logistics > 0 and seed_cost_gross > seed_logistics:
+                        cost_summary_lines.append(
+                            f"• Carga inicial (semilla): {seed_qty:,.2f} × ${seed_cost:,.2f} MXN "
+                            f"(estándar migrado ${seed_cost_gross:,.2f} − logística vigente ${seed_logistics:,.2f})")
+                    else:
+                        cost_summary_lines.append(
+                            f"• Carga inicial (semilla): {seed_qty:,.2f} × ${seed_cost:,.2f} MXN (costo estándar migrado)")
 
                 for line in purchase_lines:
                     if line.product_qty <= 0:
