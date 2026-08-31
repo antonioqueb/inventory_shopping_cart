@@ -659,6 +659,40 @@ class ProductTemplate(models.Model):
                 max_avg = 0.0
                 used_eur = False
 
+                # ═══ SEMILLA: LA CARGA INICIAL ES EL PRIMER PUNTO DE LA SERIE ═══
+                # El costo migrado (SPS) vive en el costo estándar, NO en una
+                # compra: sin esta semilla, la primera compra real barata
+                # desplomaba el costo porque el MaxAvg arrancaba con un solo
+                # punto (el hueco CRISTALLO: estándar 5,865.72 ignorado y la
+                # serie nacía en 3,430). Se siembra costo estándar × m²
+                # migrados (entradas por ajuste de inventario anteriores a la
+                # primera compra activada); si no hay ajustes, con el peso de
+                # la primera compra (promedio parejo).
+                seed_cost = record.standard_price or 0.0
+                if seed_cost > 0:
+                    first_line = purchase_lines[0]
+                    first_date = first_line.order_id.date_approve or first_line.order_id.date_order
+                    seed_qty = 0.0
+                    try:
+                        groups = self.env['stock.move.line'].sudo()._read_group(
+                            [('product_id.product_tmpl_id', '=', record.id),
+                             ('state', '=', 'done'),
+                             ('company_id', '=', company.id),
+                             ('location_id.usage', '=', 'inventory'),
+                             ('location_dest_id.usage', '=', 'internal')]
+                            + ([('date', '<', first_date)] if first_date else []),
+                            [], ['quantity:sum'])
+                        seed_qty = groups[0][0] or 0.0 if groups else 0.0
+                    except Exception:
+                        _logger.exception('COSTOS: no se pudo medir la carga inicial de %s', record.display_name)
+                    if seed_qty <= 0:
+                        seed_qty = sum(purchase_lines[:1].mapped('product_qty')) or 1.0
+                    total_qty = seed_qty
+                    total_val_mxn = seed_qty * seed_cost
+                    max_avg = seed_cost
+                    cost_summary_lines.append(
+                        f"• Carga inicial (semilla): {seed_qty:,.2f} × ${seed_cost:,.2f} MXN (costo estándar migrado)")
+
                 for line in purchase_lines:
                     if line.product_qty <= 0:
                         continue
