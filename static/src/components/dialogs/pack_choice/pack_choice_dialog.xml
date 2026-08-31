@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="inventory_shopping_cart.PackChoiceDialog" owl="1">
+        <Dialog size="'md'" title="'Venta por empaque'">
+            <div class="d-flex flex-column gap-3">
+                <div>
+                    <div class="fw-bold" t-esc="info.product_name"/>
+                    <div class="text-muted small">
+                        Empaque: <b t-esc="info.pack_name"/> ·
+                        pediste <b t-esc="Number(info.requested).toFixed(2)"/> m² ·
+                        disponible <b t-esc="Number(info.available).toFixed(2)"/> m²
+                        (hasta <b t-esc="info.max_packs"/> empaques)
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <t t-foreach="info.options" t-as="opt" t-key="opt.packs">
+                        <button type="button" class="btn btn-outline-primary"
+                                t-on-click="() => this.choose(opt.packs)">
+                            <span class="fw-bold" t-esc="opt.packs"/> empaque<t t-if="opt.packs != 1">s</t>
+                            <span class="ms-1 text-muted">= <t t-esc="qtyFor(opt.packs)"/> m²</span>
+                        </button>
+                    </t>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <label class="mb-0 small text-muted">Otro número de empaques:</label>
+                    <input type="number" class="form-control form-control-sm" style="width: 90px;"
+                           min="1" t-att-max="info.max_packs" t-model="state.custom"/>
+                    <span class="small text-muted">= <t t-esc="qtyFor(state.custom || 0)"/> m²</span>
+                    <button type="button" class="btn btn-primary btn-sm" t-att-disabled="!customValid"
+                            t-on-click="() => this.choose(state.custom)">Usar</button>
+                </div>
+            </div>
+            <t t-set-slot="footer">
+                <button type="button" class="btn btn-secondary" t-on-click="cancel">Cancelar</button>
+            </t>
+        </Dialog>
+    </t>
+</templates>

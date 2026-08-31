@@ -4,6 +4,7 @@ import { patch } from "@web/core/utils/patch";
 import { useState } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { CartInfoDialog } from "../dialogs/cart_info/cart_info_dialog";
+import { PackChoiceDialog } from "../dialogs/pack_choice/pack_choice_dialog";
 
 const InventoryVisualController = registry.category("actions").get("inventory_visual_enhanced");
 
@@ -284,8 +285,9 @@ patch(InventoryVisualController.prototype, {
         }
     },
 
-    async addOrUpdateCartItem(detail, quantity) {
+    async addOrUpdateCartItem(detail, quantity, packChoice = null) {
         const index = this.cart.items.findIndex(item => item.id === detail.id);
+        const prevQty = index >= 0 ? this.cart.items[index].quantity : null;
         
         if (index >= 0) {
             // Actualizar local
@@ -313,8 +315,35 @@ patch(InventoryVisualController.prototype, {
                 lot_id: detail.lot_id,
                 product_id: this.getCurrentProductId(detail),
                 quantity: quantity,
-                location_name: detail.location_name
+                location_name: detail.location_name,
+                pack_choice: packChoice,
             });
+            if (res && res.needs_pack_choice) {
+                // La cantidad no cuadra en empaques: el vendedor decide a
+                // cuántos ajustar. Mientras tanto se revierte lo local.
+                const idx = this.cart.items.findIndex(item => item.id === detail.id);
+                if (idx >= 0) {
+                    if (prevQty !== null) this.cart.items[idx].quantity = prevQty;
+                    else this.cart.items.splice(idx, 1);
+                }
+                this.updateCartSummary();
+                this.cart.items = [...this.cart.items];
+                this.dialog.add(PackChoiceDialog, {
+                    info: res,
+                    onChoose: async (packs) => {
+                        const qty = Math.round(packs * res.qty_per_pack * 1e6) / 1e6;
+                        this.state.manualInputValues[detail.id] = qty;
+                        await this.addOrUpdateCartItem(detail, qty, packs);
+                        this.updateCartSummary();
+                        this.cart.items = [...this.cart.items];
+                    },
+                    onCancel: () => {
+                        if (prevQty !== null) this.state.manualInputValues[detail.id] = prevQty;
+                        else delete this.state.manualInputValues[detail.id];
+                    },
+                });
+                return;
+            }
             if (res && res.success === false) {
                 // El servidor rechazó (p.ej. no completa ni un empaque):
                 // se revierte lo local y se explica.

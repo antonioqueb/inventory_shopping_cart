@@ -149,7 +149,7 @@ class ShoppingCart(models.Model):
             return None
         return round(packs * qpp, 6)
 
-    def add_to_cart(self, quant_id=None, lot_id=None, product_id=None, quantity=None, location_name=None):
+    def add_to_cart(self, quant_id=None, lot_id=None, product_id=None, quantity=None, location_name=None, pack_choice=None):
         """Agregar item al carrito o actualizar cantidad si ya existe"""
         if not all([quant_id, lot_id, product_id, quantity is not None]):
             return {'success': False, 'message': 'Faltan parámetros'}
@@ -240,25 +240,49 @@ class ShoppingCart(models.Model):
         if pack_info:
             pack, qpp = pack_info
             free_avail = quant.quantity - quant.reserved_quantity if quant else float(quantity)
-            snapped = self._som_snap_quantity_to_pack(float(quantity), free_avail, qpp)
-            if snapped is None:
+            eps = 1e-6
+            max_packs = int((free_avail + eps) // qpp) if free_avail > 0 else 0
+            pname = quant.product_id.display_name if quant else ''
+            if max_packs < 1:
                 return {
                     'success': False,
                     'message': (
                         'El producto %s se vende por empaque (%s = %g m²) y esta '
                         'pieza/lote solo tiene %.2f m² disponibles: no completa '
                         'ni un empaque.'
-                    ) % (quant.product_id.display_name if quant else '', pack.display_name, qpp, free_avail),
+                    ) % (pname, pack.display_name, qpp, free_avail),
                 }
-            packs_n = int(round(snapped / qpp))
-            if abs(snapped - float(quantity)) > 1e-6:
-                pack_note = (
-                    ' Cantidad ajustada a %s empaque(s) = %g m² (%s: se vende '
-                    'por empaques completos).'
-                ) % (packs_n, snapped, pack.display_name)
+            if pack_choice:
+                # El vendedor ya decidió cuántos empaques.
+                packs_n = max(1, min(int(pack_choice), max_packs))
+                quantity = round(packs_n * qpp, 6)
             else:
-                pack_note = ' = %s empaque(s) de %g m² (%s).' % (packs_n, qpp, pack.display_name)
-            quantity = snapped
+                packs_f = float(quantity) / qpp
+                exact = abs(packs_f - round(packs_f)) <= 0.001 and 1 <= round(packs_f) <= max_packs
+                if not exact:
+                    # No cuadra: el VENDEDOR decide a cuántos empaques ajustar.
+                    low = int(packs_f + eps); high = low + 1
+                    cands = sorted({n for n in (low, high) if 1 <= n <= max_packs} | ({max_packs} if float(quantity) > max_packs * qpp else set()))
+                    if not cands:
+                        cands = [1]
+                    return {
+                        'success': False,
+                        'needs_pack_choice': True,
+                        'message': (
+                            '%s se vende por empaque (%s = %g m²). %.2f m² no es '
+                            'un número exacto de empaques: elige cuántos quieres.'
+                        ) % (pname, pack.display_name, qpp, float(quantity)),
+                        'product_name': pname,
+                        'pack_name': pack.display_name,
+                        'qty_per_pack': qpp,
+                        'requested': float(quantity),
+                        'available': free_avail,
+                        'max_packs': max_packs,
+                        'options': [{'packs': n, 'qty': round(n * qpp, 6)} for n in cands],
+                    }
+                packs_n = int(round(packs_f))
+                quantity = round(packs_n * qpp, 6)
+            pack_note = ' = %s empaque(s) de %g m² (%s).' % (packs_n, qpp, pack.display_name)
 
         # Buscar si ya existe
         existing = self.search([('user_id', '=', self.env.user.id), ('quant_id', '=', quant_id)])

@@ -1,7 +1,7 @@
 # ./__manifest__.py
 {
     'name': 'Carrito de Compra para Inventario Visual',
-    'version': '19.0.26.30.0',
+    'version': '19.0.26.31.0',
     'category': 'Inventory/Inventory',
     'summary': 'Sistema de carrito de compra y apartado múltiple desde inventario visual',
     'author': 'Alphaqueb Consulting SAS',
@@ -58,6 +58,7 @@
             'inventory_shopping_cart/static/src/components/floating_bar/floating_bar.js',
             'inventory_shopping_cart/static/src/components/dialogs/cart_dialog/cart_dialog.js',
             'inventory_shopping_cart/static/src/components/dialogs/cart_info/cart_info_dialog.js',
+            'inventory_shopping_cart/static/src/components/dialogs/pack_choice/pack_choice_dialog.js',
             'inventory_shopping_cart/static/src/components/dialogs/hold_wizard/hold_wizard.js',
             'inventory_shopping_cart/static/src/components/dialogs/sale_order_wizard/sale_order_wizard.js',
             'inventory_shopping_cart/static/src/components/dialogs/transfer_wizard/transfer_wizard.js',
@@ -66,6 +67,7 @@
             'inventory_shopping_cart/static/src/components/floating_bar/floating_bar.xml',
             'inventory_shopping_cart/static/src/components/dialogs/cart_dialog/cart_dialog.xml',
             'inventory_shopping_cart/static/src/components/dialogs/cart_info/cart_info_dialog.xml',
+            'inventory_shopping_cart/static/src/components/dialogs/pack_choice/pack_choice_dialog.xml',
             'inventory_shopping_cart/static/src/components/dialogs/hold_wizard/hold_wizard.xml',
             'inventory_shopping_cart/static/src/components/dialogs/sale_order_wizard/sale_order_wizard.xml',
             'inventory_shopping_cart/static/src/components/dialogs/transfer_wizard/transfer_wizard.xml',
