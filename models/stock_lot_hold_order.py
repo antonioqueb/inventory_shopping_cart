@@ -104,14 +104,20 @@ class StockLotHoldOrder(models.Model):
                 order.currency_id and order.currency_id.name == 'USD'
             )
 
-    @api.depends('x_exchange_rate_source', 'currency_id')
+    @api.depends('x_exchange_rate_source', 'currency_id', 'company_id')
     def _compute_x_exchange_rate(self):
         SaleOrder = self.env['sale.order']
         banorte_rate = SaleOrder._get_banorte_rate()
-        official_rate = SaleOrder._get_official_rate()
+        # TC oficial por compañía del apartado (res.currency.rate es por
+        # compañía); se cachea por compañía para no repetir la búsqueda.
+        official_by_company = {}
         for order in self:
+            company = order.company_id or self.env.company
+            if company.id not in official_by_company:
+                official_by_company[company.id] = SaleOrder.with_company(
+                    company)._get_official_rate()
             order.x_exchange_rate = (
-                official_rate
+                official_by_company[company.id]
                 if order.x_exchange_rate_source == 'official'
                 else banorte_rate
             )
@@ -522,6 +528,8 @@ class StockLotHoldOrder(models.Model):
             'level_5': 'Precio 5',
         }
         threshold_label = threshold_label_map.get(threshold_level, threshold_level)
+        # Escalera company_dependent: la de la compañía del apartado.
+        company = self.company_id or self.env.company
 
         for line in self.line_ids:
             if not line.product_id or line.product_id.type == 'service':
@@ -532,11 +540,11 @@ class StockLotHoldOrder(models.Model):
             )
             tmpl = line.product_id.product_tmpl_id
 
-            medium_price = Product._get_price_level_value(tmpl, 'medium', currency_code)
-            minimum_price = Product._get_price_level_value(tmpl, 'minimum', currency_code)
-            level_4_price = Product._get_price_level_value(tmpl, 'level_4', currency_code)
-            level_5_price = Product._get_price_level_value(tmpl, 'level_5', currency_code)
-            threshold = Product._get_price_level_value(tmpl, threshold_level, currency_code)
+            medium_price = Product._get_price_level_value(tmpl, 'medium', currency_code, company=company)
+            minimum_price = Product._get_price_level_value(tmpl, 'minimum', currency_code, company=company)
+            level_4_price = Product._get_price_level_value(tmpl, 'level_4', currency_code, company=company)
+            level_5_price = Product._get_price_level_value(tmpl, 'level_5', currency_code, company=company)
+            threshold = Product._get_price_level_value(tmpl, threshold_level, currency_code, company=company)
 
             requested_price = float(line.precio_unitario or 0.0)
             selector = line.x_price_selector or 'custom'
@@ -651,6 +659,7 @@ class StockLotHoldOrder(models.Model):
             line = item['line']
             notes += f"• {line.product_id.display_name}: {item['reason']}\n"
 
+        company = self.company_id or self.env.company
         auth = self.env['price.authorization'].create({
             'seller_id': self.env.user.id,
             'operation_type': 'hold',
@@ -658,6 +667,7 @@ class StockLotHoldOrder(models.Model):
             'project_id': self.project_id.id if self.project_id else False,
             'currency_code': currency_code,
             'notes': notes,
+            'company_id': company.id,
             'temp_data': {
                 'source': 'manual_hold_order',
                 'hold_order_id': self.id,
@@ -680,10 +690,10 @@ class StockLotHoldOrder(models.Model):
                 'lot_count': len(group['lots']),
                 'requested_price': product_prices[pid_str],
                 'authorized_price': product_prices[pid_str],
-                'medium_price': Product._get_price_level_value(tmpl, 'medium', currency_code),
-                'minimum_price': Product._get_price_level_value(tmpl, 'minimum', currency_code),
-                'level_4_price': Product._get_price_level_value(tmpl, 'level_4', currency_code),
-                'level_5_price': Product._get_price_level_value(tmpl, 'level_5', currency_code),
+                'medium_price': Product._get_price_level_value(tmpl, 'medium', currency_code, company=company),
+                'minimum_price': Product._get_price_level_value(tmpl, 'minimum', currency_code, company=company),
+                'level_4_price': Product._get_price_level_value(tmpl, 'level_4', currency_code, company=company),
+                'level_5_price': Product._get_price_level_value(tmpl, 'level_5', currency_code, company=company),
             })
 
         self.x_price_authorization_id = auth.id
@@ -1172,15 +1182,19 @@ class StockLotHoldOrderLine(models.Model):
         groups='inventory_shopping_cart.group_price_authorizer',
     )
 
-    @api.depends('cantidad_m2', 'precio_total', 'product_id', 'currency_id')
+    @api.depends('cantidad_m2', 'precio_total', 'product_id', 'currency_id',
+                 'order_id.company_id')
     def _compute_x_utilidad(self):
-        company = self.env.company
         today = fields.Date.context_today(self)
         for line in self:
+            # Costo company_dependent y conversión con la compañía del
+            # apartado, no la activa del usuario.
+            company = line.order_id.company_id or self.env.company
             cost_unit = 0.0
             if line.product_id:
                 cost_unit = float(
-                    line.product_id.product_tmpl_id.x_costo_mayor or 0.0)
+                    line.product_id.product_tmpl_id.with_company(
+                        company).x_costo_mayor or 0.0)
             cost_total = (line.cantidad_m2 or 0.0) * cost_unit
             cur = line.currency_id or company.currency_id
             if cur and company.currency_id and cur != company.currency_id:
@@ -1385,7 +1399,12 @@ class StockLotHoldOrderLine(models.Model):
         show_5 = 'level_5' in visible
         for line in self:
             currency_code = line._get_currency_code()
-            tmpl = line.product_id.product_tmpl_id if line.product_id else False
+            # Escalera company_dependent: la de la compañía del apartado.
+            company = line.order_id.company_id or self.env.company
+            tmpl = (
+                line.product_id.product_tmpl_id.with_company(company)
+                if line.product_id else False
+            )
 
             if tmpl and currency_code == 'MXN':
                 # Montos del selector con el MISMO criterio que el precio
@@ -1469,7 +1488,7 @@ class StockLotHoldOrderLine(models.Model):
                     line.cantidad_m2 = 0.0
 
     @api.model
-    def _selector_from_price(self, product_id, currency_code, price):
+    def _selector_from_price(self, product_id, currency_code, price, company=None):
         product = self.env['product.product'].browse(int(product_id))
         if not product.exists():
             return 'custom'
@@ -1480,7 +1499,8 @@ class StockLotHoldOrderLine(models.Model):
         price = float(price or 0.0)
 
         for level in ('high', 'medium', 'minimum', 'level_4', 'level_5'):
-            level_price = Product._get_price_level_value(tmpl, level, currency_code)
+            level_price = Product._get_price_level_value(
+                tmpl, level, currency_code, company=company)
             if level_price and abs(price - level_price) <= 0.01:
                 return level
 
@@ -1493,11 +1513,12 @@ class StockLotHoldOrderLine(models.Model):
         almacenada (que se calculó con Banorte al último sync)."""
         self.ensure_one()
         Product = self.env['product.template']
-        usd_price = Product._get_price_level_value(tmpl, level, 'USD')
+        company = self.order_id.company_id or self.env.company
+        usd_price = Product._get_price_level_value(tmpl, level, 'USD', company=company)
         rate = self.order_id.x_exchange_rate or 0.0
         if usd_price > 0 and rate > 0:
             return usd_price * rate
-        return Product._get_price_level_value(tmpl, level, 'MXN')
+        return Product._get_price_level_value(tmpl, level, 'MXN', company=company)
 
     def _get_price_from_selector(self):
         self.ensure_one()
@@ -1513,6 +1534,7 @@ class StockLotHoldOrderLine(models.Model):
                 return self._hold_mxn_level_price(tmpl, self.x_price_selector)
             return self.env['product.template']._get_price_level_value(
                 tmpl, self.x_price_selector, currency_code,
+                company=self.order_id.company_id or self.env.company,
             )
 
         return self.precio_unitario or 0.0
@@ -1575,10 +1597,19 @@ class StockLotHoldOrderLine(models.Model):
         Quant = self.env['stock.quant'].sudo()
         SaleOrder = self.env['sale.order']
 
+        # sudo() salta las reglas de compañía: se acota a la compañía del
+        # apartado en edición o, sin él, a las compañías activas del usuario.
+        company_ids = self.env.companies.ids
+        if hold_order_id:
+            own_company = self.browse(int(hold_order_id)).exists().company_id
+            if own_company:
+                company_ids = own_company.ids
+
         domain = [
             ('product_id', '=', product_id),
             ('location_id.usage', '=', 'internal'),
             ('quantity', '>', 0),
+            ('company_id', 'in', company_ids),
         ]
         if lot_name:
             domain.append(('lot_id.name', 'ilike', lot_name))

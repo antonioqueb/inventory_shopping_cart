@@ -24,6 +24,11 @@ class ShoppingCart(models.Model):
     quantity = fields.Float(string='Cantidad', required=True)
     location_name = fields.Char(string='Ubicación')
     added_at = fields.Datetime(string='Agregado', default=fields.Datetime.now)
+    # Multiempresa: la entrada de carrito pertenece a la compañía del
+    # material (quant), no a la del usuario que lo agregó.
+    company_id = fields.Many2one(
+        'res.company', string='Compañía', related='quant_id.company_id',
+        store=True, readonly=True, index=True)
     
     _unique_user_quant = Constraint(
         'unique(user_id, quant_id)',

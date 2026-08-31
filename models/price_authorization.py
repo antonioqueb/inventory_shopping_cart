@@ -103,11 +103,44 @@ class PriceAuthorization(models.Model):
         readonly=True,
     )
 
+    # Multiempresa: compañía del documento. La toma de la orden generada
+    # (sale_order_id) cuando existe; si no, la que mande el flujo que la
+    # crea (carrito/apartado) o la compañía activa del usuario.
+    company_id = fields.Many2one(
+        'res.company', string='Compañía',
+        compute='_compute_company_id', store=True, readonly=False,
+        precompute=True, index=True,
+    )
+
+    @api.depends('sale_order_id', 'sale_order_id.company_id')
+    def _compute_company_id(self):
+        for rec in self:
+            rec.company_id = (
+                rec.sale_order_id.company_id
+                or rec.company_id
+                or self.env.company
+            )
+
+    @api.model
+    def _som_company_from_vals(self, vals):
+        """Compañía del documento ANTES de pedir el folio."""
+        if vals.get('company_id'):
+            return self.env['res.company'].browse(vals['company_id'])
+        if vals.get('sale_order_id'):
+            order = self.env['sale.order'].browse(vals['sale_order_id']).exists()
+            if order and order.company_id:
+                return order.company_id
+        return self.env.company
+
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
+            company = self._som_company_from_vals(vals)
+            if not vals.get('company_id'):
+                vals['company_id'] = company.id
             if vals.get('name', 'Nuevo') == 'Nuevo':
-                vals['name'] = self.env['ir.sequence'].next_by_code('price.authorization') or 'Nuevo'
+                vals['name'] = self.env['sale.order']._som_next_sequence(
+                    'price.authorization', company) or 'Nuevo'
 
             vals['state'] = 'pending'
 
@@ -306,6 +339,9 @@ class PriceAuthorization(models.Model):
         is_authorizer = self.env.user.has_group(
             'inventory_shopping_cart.group_price_authorizer')
         currency = self.currency_code or 'USD'
+        # Multiempresa: TC y escalera/costos (company_dependent) de la
+        # compañía del documento, no de la activa del usuario.
+        company = self.company_id or self.env.company
 
         # Tipo de cambio del día para mostrar cada nivel/costo en AMBAS
         # divisas (derivado cuando solo está capturado en una).
@@ -314,7 +350,7 @@ class PriceAuthorization(models.Model):
         rate = 0.0
         if usd and mxn:
             try:
-                rate = usd._convert(1.0, mxn, self.env.company, fields.Date.context_today(self)) or 0.0
+                rate = usd._convert(1.0, mxn, company, fields.Date.context_today(self)) or 0.0
             except Exception:  # noqa: BLE001
                 rate = 0.0
 
@@ -350,7 +386,10 @@ class PriceAuthorization(models.Model):
         total_authorized = 0.0
         total_qty = 0.0
         for line in self.line_ids:
-            tmpl = line.product_id.product_tmpl_id if line.product_id else False
+            tmpl = (
+                line.product_id.product_tmpl_id.with_company(company)
+                if line.product_id else False
+            )
             qty = line.quantity or 0.0
             req = line.requested_price or 0.0
             auth = line.authorized_price or req
@@ -520,9 +559,12 @@ class PriceAuthorization(models.Model):
 
         temp_data = self.temp_data
 
+        # Lista de precios compartida o de la compañía del documento.
+        company = self.company_id or self.env.company
         pricelist = self.env['product.pricelist'].search([
-            ('name', '=', self.currency_code)
-        ], limit=1)
+            ('name', '=', self.currency_code),
+            ('company_id', 'in', [company.id, False]),
+        ], order='company_id', limit=1)
 
         if not pricelist:
             raise UserError(f"No se encontró lista de precios para {self.currency_code}")
@@ -606,7 +648,13 @@ class PriceAuthorization(models.Model):
         notes = self.notes or ''
         apply_tax = temp_data.get('apply_tax', True)
 
-        company_id = self.env.context.get('company_id') or self.env.company.id
+        # Compañía del documento (la de la solicitud, que nació de la del
+        # material); el contexto solo la sobreescribe explícitamente.
+        company_id = (
+            self.env.context.get('company_id')
+            or self.company_id.id
+            or self.env.company.id
+        )
 
         for product in products:
             for quant_id in product['selected_lots']:
@@ -719,6 +767,8 @@ class PriceAuthorization(models.Model):
         result = self.env['stock.quant'].with_context(
             skip_authorization_check=True,
             force_seller_id=self.seller_id.id,
+            # El apartado nace en la compañía de la solicitud.
+            som_force_company_id=self.company_id.id or False,
         ).create_holds_from_cart(
             partner_id=self.partner_id.id,
             project_id=self.project_id.id if self.project_id else None,
@@ -817,6 +867,12 @@ class PriceAuthorizationLine(models.Model):
         ondelete='cascade',
     )
 
+    company_id = fields.Many2one(
+        'res.company', string='Compañía',
+        related='authorization_id.company_id',
+        store=True, readonly=True, index=True,
+    )
+
     product_id = fields.Many2one(
         'product.product',
         string='Producto',
@@ -876,12 +932,24 @@ class PriceAuthorizationLine(models.Model):
         ('below_medium', 'Entre Mínimo y Medio'),
     ], string='Nivel de Precio', compute='_compute_price_level', store=True)
 
+    # x_costo_mayor es company_dependent: se lee con la compañía de la
+    # solicitud (un related lo leería con la compañía activa del usuario).
     product_cost = fields.Float(
         string='Costo Destino',
-        related='product_id.product_tmpl_id.x_costo_mayor',
+        compute='_compute_product_cost',
         readonly=True,
         digits='Product Price',
     )
+
+    @api.depends('product_id', 'company_id')
+    def _compute_product_cost(self):
+        for line in self:
+            tmpl = line.product_id.product_tmpl_id
+            if tmpl:
+                company = line.company_id or self.env.company
+                line.product_cost = tmpl.with_company(company).x_costo_mayor or 0.0
+            else:
+                line.product_cost = 0.0
 
     @api.depends('requested_price', 'minimum_price', 'medium_price')
     def _compute_price_level(self):

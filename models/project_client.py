@@ -46,7 +46,9 @@ class ProjectProject(models.Model):
             project.som_amount_sold = sum(confirmed.mapped('amount_total'))
             project.som_amount_quoted = sum(quotes.mapped('amount_total'))
             project.som_currency_id = (
-                orders[:1].currency_id or self.env.company.currency_id
+                orders[:1].currency_id
+                or project.company_id.currency_id
+                or self.env.company.currency_id
             )
 
     def action_som_view_sales(self):

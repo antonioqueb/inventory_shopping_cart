@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Reglas de registro multiempresa: cada documento se ve solo desde
+         las compañías activas del usuario (company_id vacío = compartido). -->
+    <data noupdate="1">
+        <record id="rule_price_authorization_company" model="ir.rule">
+            <field name="name">Autorización de precios: multiempresa</field>
+            <field name="model_id" ref="model_price_authorization"/>
+            <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+            <field name="global" eval="True"/>
+        </record>
+
+        <record id="rule_price_authorization_line_company" model="ir.rule">
+            <field name="name">Línea de autorización de precios: multiempresa</field>
+            <field name="model_id" ref="model_price_authorization_line"/>
+            <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+            <field name="global" eval="True"/>
+        </record>
+
+        <record id="rule_shopping_cart_company" model="ir.rule">
+            <field name="name">Carrito de compras: multiempresa</field>
+            <field name="model_id" ref="model_shopping_cart"/>
+            <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+            <field name="global" eval="True"/>
+        </record>
+    </data>
+</odoo>

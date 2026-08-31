@@ -532,7 +532,12 @@ class SaleOrderLine(models.Model):
                 if pricelist.exists() and pricelist.currency_id:
                     currency_name = pricelist.currency_id.name
 
-            tmpl = line.product_id.product_tmpl_id if line.product_id else False
+            # Escalera company_dependent: la de la compañía de la ORDEN.
+            company = line.order_id.company_id or line.company_id or self.env.company
+            tmpl = (
+                line.product_id.product_tmpl_id.with_company(company)
+                if line.product_id else False
+            )
 
             if tmpl and currency_name == 'MXN':
                 line.x_price_1_value = tmpl.x_price_mxn_1
@@ -594,6 +599,7 @@ class SaleOrderLine(models.Model):
             template = line.product_id.product_tmpl_id
             new_price = self.env['product.template']._get_price_level_value(
                 template, line.x_price_selector, currency_name,
+                company=line.order_id.company_id or line.company_id,
             )
 
             if new_price > 0:
@@ -602,6 +608,28 @@ class SaleOrderLine(models.Model):
 
 class SaleOrder(models.Model):
     _inherit = 'sale.order'
+
+    @api.model
+    def _som_next_sequence(self, code, company=None):
+        """next_by_code con la compañía del documento; si la compañía no tiene
+        secuencia propia y la plantilla es de otra compañía, se clona para ella.
+        Las secuencias XML del módulo van sin compañía (compartidas), así que
+        hoy resuelve directo; el clon solo aplica si alguien las hace por
+        compañía."""
+        company = company or self.env.company
+        Seq = self.env['ir.sequence'].sudo()
+        name = Seq.with_company(company).next_by_code(code)
+        if name:
+            return name
+        template = Seq.search([('code', '=', code)], order='company_id', limit=1)
+        if not template:
+            return False
+        template.copy({
+            'company_id': company.id,
+            'number_next': 1,
+            'name': '%s (%s)' % (template.name, company.name),
+        })
+        return Seq.with_company(company).next_by_code(code)
 
     partner_invoice_id = fields.Many2one(
         'res.partner',
@@ -1156,7 +1184,9 @@ class SaleOrder(models.Model):
             return 1.0
 
         today = fields.Date.today()
-        company = self.env.company
+        # TC de la compañía de la orden (self vacío = helper genérico →
+        # compañía activa).
+        company = self[:1].company_id or self.env.company
 
         rate_rec_usd = self.env['res.currency.rate'].sudo().search([
             ('currency_id', '=', usd.id),
@@ -1252,7 +1282,9 @@ class SaleOrder(models.Model):
                     continue
 
                 tmpl = line.product_id.product_tmpl_id
-                threshold = Product._get_price_level_value(tmpl, threshold_level, currency_code)
+                threshold = Product._get_price_level_value(
+                    tmpl, threshold_level, currency_code,
+                    company=order.company_id)
 
                 if threshold > 0 and line.price_unit < (threshold - 0.01):
                     has_low = True
@@ -1289,7 +1321,8 @@ class SaleOrder(models.Model):
                 continue
 
             tmpl = line.product_id.product_tmpl_id
-            threshold = Product._get_price_level_value(tmpl, threshold_level, currency_code)
+            threshold = Product._get_price_level_value(
+                tmpl, threshold_level, currency_code, company=self.company_id)
 
             if threshold > 0 and line.price_unit < (threshold - 0.01):
                 violating.append(
@@ -2030,7 +2063,13 @@ class SaleOrder(models.Model):
         default_names = {'New', 'Nuevo', _('New')}
         for vals in vals_list:
             if vals.get('name', 'New') in default_names:
-                vals['name'] = self.env['ir.sequence'].next_by_code('sale.quotation') or 'New'
+                # Folio con la compañía del PEDIDO (vals), no la activa.
+                company = (
+                    self.env['res.company'].browse(vals['company_id'])
+                    if vals.get('company_id') else self.env.company
+                )
+                vals['name'] = self._som_next_sequence(
+                    'sale.quotation', company) or 'New'
 
         orders = super().create(vals_list)
         orders._som_price_auth_auto_request()
@@ -2072,7 +2111,9 @@ class SaleOrder(models.Model):
                 continue
 
             tmpl = line.product_id.product_tmpl_id
-            new_price = Product._get_price_level_value(tmpl, line.x_price_selector, currency_name)
+            new_price = Product._get_price_level_value(
+                tmpl, line.x_price_selector, currency_name,
+                company=self.company_id)
 
             if new_price > 0:
                 line.price_unit = new_price
@@ -2207,6 +2248,7 @@ class SaleOrder(models.Model):
         threshold_level = Product._get_user_threshold_level(
             user=self.user_id or self.env.user)
         currency_code = self.pricelist_id.currency_id.name or 'USD'
+        company = self.company_id
         product_prices = {}
         product_groups = {}
         detail_rows = []
@@ -2217,7 +2259,8 @@ class SaleOrder(models.Model):
                 continue
 
             tmpl = line.product_id.product_tmpl_id
-            threshold = Product._get_price_level_value(tmpl, threshold_level, currency_code)
+            threshold = Product._get_price_level_value(
+                tmpl, threshold_level, currency_code, company=company)
 
             if threshold > 0 and line.price_unit < (threshold - 0.01):
                 has_low = True
@@ -2264,6 +2307,7 @@ class SaleOrder(models.Model):
             'notes': f"Solicitud desde Orden Manual {self.name}. "
                      f"{html2plaintext(self.note) if self.note else ''}",
             'sale_order_id': self.id,
+            'company_id': company.id,
             'temp_data': {
                 'source': 'manual_order',
                 'sale_order_id': self.id,
@@ -2285,10 +2329,10 @@ class SaleOrder(models.Model):
                 'lot_count': 0,
                 'requested_price': product_prices[pid_str],
                 'authorized_price': product_prices[pid_str],
-                'medium_price': Product._get_price_level_value(tmpl, 'medium', currency_code),
-                'minimum_price': Product._get_price_level_value(tmpl, 'minimum', currency_code),
-                'level_4_price': Product._get_price_level_value(tmpl, 'level_4', currency_code),
-                'level_5_price': Product._get_price_level_value(tmpl, 'level_5', currency_code),
+                'medium_price': Product._get_price_level_value(tmpl, 'medium', currency_code, company=company),
+                'minimum_price': Product._get_price_level_value(tmpl, 'minimum', currency_code, company=company),
+                'level_4_price': Product._get_price_level_value(tmpl, 'level_4', currency_code, company=company),
+                'level_5_price': Product._get_price_level_value(tmpl, 'level_5', currency_code, company=company),
             })
 
         return {
@@ -2358,6 +2402,7 @@ class SaleOrder(models.Model):
             product = data['product_obj']
             price_unit = self.env['product.template']._get_price_level_value(
                 product.product_tmpl_id, 'high', currency_code,
+                company=self.company_id,
             )
 
             lines_to_create.append({
@@ -2424,6 +2469,9 @@ class SaleOrder(models.Model):
         """
         Quant = self.env['stock.quant'].sudo()
         Product = self.env['product.template']
+        # Compañía del MATERIAL seleccionado (la orden nacerá ahí).
+        company = self.env['stock.quant']._som_company_from_quants(
+            self._get_selected_quant_ids_from_products_payload(products))
 
         product_groups = {}
         product_prices = {}
@@ -2469,6 +2517,7 @@ class SaleOrder(models.Model):
             'project_id': project_id,
             'currency_code': currency_code,
             'notes': notes or '',
+            'company_id': company.id,
             'temp_data': {
                 'source': 'cart',
                 'product_groups': product_groups,
@@ -2490,10 +2539,10 @@ class SaleOrder(models.Model):
                 'lot_count': len(group['lots']),
                 'requested_price': requested_price,
                 'authorized_price': requested_price,
-                'medium_price': Product._get_price_level_value(tmpl, 'medium', currency_code),
-                'minimum_price': Product._get_price_level_value(tmpl, 'minimum', currency_code),
-                'level_4_price': Product._get_price_level_value(tmpl, 'level_4', currency_code),
-                'level_5_price': Product._get_price_level_value(tmpl, 'level_5', currency_code),
+                'medium_price': Product._get_price_level_value(tmpl, 'medium', currency_code, company=company),
+                'minimum_price': Product._get_price_level_value(tmpl, 'minimum', currency_code, company=company),
+                'level_4_price': Product._get_price_level_value(tmpl, 'level_4', currency_code, company=company),
+                'level_5_price': Product._get_price_level_value(tmpl, 'level_5', currency_code, company=company),
             })
 
         return auth
@@ -2617,6 +2666,11 @@ class SaleOrder(models.Model):
                 partner_id=partner_id,
             )
 
+            # Multiempresa: la orden nace en la compañía del MATERIAL
+            # seleccionado (quants); sin material físico, la activa.
+            company = self.env['stock.quant']._som_company_from_quants(
+                self._get_selected_quant_ids_from_products_payload(products))
+
             # No se exenta a los autorizadores: check_price_authorization_needed
             # aplica el umbral según el rol (vendedor: P2, mayorista: P4,
             # autorizador: P5). Debajo de su umbral, todos requieren solicitud.
@@ -2634,6 +2688,7 @@ class SaleOrder(models.Model):
                 auth_result = self.env['product.template'].check_price_authorization_needed(
                     prices_map,
                     currency_code,
+                    company=company,
                 )
 
                 if auth_result.get('needs_authorization'):
@@ -2645,15 +2700,16 @@ class SaleOrder(models.Model):
                             if not rec.exists():
                                 continue
                             threshold = Product._get_price_level_value(
-                                rec.product_tmpl_id, threshold_level, currency_code)
+                                rec.product_tmpl_id, threshold_level, currency_code,
+                                company=company)
                             price = float(pd.get('price_unit') or 0.0)
                             if threshold > 0 and price < (threshold - 0.01):
                                 requested_low_prices[str(pd['product_id'])] = price
 
-            company_id = self.env.company.id
+            company_id = company.id
             invoice_id, shipping_id = self._resolve_partner_addresses(self.env, partner_id)
 
-            sale_order = self.with_context(skip_auth_check=True).create({
+            sale_order = self.with_company(company).with_context(skip_auth_check=True).create({
                 'partner_id': partner_id,
                 'partner_invoice_id': invoice_id,
                 'partner_shipping_id': shipping_id,
@@ -2760,6 +2816,7 @@ class SaleOrder(models.Model):
                         'solicitado.'
                     ),
                     'sale_order_id': sale_order.id,
+                    'company_id': company_id,
                     'temp_data': {
                         'source': 'manual_order',
                         'sale_order_id': sale_order.id,
@@ -2777,10 +2834,10 @@ class SaleOrder(models.Model):
                         'lot_count': 0,
                         'requested_price': req_price,
                         'authorized_price': req_price,
-                        'medium_price': Product._get_price_level_value(tmpl, 'medium', currency_code),
-                        'minimum_price': Product._get_price_level_value(tmpl, 'minimum', currency_code),
-                        'level_4_price': Product._get_price_level_value(tmpl, 'level_4', currency_code),
-                        'level_5_price': Product._get_price_level_value(tmpl, 'level_5', currency_code),
+                        'medium_price': Product._get_price_level_value(tmpl, 'medium', currency_code, company=company),
+                        'minimum_price': Product._get_price_level_value(tmpl, 'minimum', currency_code, company=company),
+                        'level_4_price': Product._get_price_level_value(tmpl, 'level_4', currency_code, company=company),
+                        'level_5_price': Product._get_price_level_value(tmpl, 'level_5', currency_code, company=company),
                     })
                 clamp_message = (
                     'Precios por debajo del nivel permitido: la orden se '

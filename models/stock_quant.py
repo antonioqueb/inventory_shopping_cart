@@ -82,6 +82,30 @@ class StockQuant(models.Model):
         }
 
     @api.model
+    def _som_company_from_quants(self, quant_ids):
+        """Compañía del MATERIAL seleccionado en el carrito: el apartado /
+        la orden / la autorización nacen en la compañía dueña de las placas
+        (no en la activa del usuario). Prioridad: contexto
+        som_force_company_id → compañía del primer quant → compañía activa."""
+        forced = self.env.context.get('som_force_company_id')
+        if forced:
+            company = self.env['res.company'].browse(int(forced)).exists()
+            if company:
+                return company
+        ids = []
+        for qid in quant_ids or []:
+            try:
+                ids.append(int(qid))
+            except (TypeError, ValueError):
+                continue
+        if ids:
+            quants = self.sudo().browse(ids).exists()
+            for quant in quants:
+                if quant.company_id:
+                    return quant.company_id
+        return self.env.company
+
+    @api.model
     def _get_pricelist_for_currency(self, currency_code='USD'):
         currency_code = currency_code or 'USD'
         return self.env['product.pricelist'].search([
@@ -592,9 +616,13 @@ class StockQuant(models.Model):
             selected_quantities=selected_quantities,
         )
 
+        # Multiempresa: el apartado nace en la compañía del material
+        # seleccionado (o la que fuerce la autorización aprobada).
+        company = self._som_company_from_quants(selected_lots)
+
         currency = self.env['res.currency'].search([('name', '=', currency_code)], limit=1)
         if not currency:
-            currency = self.env.company.currency_id
+            currency = company.currency_id
 
         # ================================================================
         # VERIFICAR AUTORIZACIÓN — LOTES FÍSICOS Y PEDIDOS SIN EXISTENCIA
@@ -614,7 +642,8 @@ class StockQuant(models.Model):
         if (has_lots or has_backorders) and not self.env.context.get('skip_authorization_check'):
             auth_check = self.env['product.template'].check_price_authorization_needed(
                 auth_price_map,
-                currency_code
+                currency_code,
+                company=company,
             )
 
             if auth_check.get('needs_authorization'):
@@ -705,14 +734,14 @@ class StockQuant(models.Model):
             'project_id': project_id,
             'arquitecto_id': architect_id,
             'notas': full_notes,
-            'company_id': self.env.company.id,
+            'company_id': company.id,
             'fecha_orden': fecha_orden,
             'fecha_expiracion': fecha_expiracion,
             'currency_id': currency.id,
             'delivery_address': self._get_partner_delivery_address(partner),
         }
 
-        order = self.env['stock.lot.hold.order'].create(hold_order_vals)
+        order = self.env['stock.lot.hold.order'].with_company(company).create(hold_order_vals)
 
         success_count = 0
         error_count = 0
@@ -833,6 +862,7 @@ class StockQuant(models.Model):
                             pid,
                             currency_code,
                             precio_unitario,
+                            company=company,
                         ),
                     }
                     if breakdown and 'x_lot_breakdown_json' in line_model._fields:
@@ -869,6 +899,7 @@ class StockQuant(models.Model):
                             product_id,
                             currency_code,
                             price_unit,
+                            company=company,
                         ),
                     })
 
@@ -955,6 +986,8 @@ class StockQuant(models.Model):
             product_prices = {str(k): v for k, v in product_prices.items()}
 
         selected_quantities = selected_quantities or {}
+        # La solicitud nace en la compañía del material seleccionado.
+        company = self._som_company_from_quants(selected_lots)
 
         auth = self.env['price.authorization'].create({
             'seller_id': self.env.user.id,
@@ -963,6 +996,7 @@ class StockQuant(models.Model):
             'project_id': project_id,
             'currency_code': currency_code,
             'notes': notes or '',
+            'company_id': company.id,
             'temp_data': {
                 'selected_lots': selected_lots,
                 'selected_quantities': {
@@ -992,10 +1026,10 @@ class StockQuant(models.Model):
                 'lot_count': len(group['lots']),
                 'requested_price': requested_price,
                 'authorized_price': requested_price,
-                'medium_price': Product._get_price_level_value(tmpl, 'medium', currency_code),
-                'minimum_price': Product._get_price_level_value(tmpl, 'minimum', currency_code),
-                'level_4_price': Product._get_price_level_value(tmpl, 'level_4', currency_code),
-                'level_5_price': Product._get_price_level_value(tmpl, 'level_5', currency_code),
+                'medium_price': Product._get_price_level_value(tmpl, 'medium', currency_code, company=company),
+                'minimum_price': Product._get_price_level_value(tmpl, 'minimum', currency_code, company=company),
+                'level_4_price': Product._get_price_level_value(tmpl, 'level_4', currency_code, company=company),
+                'level_5_price': Product._get_price_level_value(tmpl, 'level_5', currency_code, company=company),
             })
 
         return {

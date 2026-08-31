@@ -13,6 +13,7 @@
                 <field name="currency_code"/>
                 <field name="sale_order_id"/>
                 <field name="create_date"/>
+                <field name="company_id" optional="hide" groups="base.group_multi_company"/>
                 <field name="state" widget="badge" decoration-info="state=='pending'" decoration-success="state=='approved'" decoration-danger="state=='rejected'"/>
             </list>
         </field>
@@ -55,6 +56,7 @@
                     <notebook>
                         <page string="Notas">
                             <group>
+                                <field name="company_id" groups="base.group_multi_company"/>
                                 <field name="notes" readonly="1"/>
                                 <field name="authorization_notes" readonly="state != 'pending'" groups="inventory_shopping_cart.group_price_authorizer"/>
                             </group>
@@ -93,6 +95,7 @@
                 <filter name="rejected" string="Rechazados" domain="[('state','=','rejected')]"/>
                 <filter name="group_seller" string="Vendedor" context="{'group_by': 'seller_id'}"/>
                 <filter name="group_state" string="Estado" context="{'group_by': 'state'}"/>
+                <filter name="group_company" string="Compañía" context="{'group_by': 'company_id'}" groups="base.group_multi_company"/>
             </search>
         </field>
     </record>

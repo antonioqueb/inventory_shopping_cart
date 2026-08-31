@@ -300,24 +300,32 @@ class StockPicking(models.Model):
         for entry in displaced_entries:
             displaced_by_lot[entry['lot_id']].append(entry)
 
+        # Multiempresa: tipo de operación y traslado de la compañía de la
+        # ubicación destino (la del almacén al que se mueve el material).
+        company = (
+            location_dest.company_id
+            or quants[:1].company_id
+            or self.env.company
+        )
         picking_type = self.env['stock.picking.type'].search([
             ('code', '=', 'internal'),
-            ('warehouse_id', '!=', False)
+            ('warehouse_id', '!=', False),
+            ('company_id', '=', company.id),
         ], limit=1)
-        
+
         if not picking_type:
             raise UserError("No se encontró un tipo de operación para traslados internos")
-        
+
         created_pickings = []
         current_user = self.env.user
-        
+
         for location_origin_id, quants_list in location_groups.items():
             location_origin = self.env['stock.location'].browse(location_origin_id)
-            
+
             product_groups = defaultdict(list)
             for quant in quants_list:
                 product_groups[quant.product_id.id].append(quant)
-            
+
             picking_vals = {
                 'picking_type_id': picking_type.id,
                 'location_id': location_origin_id,
@@ -326,9 +334,10 @@ class StockPicking(models.Model):
                 'note': notes or '',
                 'user_id': current_user.id,
                 'move_type': 'direct',
+                'company_id': company.id,
             }
-            
-            picking = self.create(picking_vals)
+
+            picking = self.with_company(company).create(picking_vals)
 
             picking_lot_ids = {
                 q.lot_id.id for q in quants_list if q.lot_id

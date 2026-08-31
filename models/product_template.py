@@ -613,9 +613,12 @@ class ProductTemplate(models.Model):
             record.x_cost_exchange_rate_source = rate_info.get('source') or ''
             record.x_cost_exchange_rate_last_sync = rate_info.get('last_sync') or False
 
+            # Multiempresa: el costo (company_dependent) se calcula con las
+            # compras de LA compañía en curso (env.company = with_company).
             po_line_domain = [
                 ('product_id.product_tmpl_id', '=', record.id),
                 ('state', 'in', ['purchase', 'done']),
+                ('company_id', '=', company.id),
             ]
             # Solo compras ACTIVADAS (publicadas o recibidas) mueven el
             # promedio: una OC confirmada sin publicar/recibir es invisible
@@ -1230,11 +1233,21 @@ class ProductTemplate(models.Model):
             # Recalcular productos:
             # 1. Costo ALL-IN porque logística usa Banorte.
             # 2. Escalera de precios porque USD también usa Banorte.
+            # Multiempresa: costo ALL-IN y escalera son company_dependent →
+            # se recalculan POR compañía (with_company). La compañía del
+            # cron (la principal) va al ÚLTIMO para que los campos de
+            # resumen NO dependientes de compañía (TC de costeo, USD,
+            # resúmenes) queden como hoy: los de la compañía principal.
             products = self.search([('active', '=', True)])
-            products._compute_costo_all_in()
-            products._calculate_escalera_precios()
+            companies = self.env['res.company'].sudo().search([])
+            companies = (companies - self.env.company) | self.env.company
+            for company in companies:
+                products_c = products.with_company(company)
+                products_c._compute_costo_all_in()
+                products_c._calculate_escalera_precios()
 
-            # Recalcular órdenes abiertas
+            # Recalcular órdenes abiertas (cron = superusuario, sin reglas:
+            # trae todas las compañías; el TC sale de la de cada orden).
             if 'sale.order' in self.env:
                 orders = self.env['sale.order'].search([
                     ('state', 'in', ['draft', 'sent'])
@@ -1383,10 +1396,17 @@ class ProductTemplate(models.Model):
         return 'medium'
 
     @api.model
-    def _get_price_level_value(self, tmpl, level, currency_code):
-        """Lee del template el valor del nivel pedido en la moneda solicitada."""
+    def _get_price_level_value(self, tmpl, level, currency_code, company=None):
+        """Lee del template el valor del nivel pedido en la moneda solicitada.
+
+        La escalera es company_dependent: con `company` (la del documento:
+        orden, apartado, autorización) se lee la de ESA compañía; sin ella,
+        la de la compañía activa del usuario (defaults/UI)."""
         if not tmpl:
             return 0.0
+
+        if company:
+            tmpl = tmpl.with_company(company)
 
         if currency_code == 'MXN':
             mapping = {
@@ -1486,7 +1506,7 @@ class ProductTemplate(models.Model):
         }
 
     @api.model
-    def check_price_authorization_needed(self, product_prices, currency_code):
+    def check_price_authorization_needed(self, product_prices, currency_code, company=None):
         """
         Valida si una operación requiere autorización de precio.
 
@@ -1495,8 +1515,13 @@ class ProductTemplate(models.Model):
         - Vendedor mayorista: autorización si el precio queda debajo del Precio 4.
         - Autorizador/Administrador: autorización si el precio queda debajo del Precio 5.
         - Usuarios sin rol comercial explícito no disparan autorización desde este helper.
+
+        `company`: compañía del documento para leer la escalera
+        (company_dependent); sin ella, la activa del usuario.
         """
         needs_auth = []
+        if company:
+            self = self.with_company(company)
         role = self._get_user_price_role()
         is_authorizer = role == 'authorizer'
 
