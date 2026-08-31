@@ -1256,6 +1256,12 @@ class StockLotHoldOrderLine(models.Model):
         compute='_compute_x_price_permission_flags',
     )
 
+    x_can_use_level_4_price = fields.Boolean(
+        string='Puede usar Precio 4',
+        compute='_compute_x_price_permission_flags',
+        help="El Precio 4 es de vendedores mayoristas y autorizadores.",
+    )
+
     x_can_use_level_5_price = fields.Boolean(
         string='Puede usar Precio 5',
         compute='_compute_x_price_permission_flags',
@@ -1359,17 +1365,18 @@ class StockLotHoldOrderLine(models.Model):
         El Personalizado debe estar disponible desde el formulario manual,
         igual que en el carrito. La autorización se decide al confirmar.
 
-        Los Precios 3 y 4 se exponen para vendedores mayoristas y autorizadores.
-        El vendedor regular solo puede usar Precio 1 y Precio 2. El Precio 5
-        (mínimo absoluto) queda reservado a autorizadores de precio y visores
-        del Dashboard.
+        El Precio 3 está abierto a toda la fuerza de ventas (política
+        31 ago 2026). El Precio 4 se expone para vendedores mayoristas y
+        autorizadores; el Precio 5 (mínimo absoluto) queda reservado a
+        autorizadores de precio y visores del Dashboard.
         """
         role = self.env['product.template']._get_user_price_role()
         can_use_mayorista = role in ('authorizer', 'mayorista')
         can_use_level_5 = role == 'authorizer'
         for line in self:
             line.x_can_use_custom_price = True
-            line.x_can_use_minimum_price = can_use_mayorista
+            line.x_can_use_minimum_price = True  # P3 abierto a todos (31 ago 2026)
+            line.x_can_use_level_4_price = can_use_mayorista
             line.x_can_use_level_5_price = can_use_level_5
 
     def _get_currency_code(self):
