@@ -616,6 +616,26 @@ class PriceAuthorization(models.Model):
         order.x_price_authorization_id = self.id
         self.write({'sale_order_id': order.id})
 
+        # Orden manual que NACIÓ confirmada pero quedó en borrador esperando
+        # esta autorización (sale_menu_restructure): con la aprobación se
+        # confirma sola. Si algo más la bloquea (lotes tomados, etc.), la
+        # aprobación NO truena — queda constancia y se confirma a mano.
+        if (
+            getattr(order, 'x_born_confirmed', False)
+            and order.state == 'draft'
+            and hasattr(order, '_born_confirm_if_ready')
+        ):
+            try:
+                order.with_context(
+                    skip_sale_order_redirect=True)._born_confirm_if_ready()
+            except Exception:
+                _logger.exception(
+                    '[PRICE AUTH] %s aprobada pero la orden %s no se pudo '
+                    'confirmar automáticamente.', self.name, order.name)
+                order._message_log(body=Markup(
+                    '<p>⚠️ Autorización aprobada, pero la orden no se pudo '
+                    'confirmar automáticamente; confírmela manualmente.</p>'))
+
     def _create_sale_order_from_authorization(self, pricelist, temp_data):
         """
         Crea orden de venta desde autorización aprobada del carrito.

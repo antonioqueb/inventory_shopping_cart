@@ -1407,12 +1407,21 @@ class SaleOrder(models.Model):
             violating = order._get_violating_products()
 
             if violating:
+                # Mensaje COMPACTO (31 ago 2026): máximo 3 productos y una
+                # línea de estado — el bloque gigante anterior tapaba media
+                # pantalla y no decía que la solicitud ya existía.
+                auth = order.x_price_authorization_id
+                estado = (
+                    f"Solicitud {auth.name} pendiente de autorización."
+                    if auth and auth.state == 'pending'
+                    else "Guarde la orden: la solicitud de autorización se crea sola."
+                )
+                top = "\n".join(f"• {v}" for v in violating[:3])
+                extra = (f"\n…y {len(violating) - 3} más."
+                         if len(violating) > 3 else "")
                 raise UserError(
-                    f"🚫 ACCIÓN BLOQUEADA - PRECIOS NO AUTORIZADOS\n\n"
-                    f"No puede {action_name} la orden {order.name}.\n"
-                    f"Productos con precios por debajo del nivel permitido para su rol:\n"
-                    f"• {chr(10).join(violating)}\n\n"
-                    f"Solicite autorización de precio primero."
+                    f"🚫 Precios no autorizados: no se puede {action_name} "
+                    f"{order.name}.\n{top}{extra}\n{estado}"
                 )
 
     # ─── Autorización de descuentos altos ────────────────────────────────────
@@ -1528,12 +1537,10 @@ class SaleOrder(models.Model):
             if not order.x_discount_needs_auth:
                 continue
             raise UserError(
-                f"🚫 ACCIÓN BLOQUEADA - DESCUENTO NO AUTORIZADO\n\n"
-                f"No puede {action_name} la orden {order.name}.\n"
-                f"El descuento aplicado (≈ {order.x_discount_amount_mxn:,.2f} MXN) "
-                f"supera el umbral de {order._get_discount_auth_threshold_mxn():,.2f} MXN "
-                f"y requiere autorización de un Autorizador de Precios.\n\n"
-                f"Use el botón 'Solicitar autorización de descuento'."
+                f"🚫 Descuento no autorizado: no se puede {action_name} "
+                f"{order.name} (≈ {order.x_discount_amount_mxn:,.2f} MXN, "
+                f"umbral {order._get_discount_auth_threshold_mxn():,.2f} MXN). "
+                f"Requiere aprobación de un Autorizador de Precios."
             )
 
     def _som_group_users(self, group):
