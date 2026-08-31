@@ -1173,6 +1173,26 @@ class ProductTemplate(models.Model):
         _logger.info("BANORTE SYNC: siguiente ejecución programada en %s UTC", nextcall_str)
 
     @api.model
+    def recalculate_all_costs(self):
+        """RECÁLCULO MASIVO de todo el catálogo: costo ALL-IN (MaxAvg con la
+        carga inicial como semilla) y escalera de precios, POR COMPAÑÍA
+        (los campos son company_dependent). La compañía en curso va al
+        ÚLTIMO para que los campos de resumen no dependientes de compañía
+        queden con sus valores. Lo usan el cron Banorte y la migración al
+        actualizar el módulo; también sirve a demanda:
+        env['product.template'].recalculate_all_costs()."""
+        products = self.search([('active', '=', True)])
+        companies = self.env['res.company'].sudo().search([])
+        companies = (companies - self.env.company) | self.env.company
+        for company in companies:
+            products_c = products.with_company(company)
+            products_c._compute_costo_all_in()
+            products_c._calculate_escalera_precios()
+        _logger.info("COSTOS: recálculo masivo de %s productos en %s compañías.",
+                     len(products), len(companies))
+        return products
+
+    @api.model
     def cron_update_banorte_rates(self):
         """
         Consulta API Banorte, actualiza tipos de cambio y reprograma el cron.
@@ -1272,13 +1292,7 @@ class ProductTemplate(models.Model):
             # cron (la principal) va al ÚLTIMO para que los campos de
             # resumen NO dependientes de compañía (TC de costeo, USD,
             # resúmenes) queden como hoy: los de la compañía principal.
-            products = self.search([('active', '=', True)])
-            companies = self.env['res.company'].sudo().search([])
-            companies = (companies - self.env.company) | self.env.company
-            for company in companies:
-                products_c = products.with_company(company)
-                products_c._compute_costo_all_in()
-                products_c._calculate_escalera_precios()
+            products = self.recalculate_all_costs()
 
             # Recalcular órdenes abiertas (cron = superusuario, sin reglas:
             # trae todas las compañías; el TC sale de la de cada orden).
