@@ -2646,13 +2646,32 @@ class SaleOrder(models.Model):
         self.env['stock.quant']._som_assert_project_of_partner(partner_id, project_id)
 
         try:
-            if not pricelist_id:
-                pricelist_id = self.env['res.partner'].browse(partner_id).property_product_pricelist.id
-
-                if not pricelist_id:
-                    raise UserError("No se ha definido una lista de precios.")
-
-            pricelist = self.env['product.pricelist'].browse(pricelist_id)
+            # Multiempresa: la compañía (la del MATERIAL seleccionado) se
+            # resuelve ANTES que la lista de precios. La lista del cliente es
+            # company_dependent y debe pertenecer a esa compañía (o ser
+            # compartida); si viene una de otra compañía se toma la de la
+            # misma moneda en la compañía correcta (core rechaza el cruce).
+            company = self.env['stock.quant']._som_company_from_quants(
+                self._get_selected_quant_ids_from_products_payload(products))
+            Pricelist = self.env['product.pricelist'].with_company(company)
+            if pricelist_id:
+                pricelist = Pricelist.browse(pricelist_id)
+            else:
+                pricelist = self.env['res.partner'].with_company(
+                    company).browse(partner_id).property_product_pricelist
+            if not pricelist:
+                raise UserError("No se ha definido una lista de precios.")
+            if pricelist.company_id and pricelist.company_id != company:
+                alt = Pricelist.search([
+                    ('company_id', 'in', [company.id, False]),
+                    ('currency_id', '=', pricelist.currency_id.id),
+                ], order='company_id desc', limit=1)
+                if not alt:
+                    raise UserError(
+                        "No hay lista de precios en %s para la moneda %s." % (
+                            company.name, pricelist.currency_id.name))
+                pricelist = alt
+            pricelist_id = pricelist.id
             currency_code = pricelist.currency_id.name
             prices_map = {
                 str(p['product_id']): p['price_unit']
@@ -2666,10 +2685,8 @@ class SaleOrder(models.Model):
                 partner_id=partner_id,
             )
 
-            # Multiempresa: la orden nace en la compañía del MATERIAL
-            # seleccionado (quants); sin material físico, la activa.
-            company = self.env['stock.quant']._som_company_from_quants(
-                self._get_selected_quant_ids_from_products_payload(products))
+            # (la compañía del material ya se resolvió arriba, junto con la
+            # lista de precios)
 
             # No se exenta a los autorizadores: check_price_authorization_needed
             # aplica el umbral según el rol (vendedor: P2, mayorista: P4,
