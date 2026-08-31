@@ -550,8 +550,9 @@ class StockLotHoldOrder(models.Model):
             selector = line.x_price_selector or 'custom'
             reason = False
 
-            # Vendedor regular: no debe usar selector 3/4/5 directamente.
-            if role == 'seller' and selector in ('minimum', 'level_4', 'level_5'):
+            # Vendedor regular: los selectores 4/5 requieren autorización.
+            # (El 'minimum' —Precio 3— es libre desde el 31 ago 2026.)
+            if role == 'seller' and selector in ('level_4', 'level_5'):
                 reason = (
                     f"selector {selector} requiere autorización para vendedor regular "
                     f"(umbral {threshold_label}: {threshold:.2f})"
