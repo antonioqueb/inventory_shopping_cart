@@ -244,7 +244,14 @@ class ShoppingCart(models.Model):
             pack, qpp = pack_info
             free_avail = quant.quantity - quant.reserved_quantity if quant else float(quantity)
             eps = 1e-6
-            max_packs = int((free_avail + eps) // qpp) if free_avail > 0 else 0
+            # Máximo de empaques = el LOTE COMPLETO: si el lote equivale a N
+            # cajas con tolerancia (empaque redondeado), el máximo es N y
+            # elegirlo toma toda la cantidad real; si no, cajas que caben.
+            max_packs = 0
+            if free_avail > 0:
+                n_round = int(round(free_avail / qpp))
+                tol = max(0.02 * free_avail, 0.5 * qpp)
+                max_packs = n_round if (n_round >= 1 and abs(free_avail - n_round * qpp) <= tol) else int((free_avail + eps) // qpp)
             pname = quant.product_id.display_name if quant else ''
             if max_packs < 1 and free_avail > 0 and float(quantity) >= free_avail - 1e-6:
                 max_packs = 1  # lote completo menor a una caja: se vende como está
@@ -265,9 +272,10 @@ class ShoppingCart(models.Model):
                 quantity = round(free_avail, 6)
                 packs_n = max(1, int(round(quantity / qpp)))
             elif pack_choice:
-                # El vendedor ya decidió cuántos empaques.
+                # El vendedor ya decidió cuántos empaques; el máximo = lote completo.
                 packs_n = max(1, min(int(pack_choice), max_packs))
-                quantity = round(packs_n * qpp, 6)
+                quantity = round(free_avail, 6) if packs_n >= max_packs else round(packs_n * qpp, 6)
+                whole_lot = packs_n >= max_packs
             else:
                 packs_f = float(quantity) / qpp
                 exact = abs(packs_f - round(packs_f)) <= 0.001 and 1 <= round(packs_f) <= max_packs
@@ -290,7 +298,7 @@ class ShoppingCart(models.Model):
                         'requested': float(quantity),
                         'available': free_avail,
                         'max_packs': max_packs,
-                        'options': [{'packs': n, 'qty': round(n * qpp, 6)} for n in cands],
+                        'options': [{'packs': n, 'qty': round(free_avail if n >= max_packs else n * qpp, 6)} for n in cands],
                     }
                 packs_n = int(round(packs_f))
                 quantity = round(packs_n * qpp, 6)
