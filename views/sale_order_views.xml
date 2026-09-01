@@ -47,12 +47,8 @@
                      visor, por eso basta el grupo del visor. Los vendedores ya
                      no tienen flujo de solicitud. -->
                 <field name="x_iva_exempt_state" invisible="1"/>
-                <button name="action_remove_iva"
-                        string="Eliminar IVA"
-                        type="object"
-                        class="btn-warning"
-                        invisible="state == 'cancel' or x_iva_exempt_state == 'approved'"
-                        groups="inventory_shopping_cart.group_dashboard_viewer"/>
+                <!-- "Eliminar IVA" vive en el ENGRANE (menú de acciones) para
+                     no saturar la cabecera; ver action_server_remove_iva. -->
                 <!-- Solicitudes EN VUELO del flujo anterior: los autorizadores
                      aún pueden resolverlas; no se generan nuevas. -->
                 <button name="action_approve_iva_exemption"
@@ -442,4 +438,19 @@
         </field>
     </record>
 
+    <!-- Eliminar IVA desde el engrane (menú Acciones) del formulario; el
+         método revalida el perfil (Autorizador / Visor del Dashboard). -->
+    <record id="action_server_remove_iva" model="ir.actions.server">
+        <field name="name">Eliminar IVA</field>
+        <field name="model_id" ref="sale.model_sale_order"/>
+        <field name="binding_model_id" ref="sale.model_sale_order"/>
+        <field name="binding_view_types">form</field>
+        <field name="state">code</field>
+        <field name="group_ids" eval="[(4, ref('inventory_shopping_cart.group_dashboard_viewer'))]"/>
+        <field name="code">
+targets = records.filtered(lambda r: r.state != 'cancel' and r.x_iva_exempt_state != 'approved')
+if targets:
+    action = targets[:1].action_remove_iva()
+        </field>
+    </record>
 </odoo>
