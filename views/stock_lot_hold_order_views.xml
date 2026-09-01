@@ -144,6 +144,10 @@
                     <group>
                         <group string="Datos del Cliente">
                             <field name="partner_id" string="Cliente" required="1"/>
+                            <!-- Vendedor visible y SIEMPRE editable: al cambiarlo
+                                 (igual que el cliente) el backend re-asigna los
+                                 holds de las placas al nuevo dueño. -->
+                            <field name="user_id" string="Vendedor"/>
                             <!-- El correo del cliente es el que recibe la
                                  confirmación del apartado y los avisos de
                                  vencimiento: se ve y se corrige aquí mismo
@@ -186,7 +190,6 @@
                     <!-- las líneas (página "Placas Reservadas").              -->
                     <!-- ===================================================== -->
                     <group invisible="1">
-                        <field name="user_id" readonly="1"/>
                         <field name="fecha_orden" readonly="1" force_save="1"/>
                         <field name="fecha_expiracion" readonly="1" force_save="1"/>
                         <field name="dias_restantes" readonly="1"/>
