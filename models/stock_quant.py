@@ -409,21 +409,21 @@ class StockQuant(models.Model):
                         # (m²) va grande a la izquierda, más abajo.
                         under_name = ' · '.join(s for s in (dims_str, block_str) if s)
                         if under_name:
-                            zpl_code += ("^FO10,%d^A0N,28,28^FB780,1,0,C^FD" % (y0 + 86)
+                            zpl_code += ("^FO10,%d^A0N,26,26^FB780,1,0,C^FD" % (y0 + 84)
                                          + under_name + "^FS")
-                        # Cantidad a la izquierda
-                        zpl_code += ("^FO25,%d^A0N,55,55^FD" % (y0 + 116)
+                        # Cantidad (metraje) a la izquierda
+                        zpl_code += ("^FO25,%d^A0N,55,55^FD" % (y0 + 118)
                                      + qty_str + "^FS")
-                        # Código de barras al centro-derecha (sin línea de
-                        # interpretación: el número va aparte, UNA sola vez
-                        # por mitad)
-                        zpl_code += ("^FO270,%d^BY2,2,48^BCN,48,N,N,N^FD" % (y0 + 96)
+                        # Código de barras al centro-derecha, debajo de la
+                        # línea de medidas (sin línea de interpretación: el
+                        # número va aparte, UNA sola vez por mitad)
+                        zpl_code += ("^FO270,%d^BY2,2,40^BCN,40,N,N,N^FD" % (y0 + 114)
                                      + lot_name + "^FS")
-                        # Número de lote legible, GRANDE (38 dots ≈ 4.8 mm)
-                        zpl_code += ("^FO270,%d^A0N,38,38^FB360,1,0,C^FD" % (y0 + 148)
+                        # Número de lote legible, GRANDE (32 dots ≈ 4 mm)
+                        zpl_code += ("^FO270,%d^A0N,32,32^FB360,1,0,C^FD" % (y0 + 156)
                                      + lot_name + "^FS")
                         # Logo SOM al extremo derecho de la franja
-                        zpl_code += ("^FO628,%d" % (y0 + 126)) + SOM_LOGO_CANTO_ZPL + "^FS"
+                        zpl_code += ("^FO628,%d" % (y0 + 128)) + SOM_LOGO_CANTO_ZPL + "^FS"
 
                 elif label_format == '20x10':
                     # Media: 10 cm ancho (800) × 20 cm largo (1600)
