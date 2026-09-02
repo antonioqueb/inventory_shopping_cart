@@ -368,6 +368,14 @@ class StockQuant(models.Model):
                 if hasattr(block_raw, 'name'):
                     block_raw = block_raw.name
                 block_str = str(block_raw or '').strip()[:30]
+                # MEDIDAS de la placa: LARGO x ALTO en metros (largo ≡ x_ancho
+                # en este inventario). Se piden debajo del nombre en la
+                # etiqueta estándar (2 sep 2026).
+                alto_raw = getattr(lot, 'x_alto', 0) or 0
+                ancho_raw = getattr(lot, 'x_ancho', 0) or 0
+                alto_m = alto_raw / 100.0 if alto_raw > 10 else alto_raw
+                ancho_m = ancho_raw / 100.0 if ancho_raw > 10 else ancho_raw
+                dims_str = ('%.2f x %.2f m' % (ancho_m, alto_m)) if (alto_m and ancho_m) else ''
 
                 zpl_code += "^XA^CI28"
 
@@ -396,10 +404,13 @@ class StockQuant(models.Model):
                         # Nombre del material: 2 líneas centradas
                         zpl_code += ("^FO10,%d^A0N,36,36^FB780,2,4,C^FD" % (y0 + 10)
                                      + product_name + "^FS")
-                        # BLOQUE entre el nombre y la cantidad (solo si hay)
-                        if block_str:
-                            zpl_code += ("^FO25,%d^A0N,26,26^FD" % (y0 + 88)
-                                         + block_str + "^FS")
+                        # Debajo del nombre: MEDIDAS largo x alto (y el bloque
+                        # si lo hay), en una sola línea centrada. El metraje
+                        # (m²) va grande a la izquierda, más abajo.
+                        under_name = ' · '.join(s for s in (dims_str, block_str) if s)
+                        if under_name:
+                            zpl_code += ("^FO10,%d^A0N,28,28^FB780,1,0,C^FD" % (y0 + 86)
+                                         + under_name + "^FS")
                         # Cantidad a la izquierda
                         zpl_code += ("^FO25,%d^A0N,55,55^FD" % (y0 + 116)
                                      + qty_str + "^FS")
