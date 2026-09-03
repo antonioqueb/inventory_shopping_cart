@@ -690,6 +690,13 @@ class SaleOrder(models.Model):
         compute='_compute_has_low_prices',
         store=True,
     )
+    # Justificación OBLIGATORIA (en el formulario) cuando hay precios por
+    # debajo del nivel del vendedor; viaja al autorizador en la solicitud.
+    x_price_auth_reason = fields.Text(
+        string='Justificación de precios',
+        copy=False,
+        help='Motivo por el que se otorga un precio por debajo del nivel permitido '
+             '(cliente, volumen, competencia...). Llega al autorizador con la solicitud.')
     x_low_price_details = fields.Text(
         string="Detalle de precios bajos",
         compute='_compute_x_low_price_details',
@@ -2318,8 +2325,13 @@ class SaleOrder(models.Model):
             'currency_code': currency_code,
             # note es un campo HTML: a texto plano para que las notas de la
             # autorización no muestren <div>/&nbsp; crudos.
-            'notes': f"Solicitud desde Orden Manual {self.name}. "
-                     f"{html2plaintext(self.note) if self.note else ''}",
+            # La justificación del vendedor (obligatoria en el formulario
+            # cuando hay precios bajos) viaja al autorizador en las notas.
+            'notes': (
+                (f"Justificación del vendedor: {(self.x_price_auth_reason or '').strip()}\n\n"
+                 if (self.x_price_auth_reason or '').strip() else '')
+                + f"Solicitud desde Orden Manual {self.name}. "
+                + f"{html2plaintext(self.note) if self.note else ''}"),
             'sale_order_id': self.id,
             'company_id': company.id,
             'temp_data': {
@@ -2783,6 +2795,17 @@ class SaleOrder(models.Model):
                             if threshold > 0 and price < (threshold - 0.01):
                                 requested_low_prices[str(pd['product_id'])] = price
 
+            # JUSTIFICACIÓN OBLIGATORIA (3 sep 2026): si hay precios por
+            # debajo del nivel del vendedor, no se crea nada sin motivo.
+            # Respuesta suave (no excepción): el asistente la muestra y deja
+            # al vendedor capturarla.
+            if requested_low_prices and not (notes or '').strip():
+                return {
+                    'success': False,
+                    'error': 'Hay precios por debajo de tu nivel: captura la justificación '
+                             'para el autorizador en Observaciones antes de crear la orden.',
+                }
+
             company_id = company.id
             invoice_id, shipping_id = self._resolve_partner_addresses(self.env, partner_id)
 
@@ -2888,6 +2911,7 @@ class SaleOrder(models.Model):
                     'project_id': project_id,
                     'currency_code': currency_code,
                     'notes': (
+                        f'Justificación del vendedor: {(notes or "").strip()}\n\n'
                         'Solicitud automática desde carrito: la orden '
                         f'{sale_order.name} se creó con los precios TOPADOS '
                         'al umbral del rol; al aprobarse bajarán a lo '

@@ -699,9 +699,9 @@
                         <div class="mb-3">
                             <label class="form-label fw-bold">
                                 <i class="fa fa-commenting text-secondary me-2"></i>
-                                Notas opcionales
+                                Notas <small class="text-muted fw-normal">(obligatorias si algún precio queda por debajo de tu nivel: son la justificación para el autorizador)</small>
                             </label>
-                            <textarea class="form-control" rows="3" placeholder="Observaciones adicionales..." t-model="state.notas"></textarea>
+                            <textarea class="form-control" rows="3" placeholder="Justificación del precio / observaciones para el autorizador..." t-model="state.notas"></textarea>
                         </div>
                         
                         <div class="alert alert-light border">

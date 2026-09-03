@@ -593,6 +593,13 @@ export class HoldWizard extends Component {
                 }
             );
             
+            // Justificación de precios faltante: el servidor no crea nada y
+            // pide el motivo; el asistente sigue abierto para capturarlo.
+            if (result.error) {
+                this.notification.add(result.error, { type: "danger", sticky: true });
+                return;
+            }
+
             if (result.needs_authorization) {
                 this.notification.add(`${result.message}`, { type: "warning", sticky: true });
                 await this.props.onSuccess();

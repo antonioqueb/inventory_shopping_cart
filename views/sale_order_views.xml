@@ -95,6 +95,16 @@
             <xpath expr="//sheet" position="before">
                 <field name="x_has_low_prices" invisible="1"/>
 
+                <!-- Justificación obligatoria cuando hay precios bajos: se
+                     guarda con la orden y viaja al autorizador. -->
+                <div invisible="not x_has_low_prices or state == 'cancel'"
+                     style="margin: 0 0 12px 0; padding: 10px 14px; border: 1px solid #f1b5b9; border-radius: 10px; background: #fff8f8;">
+                    <label for="x_price_auth_reason" string="Justificación para el autorizador (obligatoria)" class="fw-bold"/>
+                    <field name="x_price_auth_reason" nolabel="1"
+                           placeholder="Explica por qué se otorga este precio: cliente, volumen, competencia, proyecto…"
+                           required="x_has_low_prices and state != 'cancel'"/>
+                </div>
+
                 <!-- Banner para vendedor -->
                 <div
                     groups="inventory_shopping_cart.group_seller"

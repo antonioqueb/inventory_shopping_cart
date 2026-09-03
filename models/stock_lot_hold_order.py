@@ -19,6 +19,21 @@ class StockLotHoldOrder(models.Model):
     # convertir a orden de venta, la orden la hereda para no pedirla de nuevo.
     x_price_authorization_id = fields.Many2one(
         'price.authorization', string='Autorización de precios', copy=False, readonly=True)
+    # Bandera para exigir la justificación (notas) en el formulario cuando
+    # algún precio queda por debajo del nivel del vendedor.
+    x_has_low_prices = fields.Boolean(
+        string='Precios por debajo del nivel', compute='_compute_x_has_low_prices')
+
+    @api.depends('line_ids.precio_unitario', 'line_ids.product_id', 'line_ids.cantidad_m2')
+    def _compute_x_has_low_prices(self):
+        for order in self:
+            flag = False
+            if order.state in ('draft', 'borrador'):
+                try:
+                    flag = bool(order._get_manual_price_violations())
+                except Exception:  # noqa: BLE001
+                    flag = False
+            order.x_has_low_prices = flag
 
     # Utilidad global de la reserva (suma de líneas). Mismo candado de
     # grupo que la utilidad por línea.

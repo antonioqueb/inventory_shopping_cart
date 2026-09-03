@@ -57,7 +57,7 @@
                         <page string="Notas">
                             <group>
                                 <field name="company_id" groups="base.group_multi_company"/>
-                                <field name="notes" readonly="1"/>
+                                <field name="notes" readonly="1" string="Justificación del vendedor"/>
                                 <field name="authorization_notes" readonly="state != 'pending'" groups="inventory_shopping_cart.group_price_authorizer"/>
                             </group>
                         </page>

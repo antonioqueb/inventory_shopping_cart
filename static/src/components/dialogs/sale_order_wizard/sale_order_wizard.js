@@ -743,8 +743,17 @@ export class SaleOrderWizard extends Component {
     // ========== CREAR ORDEN ==========
     
     async createSaleOrder() {
+        // JUSTIFICACIÓN OBLIGATORIA: con precios por debajo del nivel del
+        // vendedor no se crea la orden sin motivo para el autorizador.
+        if ((this.state.lowPriceWarningProducts || []).length && !(this.state.notas || "").trim()) {
+            this.notification.add(
+                "Hay precios por debajo de tu nivel: captura la justificación para el autorizador en Observaciones.",
+                { type: "danger", sticky: true }
+            );
+            return;
+        }
         this.state.isCreating = true;
-        
+
         try {
             const products = [];
             
@@ -781,6 +790,11 @@ export class SaleOrderWizard extends Component {
                 architect_id: this.state.selectedArchitectId
             });
             
+            if (result.error) {
+                this.notification.add(result.error, { type: "danger", sticky: true });
+                return;
+            }
+
             // MANEJAR CASO DE AUTORIZACIÓN REQUERIDA (solo para vendedores)
             if (result.needs_authorization) {
                 this._clearDraft();

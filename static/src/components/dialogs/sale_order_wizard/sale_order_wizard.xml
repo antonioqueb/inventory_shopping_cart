@@ -829,12 +829,15 @@
                         <div class="mb-3">
                             <label class="form-label fw-bold">
                                 <i class="fa fa-commenting text-primary me-2"></i>
-                                Observaciones opcionales
+                                <t t-if="state.lowPriceWarningProducts and state.lowPriceWarningProducts.length">
+                                    Justificación de precios <span class="text-danger">(obligatoria: hay precios por debajo de tu nivel)</span>
+                                </t>
+                                <t t-else="">Observaciones opcionales</t>
                             </label>
-                            <textarea 
-                                class="form-control"
+                            <textarea
+                                t-att-class="'form-control' + ((state.lowPriceWarningProducts and state.lowPriceWarningProducts.length and !(state.notas || '').trim()) ? ' is-invalid' : '')"
                                 rows="3"
-                                placeholder="Observaciones adicionales..."
+                                t-att-placeholder="(state.lowPriceWarningProducts and state.lowPriceWarningProducts.length) ? 'Explica al autorizador por qué se otorga este precio (cliente, volumen, competencia...)' : 'Observaciones adicionales...'"
                                 t-model="state.notas"
                             ></textarea>
                         </div>

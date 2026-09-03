@@ -701,6 +701,16 @@ class StockQuant(models.Model):
 
                     product_groups[product_id]['total_quantity'] += float(item.get('quantity') or 0.0)
 
+                # JUSTIFICACIÓN OBLIGATORIA (3 sep 2026): sin motivo no se
+                # crea la solicitud ni el apartado; el asistente muestra el
+                # aviso y el vendedor la captura en Notas.
+                if not (notes or '').strip():
+                    return {
+                        'success': 0, 'errors': 0, 'failed': [],
+                        'needs_authorization': False,
+                        'error': 'Hay precios por debajo de tu nivel: captura en Notas la '
+                                 'justificación para el autorizador antes de apartar.',
+                    }
                 result = self.create_price_authorization(
                     operation_type='hold',
                     partner_id=partner_id,

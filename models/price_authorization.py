@@ -303,6 +303,7 @@ class PriceAuthorization(models.Model):
         if not activity_type:
             activity_type = self.env['mail.activity.type'].search([('name', '=', 'To Do')], limit=1)
 
+        reason = html2plaintext(self.notes or '').strip() if self.notes else ''
         note = (
             f"<p>Se requiere su autorización para:</p>"
             f"<ul>"
@@ -311,6 +312,8 @@ class PriceAuthorization(models.Model):
             f"<li><strong>Operación:</strong> {'Venta' if self.operation_type == 'sale' else 'Apartado'}</li>"
             f"<li><strong>Productos:</strong> {len(self.line_ids)} productos</li>"
             f"</ul>"
+            + (f"<p><strong>Justificación del vendedor:</strong> {Markup.escape(reason)}</p>" if reason else
+               "<p><em>Sin justificación capturada.</em></p>")
         )
 
         # UNA actividad por autorizador + mención en chatter. Las

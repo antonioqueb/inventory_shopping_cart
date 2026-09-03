@@ -394,7 +394,13 @@
                         </page>
 
                         <page string="Notas">
-                            <field name="notas" placeholder="Observaciones del apartado..."/>
+                            <field name="x_has_low_prices" invisible="1"/>
+                            <div class="alert alert-warning py-2" role="alert" invisible="not x_has_low_prices">
+                                Hay precios por debajo de tu nivel: las notas son <b>obligatorias</b> y llegan al
+                                autorizador como justificación del precio.
+                            </div>
+                            <field name="notas" placeholder="Justificación del precio / observaciones del apartado..."
+                                   required="x_has_low_prices"/>
                         </page>
                     </notebook>
                 </sheet>
