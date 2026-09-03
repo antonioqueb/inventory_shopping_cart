@@ -2326,6 +2326,8 @@ class SaleOrder(models.Model):
                 'source': 'manual_order',
                 'sale_order_id': self.id,
                 'product_groups': product_groups,
+                # precios solicitados: forman la firma anti-duplicados
+                'product_prices': {str(k): float(v or 0.0) for k, v in product_prices.items()},
                 'architect_id': self.x_architect_id.id,
             },
         })
@@ -2535,6 +2537,8 @@ class SaleOrder(models.Model):
             'temp_data': {
                 'source': 'cart',
                 'product_groups': product_groups,
+                # precios solicitados: forman la firma anti-duplicados
+                'product_prices': {str(k): float(v or 0.0) for k, v in (product_prices or {}).items()},
                 'services': services or [],
                 'apply_tax': apply_tax,
                 'architect_id': architect_id,
@@ -2895,6 +2899,12 @@ class SaleOrder(models.Model):
                         'source': 'manual_order',
                         'sale_order_id': sale_order.id,
                         'architect_id': architect_id,
+                        # productos/cantidades/precios: firma anti-duplicados
+                        'product_groups': {
+                            str(pid): {'total_quantity': float(qty_by_pid.get(pid, 0.0))}
+                            for pid in requested_low_prices},
+                        'product_prices': {
+                            str(pid): float(price or 0.0) for pid, price in requested_low_prices.items()},
                     },
                 })
                 sale_order.x_price_authorization_id = auth.id

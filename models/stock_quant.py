@@ -1047,4 +1047,6 @@ class StockQuant(models.Model):
             'success': True,
             'authorization_id': auth.id,
             'authorization_name': auth.name,
+            'duplicate': bool(auth.som_duplicate_notice),
+            'message': auth.som_duplicate_notice or '',
         }

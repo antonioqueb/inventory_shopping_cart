@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import json
 import logging
 import math
 
@@ -97,6 +98,22 @@ class PriceAuthorization(models.Model):
         string='Datos Temporales',
     )
 
+    # ── CANDADO DE DUPLICADOS (2 sep 2026): una solicitud IDÉNTICA (misma
+    # operación, cliente, proyecto, orden, divisa y los mismos productos con
+    # cantidad y precio) a una que sigue PENDIENTE no se vuelve a crear ni
+    # a notificar: se reutiliza la pendiente. La firma se guarda para
+    # buscarla con un índice, no comparando líneas. ──
+    som_request_signature = fields.Char(
+        string='Firma de la solicitud', index=True, readonly=True, copy=False)
+    som_duplicate_notice = fields.Char(
+        string='Aviso de duplicado', store=False, readonly=True,
+        help='Solo en memoria: mensaje para el vendedor cuando su solicitud se '
+             'reutilizó en vez de crear otra.')
+    som_resend_count = fields.Integer(
+        string='Reenvíos evitados', default=0, readonly=True, copy=False,
+        help='Veces que el vendedor volvió a mandar esta misma solicitud '
+             'mientras seguía pendiente (no se creó ni notificó ninguna).')
+
     sale_order_id = fields.Many2one(
         'sale.order',
         string='Orden de Venta Generada',
@@ -132,24 +149,109 @@ class PriceAuthorization(models.Model):
                 return order.company_id
         return self.env.company
 
+    @api.model
+    def _som_request_signature(self, vals):
+        """Firma determinista de la solicitud a partir de lo que TODOS los
+        flujos mandan en temp_data (product_groups con total_quantity y
+        product_prices). Sin precios o sin productos no hay firma (y no se
+        deduplica: ante la duda, se crea)."""
+        td = vals.get('temp_data') or {}
+        if not isinstance(td, dict):
+            return False
+        groups = td.get('product_groups') or {}
+        prices = td.get('product_prices') or {}
+        if not groups or not prices:
+            return False
+        items = []
+        for pid, group in groups.items():
+            qty = float((group or {}).get('total_quantity') or 0.0)
+            price = prices.get(str(pid), prices.get(pid))
+            if price is None:
+                return False
+            items.append([str(pid), round(qty, 4), round(float(price or 0.0), 4)])
+        items.sort()
+        return json.dumps({
+            'op': vals.get('operation_type') or '',
+            'partner': vals.get('partner_id') or False,
+            'project': vals.get('project_id') or False,
+            'order': vals.get('sale_order_id') or False,
+            'hold': td.get('hold_order_id') or False,
+            'cur': vals.get('currency_code') or '',
+            'items': items,
+        }, sort_keys=True)
+
+    @api.model
+    def _som_reused_ids(self):
+        # cr.cache vive toda la transacción (precommit.data se vacía en cada
+        # flush y perdería la marca entre la cabecera y sus líneas).
+        return self.env.cr.cache.setdefault('som_price_auth_reused', set())
+
+    def _som_mark_resent(self, vals):
+        """La solicitud pendiente se reutiliza: aviso al vendedor (en memoria
+        y en el chatter de la orden/apartado), rastro en la propia solicitud
+        y NINGUNA notificación nueva a los autorizadores."""
+        self.ensure_one()
+        self._som_reused_ids().add(self.id)
+        notice = (
+            'Ya existe la solicitud %s pendiente con exactamente estos productos, '
+            'cantidades y precios. No se envió otra: el autorizador sigue viendo la misma.'
+        ) % self.name
+        self.sudo().write({'som_resend_count': (self.som_resend_count or 0) + 1})
+        self.som_duplicate_notice = notice
+        body = Markup('<p>Reenvío idéntico del vendedor %s: no se creó otra solicitud ni se volvió a avisar '
+                      '(reenvíos evitados: %d).</p>') % (self.env.user.name, self.som_resend_count)
+        try:
+            self.sudo().message_post(body=body, message_type='notification')
+        except Exception:  # noqa: BLE001
+            pass
+        order_id = vals.get('sale_order_id')
+        if order_id:
+            try:
+                self.env['sale.order'].sudo().browse(order_id).message_post(
+                    body=Markup('<p>%s</p>') % notice, message_type='notification')
+            except Exception:  # noqa: BLE001
+                pass
+        _logger.info('[PRICE AUTH] %s reenviada idéntica por %s: reutilizada (sin nueva notificación)',
+                     self.name, self.env.user.name)
+        return notice
+
     @api.model_create_multi
     def create(self, vals_list):
+        reused = self.browse()
+        to_create = []
         for vals in vals_list:
             company = self._som_company_from_vals(vals)
             if not vals.get('company_id'):
                 vals['company_id'] = company.id
+
+            # CANDADO: misma solicitud pendiente → se reutiliza, no se crea.
+            signature = self._som_request_signature(vals)
+            vals['som_request_signature'] = signature or False
+            if signature:
+                dup = self.sudo().search([
+                    ('state', '=', 'pending'),
+                    ('company_id', '=', company.id),
+                    ('som_request_signature', '=', signature),
+                ], order='id desc', limit=1)
+                if dup:
+                    dup = dup.with_env(self.env)
+                    dup._som_mark_resent(vals)
+                    reused |= dup
+                    continue
+
             if vals.get('name', 'Nuevo') == 'Nuevo':
                 vals['name'] = self.env['sale.order']._som_next_sequence(
                     'price.authorization', company) or 'Nuevo'
 
             vals['state'] = 'pending'
+            to_create.append(vals)
 
-        records = super().create(vals_list)
+        records = super().create(to_create) if to_create else self.browse()
 
         for record in records:
             record._notify_authorizers()
 
-        return records
+        return records | reused
 
     @api.model
     def _som_authorizer_users(self):
@@ -995,6 +1097,28 @@ class PriceAuthorizationLine(models.Model):
             for level_field in ('medium_price', 'minimum_price', 'level_4_price', 'level_5_price'):
                 if level_field in vals and vals[level_field] is not None:
                     vals[level_field] = math.ceil(vals[level_field])
+
+        # Solicitud REUTILIZADA (reenvío idéntico): los flujos crean sus
+        # líneas después de la cabecera; aquí se devuelve la línea que ya
+        # existe para ese producto en vez de duplicarla.
+        reused = self.env['price.authorization']._som_reused_ids()
+        if reused:
+            result = self.browse()
+            fresh = []
+            for vals in vals_list:
+                auth_id = vals.get('authorization_id')
+                if auth_id in reused:
+                    existing = self.search([
+                        ('authorization_id', '=', auth_id),
+                        ('product_id', '=', vals.get('product_id')),
+                    ], limit=1)
+                    if existing:
+                        result |= existing
+                        continue
+                fresh.append(vals)
+            if fresh:
+                result |= super().create(fresh)
+            return result
 
         return super().create(vals_list)
 
