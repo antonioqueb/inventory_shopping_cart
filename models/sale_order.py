@@ -128,11 +128,89 @@ class SaleOrderLine(models.Model):
             if ops:
                 line.with_context(som_skip_iva_force=True).tax_ids = ops
 
+    # ══════════════════════════════════════════════════════════════════
+    # ETIQUETA DE NIVEL HONESTA (3 sep 2026)
+    #
+    # x_price_selector es una etiqueta ESTÁTICA y la escalera de precios se
+    # recalcula todos los días (costo × utilidad × TC Banorte). Una línea
+    # capturada con "N1 = 690" seguía diciendo N1 cuando el P1 vigente ya
+    # era 700: el importe (690 × m²) parecía "mal calculado" (V/291, V/743).
+    # Regla del usuario: si el precio de la línea NO coincide con el nivel
+    # que dice la etiqueta, la etiqueta pasa a "Personalizado" con el monto
+    # real de la orden; jamás se toca el precio. Corre al guardar la línea
+    # y en un cron diario (después del recálculo de la escalera).
+    # ══════════════════════════════════════════════════════════════════
+    SOM_LEVEL_SELECTORS = ('high', 'medium', 'minimum', 'level_4', 'level_5')
+
+    def _som_selector_level_price(self):
+        """Precio VIGENTE del nivel etiquetado en la divisa de la orden
+        (0.0 si no hay escalera para ese nivel: no se puede juzgar)."""
+        self.ensure_one()
+        order = self.order_id
+        currency = order.pricelist_id.currency_id or order.currency_id
+        return self.env['product.template']._get_price_level_value(
+            self.product_id.product_tmpl_id, self.x_price_selector,
+            currency.name or 'USD', company=order.company_id or self.company_id,
+        )
+
+    def _som_reconcile_price_selector(self):
+        """Etiqueta ≠ precio → 'Personalizado'. Devuelve las líneas
+        reetiquetadas. Nunca modifica price_unit ni sube de custom a nivel:
+        Personalizado es siempre verdad (el precio es el que es)."""
+        from odoo.tools import float_compare
+        drifted = self.browse()
+        for line in self:
+            if (
+                line.display_type or not line.product_id or not line.order_id
+                or line.x_price_selector in (False, 'custom')
+                or line.x_price_selector not in self.SOM_LEVEL_SELECTORS
+                or line.state in ('done', 'cancel')
+            ):
+                continue
+            level_price = line._som_selector_level_price()
+            if level_price <= 0:
+                continue  # sin escalera para ese nivel: no hay contra qué comparar
+            currency = line.order_id.pricelist_id.currency_id or line.order_id.currency_id
+            rounding = currency.rounding or 0.01
+            if float_compare(line.price_unit or 0.0, level_price, precision_rounding=rounding) != 0:
+                drifted |= line
+        if drifted:
+            drifted.with_context(
+                som_selector_reconciled=True, som_skip_iva_force=True,
+                tracking_disable=True,
+            ).write({'x_price_selector': 'custom'})
+            _logger.info(
+                "[SELECTOR] %s línea(s) reetiquetadas a Personalizado (precio "
+                "≠ nivel vigente): %s", len(drifted),
+                ", ".join(f"{l.order_id.name}/{l.id}" for l in drifted[:20]),
+            )
+        return drifted
+
+    @api.model
+    def cron_som_reconcile_price_selectors(self):
+        """Barrido diario: órdenes vivas (borrador, enviada, confirmada) con
+        etiqueta de nivel cuyo precio ya no coincide con la escalera."""
+        lines = self.search([
+            ('x_price_selector', 'in', list(self.SOM_LEVEL_SELECTORS)),
+            ('state', 'in', ('draft', 'sent', 'sale')),
+            ('display_type', '=', False),
+            ('product_id', '!=', False),
+        ])
+        drifted = lines._som_reconcile_price_selector()
+        _logger.info("[SELECTOR] cron: %s líneas revisadas, %s reetiquetadas.",
+                     len(lines), len(drifted))
+        return len(drifted)
+
     @api.model_create_multi
     def create(self, vals_list):
         lines = super().create(vals_list)
         if not self.env.context.get('som_skip_iva_force'):
             lines._som_force_service_iva()
+
+        # Etiqueta honesta: una línea nueva con "N1" pero precio distinto
+        # al P1 vigente nace como Personalizado.
+        if not self.env.context.get('som_selector_reconciled'):
+            lines._som_reconcile_price_selector()
 
         # CLAMP de descuentos también en líneas NUEVAS con descuento: si el
         # monto de descuento de la orden ya cruza el umbral, el descuento de
@@ -212,6 +290,14 @@ class SaleOrderLine(models.Model):
                 violations = order._som_authorized_floor_violations()
                 if violations:
                     order._som_alert_floor_violation(violations)
+
+        # Etiqueta honesta: precio editado a mano (o nivel cambiado sin su
+        # precio) → si ya no coincide con el nivel vigente, Personalizado.
+        if (
+            ('price_unit' in vals or 'x_price_selector' in vals or 'product_id' in vals)
+            and not self.env.context.get('som_selector_reconciled')
+        ):
+            self._som_reconcile_price_selector()
 
         if 'price_unit' in vals or 'product_id' in vals:
             self.order_id._som_price_auth_auto_request()

@@ -12,5 +12,20 @@
             <field name="nextcall" eval="DateTime.now().strftime('%Y-%m-%d %H:%M:%S')"/>
             <field name="active">True</field>
         </record>
+
+        <!-- Etiqueta de nivel honesta: tras el recálculo diario de la
+             escalera, las líneas cuyo precio ya no coincide con su nivel
+             pasan a "Personalizado" (el precio no se toca). -->
+        <record id="ir_cron_som_reconcile_price_selectors" model="ir.cron">
+            <field name="name">Nivel de precio: reetiquetar líneas desfasadas</field>
+            <field name="model_id" ref="sale.model_sale_order_line"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_som_reconcile_price_selectors()</field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="nextcall" eval="(DateTime.now() + timedelta(minutes=5)).strftime('%Y-%m-%d %H:%M:%S')"/>
+            <field name="active">True</field>
+        </record>
     </data>
 </odoo>
