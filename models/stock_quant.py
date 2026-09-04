@@ -463,6 +463,22 @@ class StockQuant(models.Model):
             'filename': f'etiquetas_{label_format}_{fields.Date.today()}.zpl'
         }
 
+    @staticmethod
+    def _som_lomo_suffix_font(suffix):
+        """Tamaño de la fuente ^A0N del sufijo del lomo según su largo, para
+        que quepa en la banda de 160 dots (203 dpi): hasta 2 caracteres
+        conserva el tamaño grande original; más largo, se reduce."""
+        n = len(suffix or '')
+        if n <= 2:
+            return 78
+        if n == 3:
+            return 68
+        if n == 4:
+            return 58
+        if n == 5:
+            return 48
+        return 40
+
     def _generate_canto_lomo_zpl(self, quants):
         """
         Genera etiquetas formato 17.5x1 cm (canto/lomo).
@@ -483,10 +499,16 @@ class StockQuant(models.Model):
 
                 lot_name = (lot.name or '').strip()
 
+                # Corte en el PRIMER guión (4 sep 2026): "20542-12-1" →
+                # arriba "20542", abajo "12-1". Antes se cortaba en el
+                # último y arriba quedaba "20542-12", que desbordaba la
+                # banda de 160 dots. El sufijo largo baja de tamaño para
+                # entrar en la banda sin recortarse.
                 if '-' in lot_name:
-                    lot_prefix, lot_suffix = lot_name.rsplit('-', 1)
+                    lot_prefix, lot_suffix = lot_name.split('-', 1)
                 else:
                     lot_prefix, lot_suffix = lot_name, ''
+                suffix_font = self._som_lomo_suffix_font(lot_suffix)
 
                 product_name = (product.name or '').strip()
                 if len(product_name) > 45:
@@ -518,7 +540,7 @@ class StockQuant(models.Model):
                 # banda (160 de ancho, ~50 de alto, sin rotar como ^A0N).
                 zpl += f"^FO{26 + x},14" + SOM_LOGO_CANTO_ZPL + "^FS\n"
                 zpl += f"^FO{18 + x},75^A0N,35,37^FB160,1,0,C^FD{lot_prefix}^FS\n"
-                zpl += f"^FO{28 + x},130^A0N,78,78^FB160,1,0,C^FD{lot_suffix}^FS\n"
+                zpl += f"^FO{28 + x},130^A0N,{suffix_font},{suffix_font}^FB160,1,0,C^FD{lot_suffix}^FS\n"
                 zpl += f"^FO{133 + x},232^A0R,35,35^FD{product_name}^FS\n"
                 zpl += f"^FO{88 + x},232^A0R,35,35^FD{dim_line}^FS\n"
                 zpl += f"^FO{38 + x},232^A0R,35,35^FD{lote_origen}^FS\n"
