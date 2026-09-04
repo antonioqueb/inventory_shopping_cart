@@ -15,6 +15,13 @@ export class PackChoiceDialog extends Component {
         this.state = useState({ custom: (info.options && info.options[0]) ? info.options[0].packs : 1 });
     }
 
+    // Las plantillas OWL no exponen globales (Number, Math…): todo
+    // formato se hace aquí. Llamar Number() en el XML tumbaba el diálogo
+    // ("ctx.Number is not a function", 4 sep 2026).
+    fmt(value) {
+        return Number(value || 0).toFixed(2);
+    }
+
     qtyFor(packs) {
         return (Number(packs) * Number(this.info.qty_per_pack || 0)).toFixed(2);
     }

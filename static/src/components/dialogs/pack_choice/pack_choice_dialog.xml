@@ -7,8 +7,8 @@
                     <div class="fw-bold" t-esc="info.product_name"/>
                     <div class="text-muted small">
                         Empaque: <b t-esc="info.pack_name"/> ·
-                        pediste <b t-esc="Number(info.requested).toFixed(2)"/> m² ·
-                        disponible <b t-esc="Number(info.available).toFixed(2)"/> m²
+                        pediste <b t-esc="fmt(info.requested)"/> m² ·
+                        disponible <b t-esc="fmt(info.available)"/> m²
                         (hasta <b t-esc="info.max_packs"/> empaques)
                     </div>
                 </div>
