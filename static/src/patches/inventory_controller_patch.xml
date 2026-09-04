@@ -24,7 +24,7 @@
                         type="checkbox" 
                         class="cart-checkbox-all" 
                         t-att-checked="props.areAllCurrentProductSelected ? (props.areAllCurrentProductSelected() ? 'checked' : undefined) : undefined"
-                        t-on-click.stop="() => props.areAllCurrentProductSelected() ? props.deselectAllCurrentProduct() : props.selectAllCurrentProduct()"
+                        t-on-click.stop.prevent="() => props.areAllCurrentProductSelected() ? props.deselectAllCurrentProduct() : props.selectAllCurrentProduct()"
                         title="Seleccionar/Deseleccionar todos los lotes disponibles de este producto"
                     />
                     <small style="font-size: 10px; color: #666;">Todo</small>
@@ -37,15 +37,14 @@
             <td class="col-checkbox text-center">
                 <div class="d-flex align-items-center justify-content-center gap-2" t-on-click.stop="">
                     
-                    <!-- Checkbox: deshabilitado si tiene hold o está en orden de venta,
-                         SALVO que el usuario tenga permiso de inventario puro (canSelectBlocked) -->
+                    <!-- Un lote bloqueado que ya estaba seleccionado puede quitarse. -->
                     <input 
                         type="checkbox"
                         class="form-check-input cart-checkbox"
                         t-att-checked="props.isInCart ? (props.isInCart(detail.id) ? 'checked' : undefined) : undefined"
-                        t-att-disabled="(detail.tiene_hold or detail.en_orden_venta or detail.en_taller or detail.is_transit or (detail.en_carrito and detail.cart_info and !detail.cart_info.is_mine)) and !(props.cart and props.cart.canSelectBlocked)"
-                        t-on-click.stop="() => props.toggleCartSelection ? props.toggleCartSelection(detail) : null"
-                        t-att-title="(props.cart and props.cart.canSelectBlocked and (detail.tiene_hold or detail.en_orden_venta or detail.en_taller or detail.is_transit)) ? (detail.tiene_hold ? 'Lote apartado — disponible solo para movimiento/etiquetas' : (detail.en_orden_venta ? 'Lote en orden de venta — disponible solo para movimiento/etiquetas' : (detail.en_taller ? 'Lote en taller/producción — disponible solo para movimiento/etiquetas' : 'Lote en tránsito — disponible solo para movimiento/etiquetas'))) : (detail.tiene_hold ? 'Lote con apartado activo' : (detail.en_orden_venta ? 'Lote en orden de venta confirmada' : (detail.en_taller ? 'Lote en taller / producción' : (detail.is_transit ? 'Lote en tránsito' : ''))))"
+                        t-att-disabled="!isCartDetailSelectable(detail) and !(props.isInCart and props.isInCart(detail.id))"
+                        t-on-click.stop.prevent="() => props.toggleCartSelection ? props.toggleCartSelection(detail) : null"
+                        t-att-title="cartDetailTitle(detail)"
                     />
 
                     <!-- Input adicional para Formato y Pieza (permite parcialidades), NO para Placa -->
@@ -56,6 +55,7 @@
                                 class="form-control form-control-sm p-1 text-center"
                                 style="width: 60px; height: 24px; font-size: 11px;"
                                 t-att-value="props.getDisplayQuantity ? props.getDisplayQuantity(detail.id) : ''"
+                                t-att-disabled="!isCartDetailSelectable(detail)"
                                 t-on-change="(ev) => props.onInputManualQuantity ? props.onInputManualQuantity(detail, ev.target.value) : null"
                                 placeholder="Total"
                                 min="0"

@@ -1,7 +1,7 @@
 # ./__manifest__.py
 {
     'name': 'Carrito de Compra para Inventario Visual',
-    'version': '19.0.26.50.0',
+    'version': '19.0.26.51.0',
     'category': 'Inventory/Inventory',
     'summary': 'Sistema de carrito de compra y apartado múltiple desde inventario visual',
     'author': 'Alphaqueb Consulting SAS',
@@ -54,6 +54,7 @@
             'inventory_shopping_cart/static/src/components/price_level_selector/price_level_selector.js',
             'inventory_shopping_cart/static/src/components/hold_stone_selector/hold_stone_selector.js',
 
+            'inventory_shopping_cart/static/src/utils/cart_selection.js',
             'inventory_shopping_cart/static/src/components/cart_mixin/cart_mixin.js',
             'inventory_shopping_cart/static/src/components/floating_bar/floating_bar.js',
             'inventory_shopping_cart/static/src/components/dialogs/cart_dialog/cart_dialog.js',

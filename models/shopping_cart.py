@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+import math
 from datetime import timedelta
 
 from odoo import models, fields, api
@@ -153,19 +154,35 @@ class ShoppingCart(models.Model):
         if not all([quant_id, lot_id, product_id, quantity is not None]):
             return {'success': False, 'message': 'Faltan parámetros'}
 
-        # Validación temprana (antes solo reventaba hasta crear la cotización):
-        # - placa completamente reservada en otra operación: NO entra al carrito;
-        # - placa con hold: entra (puede ser para el mismo cliente, que aún no
-        #   se conoce aquí) pero con AVISO de para quién está apartada.
-        warning = ''
-        # Movedor de Ubicaciones: puede agregar placas COMPROMETIDAS
-        # (reservadas en venta/entrega, con hold, o en carrito de otro) para
-        # trasladarlas de ubicación — la reserva fuerte se traspasa al bin
-        # destino al validar el traslado.
-        is_location_mover = self.env.user.has_group(
-            'inventory_shopping_cart.group_cart_location_mover')
-        quant = self.env['stock.quant'].sudo().browse(int(quant_id)).exists()
-        if quant and not is_location_mover:
+        Quant = self.env['stock.quant']
+        quant = Quant.browse(int(quant_id)).exists()
+        if not quant or quant.company_id not in self.env.companies \
+                or quant.lot_id.id != int(lot_id) \
+                or quant.product_id.id != int(product_id):
+            return {'success': False, 'message': 'El material seleccionado ya no está disponible.'}
+        quantity = float(quantity)
+        if not math.isfinite(quantity) or quantity <= 0:
+            return {'success': False, 'message': 'La cantidad debe ser mayor que cero.'}
+
+        # La selección operativa de almacén no habilita tomar material
+        # comprometido para usuarios que también pueden vender/apartar.
+        is_location_mover = Quant._som_cart_can_select_blocked()
+        if not is_location_mover:
+            # Releer el mismo estado que bloquea la casilla: una reserva
+            # comercial puede existir antes de la reserva física del quant.
+            details = Quant.get_quant_details([quant.id])
+            detail = next((d for d in details if d['id'] == quant.id), None)
+            if not detail or detail.get('cart_blocked'):
+                return {
+                    'success': False,
+                    'message': '%s: %s. No se puede agregar al carrito.' % (
+                        quant.lot_id.name,
+                        (detail or {}).get('cart_block_reason') or 'Material no disponible'),
+                    'selection_state': detail or {
+                        'cart_blocked': True,
+                        'cart_block_reason': 'Material no disponible',
+                    },
+                }
             free_qty = (quant.quantity or 0.0) - (quant.reserved_quantity or 0.0)
             if free_qty <= 0 and quant.lot_id:
                 # La reserva puede venir SOLO de un traslado interno de
@@ -176,6 +193,7 @@ class ShoppingCart(models.Model):
                     ('product_id', '=', quant.product_id.id),
                     ('lot_id', '=', quant.lot_id.id),
                     ('location_id', '=', quant.location_id.id),
+                    ('company_id', '=', quant.company_id.id),
                     ('state', 'in', ('assigned', 'partially_available')),
                     ('picking_id.picking_type_code', '=', 'internal'),
                     ('picking_id.origin', '=like', 'Carrito - %'),
@@ -183,6 +201,7 @@ class ShoppingCart(models.Model):
                 ])
                 weak_reserved = sum(weak_lines.mapped('quantity'))
                 free_qty += weak_reserved
+            free_qty = min(free_qty, detail.get('qty_disponible', detail['quantity']))
             if free_qty <= 0:
                 return {
                     'success': False,
@@ -190,13 +209,18 @@ class ShoppingCart(models.Model):
                         f'La placa {quant.lot_id.name or ""} ya está reservada '
                         'en otra operación (venta/entrega). No se puede agregar.'
                     ),
+                    'selection_state': {
+                        'cart_blocked': True,
+                        'cart_block_reason': 'Lote reservado en otra operación',
+                    },
                 }
-            if getattr(quant, 'x_tiene_hold', False) and quant.x_hold_activo_id:
-                hold_partner = quant.x_hold_activo_id.partner_id
-                warning = (
-                    f' ⚠ Ojo: apartada para {hold_partner.name}. Solo podrás '
-                    'cotizarla a ese cliente.'
-                )
+            if quantity > free_qty + 0.0001:
+                return {
+                    'success': False,
+                    'message': 'Del lote %s solo quedan %.4f disponibles; ajusta la cantidad.' % (
+                        quant.lot_id.name, free_qty),
+                    'selection_state': dict(detail, quantity=free_qty, qty_disponible=free_qty),
+                }
 
         # ESTADO DE CARRITO ENTRE VENDEDORES: si el lote vive en el carrito
         # ACTIVO de otro usuario, no se puede tomar — se informa de quién es
@@ -228,6 +252,10 @@ class ShoppingCart(models.Model):
                     ),
                     entry._som_hours_left(),
                 ),
+                'selection_state': {
+                    'cart_blocked': True,
+                    'cart_block_reason': 'Lote en el carrito de %s' % entry.user_id.name,
+                },
             }
 
         # EMPAQUE ESTÁNDAR: si el producto se vende por empaque, la cantidad
@@ -242,7 +270,7 @@ class ShoppingCart(models.Model):
         pack_info = None if is_location_mover else self._som_pack_for_quant(quant, product_id)
         if pack_info:
             pack, qpp = pack_info
-            free_avail = quant.quantity - quant.reserved_quantity if quant else float(quantity)
+            free_avail = free_qty
             eps = 1e-6
             # Máximo de empaques = el LOTE COMPLETO: si el lote equivale a N
             # cajas con tolerancia (empaque redondeado), el máximo es N y
@@ -310,7 +338,7 @@ class ShoppingCart(models.Model):
         if existing:
             # Si ya existe, actualizamos la cantidad
             existing.write({'quantity': quantity})
-            return {'success': True, 'message': 'Cantidad actualizada' + warning + pack_note,
+            return {'success': True, 'message': 'Cantidad actualizada' + pack_note,
                     'quantity': quantity, 'adjusted': bool(pack_info)}
 
         # Si no existe, creamos
@@ -321,7 +349,7 @@ class ShoppingCart(models.Model):
             'quantity': quantity,
             'location_name': location_name or ''
         })
-        return {'success': True, 'message': ('Agregado al carrito.' + warning) if warning else '' + pack_note, 'quantity': quantity, 'adjusted': bool(pack_info)}
+        return {'success': True, 'message': pack_note, 'quantity': quantity, 'adjusted': bool(pack_info)}
     
     @api.model
     def remove_from_cart(self, quant_id):

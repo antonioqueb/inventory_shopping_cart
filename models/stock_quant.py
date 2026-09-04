@@ -36,7 +36,8 @@ class StockQuant(models.Model):
             Cart = self.env['shopping.cart'].sudo()
             Cart._gc_expired()
             entries = Cart.search([
-                ('quant_id', 'in', [d.get('id') for d in res if d.get('id')]),
+                ('lot_id', 'in', list({d['lot_id'] for d in res if d.get('lot_id')})),
+                ('company_id', 'in', self.env.companies.ids),
             ])
             by_quant = {}
             by_lot = {}
@@ -71,7 +72,48 @@ class StockQuant(models.Model):
                     d['cart_info'] = None
         except Exception:
             _logger.exception('[CART STATE] No se pudo anotar el estado de carrito.')
+
+        order_ids = {oid for d in res for oid in d.get('sale_order_ids', [])}
+        orders = self.env['sale.order'].sudo().search([
+            ('id', 'in', list(order_ids)),
+            ('company_id', 'in', self.env.companies.ids),
+        ]) if order_ids else self.env['sale.order']
+        order_names = {order.id: order.name for order in orders}
+        for detail in res:
+            detail['sale_order_names'] = sorted({
+                order_names[oid] for oid in detail.get('sale_order_ids', [])
+                if oid in order_names
+            })
+            detail['cart_block_reason'] = self._som_cart_block_reason(detail)
+            detail['cart_blocked'] = bool(detail['cart_block_reason'])
         return res
+
+    @staticmethod
+    def _som_cart_block_reason(detail):
+        if detail.get('en_orden_venta'):
+            names = ', '.join(detail.get('sale_order_names') or [])
+            return 'Comprometido en %s' % names if names else 'Lote comprometido en una orden de venta'
+        if detail.get('tiene_hold'):
+            info = detail.get('hold_info') or {}
+            return 'Lote con apartado activo%s' % (
+                ': %s' % info['order_name'] if info.get('order_name') else '')
+        if detail.get('en_taller'):
+            return 'Lote comprometido en taller / producción'
+        if detail.get('is_transit'):
+            return 'Lote en tránsito'
+        if detail.get('is_committed_row'):
+            return 'Cantidad comprometida; selecciona únicamente el remanente disponible'
+        if detail.get('en_carrito') and not (detail.get('cart_info') or {}).get('is_mine'):
+            return 'Lote en el carrito de %s' % (
+                (detail.get('cart_info') or {}).get('user_name') or 'otro usuario')
+        if (detail.get('quantity') or 0.0) <= 0:
+            return 'Lote sin existencia disponible'
+        return ''
+
+    @api.model
+    def _som_cart_can_select_blocked(self):
+        return not self.check_sales_permissions() and (
+            self.check_inventory_permissions() or self.check_cart_location_mover())
 
     @api.model
     def get_current_user_info(self):
@@ -247,8 +289,7 @@ class StockQuant(models.Model):
     @api.model
     def check_cart_location_mover(self):
         """Grupo 'Carrito: Movedor de Ubicaciones': selecciona placas
-        comprometidas (hold/venta/carrito ajeno) para traslados aunque el
-        usuario también tenga rol de ventas."""
+        comprometidas para traslados si el usuario no tiene rol de ventas."""
         return self.env.user.has_group(
             'inventory_shopping_cart.group_cart_location_mover')
 

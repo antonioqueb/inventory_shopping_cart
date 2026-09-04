@@ -5,6 +5,19 @@ import { useState } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { CartInfoDialog } from "../dialogs/cart_info/cart_info_dialog";
 import { PackChoiceDialog } from "../dialogs/pack_choice/pack_choice_dialog";
+import { ProductDetails } from "@inventory_visual_enhanced/components/product_details/product_details";
+import { canSelectBlocked, isCartDetailBlocked, isCartDetailSelectable, cartDetailBlockReason } from "../../utils/cart_selection";
+
+patch(ProductDetails.prototype, {
+    isCartDetailSelectable(detail) {
+        return isCartDetailSelectable(detail, this.props.cart);
+    },
+    cartDetailTitle(detail) {
+        if (!isCartDetailBlocked(detail)) return '';
+        const reason = cartDetailBlockReason(detail);
+        return this.isCartDetailSelectable(detail) ? `${reason}. Solo movimiento/etiquetas` : reason;
+    },
+});
 
 const InventoryVisualController = registry.category("actions").get("inventory_visual_enhanced");
 
@@ -29,6 +42,8 @@ patch(InventoryVisualController.prototype, {
             productGroups: {},
             hasSalesPermissions: false,
             hasInventoryPermissions: false,
+            salesPermissionsLoaded: false,
+            inventoryPermissionsLoaded: false,
             canSelectBlocked: false
         });
         
@@ -73,6 +88,7 @@ patch(InventoryVisualController.prototype, {
         try {
             const result = await this.orm.call('stock.quant', 'check_sales_permissions', []);
             this.cart.hasSalesPermissions = result;
+            this.cart.salesPermissionsLoaded = true;
         } catch (error) {
             console.error('[CART] Error verificando permisos:', error);
             this.cart.hasSalesPermissions = false;
@@ -84,6 +100,7 @@ patch(InventoryVisualController.prototype, {
         try {
             const result = await this.orm.call('stock.quant', 'check_inventory_permissions', []);
             this.cart.hasInventoryPermissions = result;
+            this.cart.inventoryPermissionsLoaded = true;
         } catch (error) {
             console.error('[CART] Error verificando permisos de inventario:', error);
             this.cart.hasInventoryPermissions = false;
@@ -99,15 +116,11 @@ patch(InventoryVisualController.prototype, {
     },
 
     /**
-     * Define quién puede seleccionar placas ya comprometidas (hold u orden de venta).
-     * - Rol de inventario PURO (mueve/imprime pero no aparta ni vende), o
-     * - Grupo 'Carrito: Movedor de Ubicaciones' — inventario especial que
-     *   selecciona comprometidas para traslados AUNQUE tenga rol de ventas.
+     * Solo almacén sin permisos de venta puede seleccionar comprometidas.
+     * Esperar ambas respuestas evita habilitar la excepción durante la carga.
      */
     _updateBlockedSelectionPolicy() {
-        this.cart.canSelectBlocked =
-            (this.cart.hasInventoryPermissions && !this.cart.hasSalesPermissions)
-            || !!this.cart.isLocationMover;
+        this.cart.canSelectBlocked = canSelectBlocked(this.cart);
     },
     
     async loadCartFromDB() {
@@ -178,12 +191,7 @@ patch(InventoryVisualController.prototype, {
      * poder seleccionarse.
      */
     _isLotBlocked(detail) {
-        return !!(
-            detail.tiene_hold ||
-            detail.en_orden_venta ||
-            detail.en_taller ||
-            detail.is_transit
-        );
+        return isCartDetailBlocked(detail);
     },
 
     /**
@@ -192,10 +200,7 @@ patch(InventoryVisualController.prototype, {
      * (para traslado o impresión de etiquetas).
      */
     _isLotSelectable(detail) {
-        if (this.cart.canSelectBlocked) {
-            return true;
-        }
-        return !this._isLotBlocked(detail);
+        return isCartDetailSelectable(detail, this.cart);
     },
 
     /**
@@ -207,27 +212,6 @@ patch(InventoryVisualController.prototype, {
      *   -> Si input está vacío: Usa TODO el lote.
      */
     async toggleCartSelection(detail) {
-        // === BLOQUEO: solo aplica a roles que pueden apartar o vender ===
-        if (!this.cart.canSelectBlocked) {
-            if (detail.tiene_hold) {
-                this.notification.add("Este lote tiene un apartado activo y no puede seleccionarse", { type: "warning" });
-                return;
-            }
-            if (detail.en_orden_venta) {
-                this.notification.add("Este lote está asignado a una orden de venta confirmada", { type: "warning" });
-                return;
-            }
-            if (detail.en_taller) {
-                this.notification.add("Este lote está en taller / producción y no puede seleccionarse mientras se procesa", { type: "warning" });
-                return;
-            }
-            if (detail.is_transit) {
-                this.notification.add("Este lote está en tránsito y no puede seleccionarse", { type: "warning" });
-                return;
-            }
-        }
-        // === FIN BLOQUEO ===
-
         const index = this.cart.items.findIndex(item => item.id === detail.id);
         
         if (index >= 0) {
@@ -235,6 +219,10 @@ patch(InventoryVisualController.prototype, {
             this.cart.items.splice(index, 1);
             await this.orm.call('shopping.cart', 'remove_from_cart', [detail.id]);
         } else {
+            if (!this._isLotSelectable(detail)) {
+                this.notification.add(cartDetailBlockReason(detail), { type: "warning" });
+                return;
+            }
             // ESTABA DESMARCADO -> MARCAR (Agregar)
             
             // Verificar si hay un valor manual escrito
@@ -286,28 +274,12 @@ patch(InventoryVisualController.prototype, {
     },
 
     async addOrUpdateCartItem(detail, quantity, packChoice = null) {
+        if (!this._isLotSelectable(detail)) {
+            this.notification.add(cartDetailBlockReason(detail), { type: "warning" });
+            return;
+        }
         const index = this.cart.items.findIndex(item => item.id === detail.id);
         const prevQty = index >= 0 ? this.cart.items[index].quantity : null;
-        
-        if (index >= 0) {
-            // Actualizar local
-            this.cart.items[index].quantity = quantity;
-        } else {
-            // Agregar nuevo local
-            this.cart.items.push({
-                id: detail.id,
-                lot_id: detail.lot_id,
-                lot_name: detail.lot_name,
-                product_id: this.getCurrentProductId(detail),
-                product_name: this.getCurrentProductName(detail),
-                quantity: quantity,
-                location_name: detail.location_name,
-                tiene_hold: detail.tiene_hold,
-                hold_info: detail.hold_info,
-                seller_name: detail.seller_name || '',
-                product_type: detail.tipo || 'placa'
-            });
-        }
 
         try {
             const res = await this.orm.call('shopping.cart', 'add_to_cart', [], {
@@ -319,15 +291,6 @@ patch(InventoryVisualController.prototype, {
                 pack_choice: packChoice,
             });
             if (res && res.needs_pack_choice) {
-                // La cantidad no cuadra en empaques: el vendedor decide a
-                // cuántos ajustar. Mientras tanto se revierte lo local.
-                const idx = this.cart.items.findIndex(item => item.id === detail.id);
-                if (idx >= 0) {
-                    if (prevQty !== null) this.cart.items[idx].quantity = prevQty;
-                    else this.cart.items.splice(idx, 1);
-                }
-                this.updateCartSummary();
-                this.cart.items = [...this.cart.items];
                 this.dialog.add(PackChoiceDialog, {
                     info: res,
                     onChoose: async (packs) => {
@@ -345,14 +308,39 @@ patch(InventoryVisualController.prototype, {
                 return;
             }
             if (res && res.success === false) {
-                // El servidor rechazó (p.ej. no completa ni un empaque):
-                // se revierte lo local y se explica.
-                const idx = this.cart.items.findIndex(item => item.id === detail.id);
-                if (idx >= 0) this.cart.items.splice(idx, 1);
+                if (res.selection_state) {
+                    Object.assign(detail, res.selection_state);
+                    const idx = this.cart.items.findIndex(item => item.id === detail.id);
+                    if (idx >= 0) {
+                        await this.orm.call('shopping.cart', 'remove_from_cart', [detail.id]);
+                        this.cart.items.splice(idx, 1);
+                    }
+                }
                 delete this.state.manualInputValues[detail.id];
+                this.updateCartSummary();
+                this.cart.items = [...this.cart.items];
                 this.notification.add(res.message || "No se pudo agregar al carrito", { type: "danger", sticky: true });
                 return;
             }
+            if (!res?.success) throw new Error("Respuesta de carrito inválida");
+
+            // Solo entra al carrito después de validar su disponibilidad en el servidor.
+            const item = {
+                id: detail.id,
+                lot_id: detail.lot_id,
+                lot_name: detail.lot_name,
+                product_id: this.getCurrentProductId(detail),
+                product_name: this.getCurrentProductName(detail),
+                quantity: res.quantity ?? quantity,
+                location_name: detail.location_name,
+                tiene_hold: detail.tiene_hold,
+                hold_info: detail.hold_info,
+                seller_name: detail.seller_name || '',
+                product_type: detail.tipo || 'placa',
+            };
+            const currentIndex = this.cart.items.findIndex(item => item.id === detail.id);
+            if (currentIndex >= 0) this.cart.items[currentIndex] = item;
+            else this.cart.items.push(item);
             if (res && res.adjusted && res.quantity) {
                 // Venta por empaque: la cantidad válida la fija el servidor
                 // (empaques completos). Se refleja en el carrito y en el input.
@@ -365,8 +353,6 @@ patch(InventoryVisualController.prototype, {
             }
         } catch (error) {
             console.error('[CART] Error agregando/actualizando en carrito:', error);
-            // Revertir si es nuevo y falló
-            if (index < 0) this.cart.items.pop(); 
             this.notification.add("Error al actualizar el carrito", { type: "danger" });
         }
     },
