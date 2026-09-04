@@ -474,6 +474,10 @@ class StockQuant(models.Model):
     LOMO_SUFFIX_Y = 130
     LOMO_FONT_MAX = 78
     LOMO_FONT_MIN = 30
+    # Sufijo CON guión: tope de fuente pedido por el usuario (4 sep 2026):
+    # "el mismo tamaño que antes, incluso un poco más pequeño" — antes
+    # "12-1" salía a 58; ahora arranca en 52 y baja solo si no cabe.
+    LOMO_FONT_MAX_HYPHEN = 52
 
     @classmethod
     def _som_lomo_suffix_layout(cls, suffix):
@@ -483,7 +487,12 @@ class StockQuant(models.Model):
         parts = (suffix or '').split('-')
         n_digits = sum(len(p) for p in parts)
         n_hyphens = max(len(parts) - 1, 0)
-        font = cls.LOMO_FONT_MAX
+        if n_hyphens:
+            font = cls.LOMO_FONT_MAX_HYPHEN
+        else:
+            # Sin guión: la escalera de siempre por número de caracteres.
+            font = (cls.LOMO_FONT_MAX if n_digits <= 2 else 68 if n_digits == 3
+                    else 58 if n_digits == 4 else 48 if n_digits == 5 else 40)
         while True:
             adv = 0.48 * font
             hyphen_w = max(4, round(0.14 * font))
