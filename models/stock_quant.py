@@ -463,21 +463,62 @@ class StockQuant(models.Model):
             'filename': f'etiquetas_{label_format}_{fields.Date.today()}.zpl'
         }
 
-    @staticmethod
-    def _som_lomo_suffix_font(suffix):
-        """Tamaño de la fuente ^A0N del sufijo del lomo según su largo, para
-        que quepa en la banda de 160 dots (203 dpi): hasta 2 caracteres
-        conserva el tamaño grande original; más largo, se reduce."""
-        n = len(suffix or '')
-        if n <= 2:
-            return 78
-        if n == 3:
-            return 68
-        if n == 4:
-            return 58
-        if n == 5:
-            return 48
-        return 40
+    # Métricas reales de la fuente ^A0 (CG Triumvirate condensada) medidas
+    # en Labelary a 203 dpi: avance por dígito ≈ 0.48 × ancho de fuente;
+    # el guión de texto mide ≈ 0.56 × f de ancho y 0.10 × f de grueso, y
+    # su centro queda a ≈ 0.44 × f bajo el ^FO. Con esos números se arma el
+    # sufijo del lomo a mano: dígitos en texto y el guión como una barra
+    # ^GB de 1/4 del tamaño (pedido 4 sep 2026), así caben más dígitos.
+    LOMO_BAND_W = 160          # ancho de la banda del sufijo (^FB160)
+    LOMO_BAND_X = 28           # inicio de la banda dentro de la columna
+    LOMO_SUFFIX_Y = 130
+    LOMO_FONT_MAX = 78
+    LOMO_FONT_MIN = 30
+
+    @classmethod
+    def _som_lomo_suffix_layout(cls, suffix):
+        """Devuelve (font, ancho_total, avance_digito, ancho_guion, hueco)
+        con la fuente MÁS GRANDE (78 → 30) con la que el sufijo cabe en la
+        banda. Los guiones cuentan como barra chica, no como carácter."""
+        parts = (suffix or '').split('-')
+        n_digits = sum(len(p) for p in parts)
+        n_hyphens = max(len(parts) - 1, 0)
+        font = cls.LOMO_FONT_MAX
+        while True:
+            adv = 0.48 * font
+            hyphen_w = max(4, round(0.14 * font))
+            gap = max(2, round(0.05 * font))
+            total = n_digits * adv + n_hyphens * (hyphen_w + 2 * gap)
+            if total <= cls.LOMO_BAND_W - 4 or font <= cls.LOMO_FONT_MIN:
+                return font, total, adv, hyphen_w, gap
+            font -= 2
+
+    @classmethod
+    def _som_lomo_suffix_zpl(cls, x, suffix):
+        """ZPL del sufijo del lomo centrado en su banda: sin guión va como
+        antes (un campo ^FB centrado); con guión, cada tramo de dígitos es
+        un campo y el guión una barra ^GB pequeña entre ellos."""
+        suffix = (suffix or '').strip()
+        if not suffix:
+            return ''
+        font, total, adv, hyphen_w, gap = cls._som_lomo_suffix_layout(suffix)
+        y = cls.LOMO_SUFFIX_Y
+        if '-' not in suffix:
+            return (f"^FO{cls.LOMO_BAND_X + x},{y}^A0N,{font},{font}"
+                    f"^FB{cls.LOMO_BAND_W},1,0,C^FD{suffix}^FS\n")
+        cx = cls.LOMO_BAND_X + x + (cls.LOMO_BAND_W - total) / 2.0
+        thick = max(2, round(0.04 * font))
+        hy = y + round(0.44 * font) - thick // 2
+        zpl = ''
+        parts = suffix.split('-')
+        for i, part in enumerate(parts):
+            if part:
+                zpl += f"^FO{int(round(cx))},{y}^A0N,{font},{font}^FD{part}^FS\n"
+                cx += len(part) * adv
+            if i < len(parts) - 1:
+                zpl += f"^FO{int(round(cx + gap))},{hy}^GB{hyphen_w},{thick},{thick}^FS\n"
+                cx += hyphen_w + 2 * gap
+        return zpl
 
     def _generate_canto_lomo_zpl(self, quants):
         """
@@ -508,7 +549,6 @@ class StockQuant(models.Model):
                     lot_prefix, lot_suffix = lot_name.split('-', 1)
                 else:
                     lot_prefix, lot_suffix = lot_name, ''
-                suffix_font = self._som_lomo_suffix_font(lot_suffix)
 
                 product_name = (product.name or '').strip()
                 if len(product_name) > 45:
@@ -540,7 +580,7 @@ class StockQuant(models.Model):
                 # banda (160 de ancho, ~50 de alto, sin rotar como ^A0N).
                 zpl += f"^FO{26 + x},14" + SOM_LOGO_CANTO_ZPL + "^FS\n"
                 zpl += f"^FO{18 + x},75^A0N,35,37^FB160,1,0,C^FD{lot_prefix}^FS\n"
-                zpl += f"^FO{28 + x},130^A0N,{suffix_font},{suffix_font}^FB160,1,0,C^FD{lot_suffix}^FS\n"
+                zpl += self._som_lomo_suffix_zpl(x, lot_suffix)
                 zpl += f"^FO{133 + x},232^A0R,35,35^FD{product_name}^FS\n"
                 zpl += f"^FO{88 + x},232^A0R,35,35^FD{dim_line}^FS\n"
                 zpl += f"^FO{38 + x},232^A0R,35,35^FD{lote_origen}^FS\n"
