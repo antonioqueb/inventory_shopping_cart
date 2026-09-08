@@ -258,79 +258,18 @@ class ShoppingCart(models.Model):
                 },
             }
 
-        # EMPAQUE ESTÁNDAR: si el producto se vende por empaque, la cantidad
-        # que entra al carrito se ajusta AQUÍ, al elegirla, a empaques
-        # completos (nunca fracciones). Antes el carrito aceptaba cualquier
-        # m² y la venta reventaba al final con "no es múltiplo exacto".
+        # EMPAQUE ESTÁNDAR = REFERENCIA, NO CANTIDAD OBLIGATORIA (incidencia
+        # V/745, 8 sep 2026). Antes la cantidad se ajustaba aquí a empaques
+        # completos ("menos de un empaque = un empaque"): 3 pzas de un lote
+        # de 8 se volvían 8. Ahora la cantidad capturada se respeta tal cual
+        # (ya validada contra lo disponible arriba) y el empaque solo se
+        # informa como equivalencia.
         pack_note = ''
-        # El Movedor de Ubicaciones NO vende: toma placas comprometidas para
-        # trasladarlas y etiquetarlas, tal cual están. La regla de empaques
-        # es de VENTA y se aplica al vendedor (y como candado al crear la
-        # orden/apartado), no al movimiento físico.
         pack_info = None if is_location_mover else self._som_pack_for_quant(quant, product_id)
         if pack_info:
             pack, qpp = pack_info
-            free_avail = free_qty
-            eps = 1e-6
-            # Máximo de empaques = el LOTE COMPLETO: si el lote equivale a N
-            # cajas con tolerancia (empaque redondeado), el máximo es N y
-            # elegirlo toma toda la cantidad real; si no, cajas que caben.
-            max_packs = 0
-            if free_avail > 0:
-                n_round = int(round(free_avail / qpp))
-                tol = max(0.02 * free_avail, 0.5 * qpp)
-                max_packs = n_round if (n_round >= 1 and abs(free_avail - n_round * qpp) <= tol) else int((free_avail + eps) // qpp)
-            pname = quant.product_id.display_name if quant else ''
-            if max_packs < 1 and free_avail > 0 and float(quantity) >= free_avail - 1e-6:
-                max_packs = 1  # lote completo menor a una caja: se vende como está
-            if max_packs < 1:
-                return {
-                    'success': False,
-                    'message': (
-                        'El producto %s se vende por empaque (%s = %g m²) y esta '
-                        'pieza/lote solo tiene %.2f m² disponibles: no completa '
-                        'ni un empaque.'
-                    ) % (pname, pack.display_name, qpp, free_avail),
-                }
-            whole_lot = float(quantity) >= free_avail - 1e-6
-            if whole_lot:
-                # LOTE COMPLETO: cajas físicas, válido aunque el empaque
-                # redondeado no dé múltiplo exacto (60 cajas de 2.166 =
-                # 129.96 ≠ 60 × 2.17). Se toma tal cual, sin preguntar.
-                quantity = round(free_avail, 6)
-                packs_n = max(1, int(round(quantity / qpp)))
-            elif pack_choice:
-                # El vendedor ya decidió cuántos empaques; el máximo = lote completo.
-                packs_n = max(1, min(int(pack_choice), max_packs))
-                quantity = round(free_avail, 6) if packs_n >= max_packs else round(packs_n * qpp, 6)
-                whole_lot = packs_n >= max_packs
-            else:
-                packs_f = float(quantity) / qpp
-                exact = abs(packs_f - round(packs_f)) <= 0.001 and 1 <= round(packs_f) <= max_packs
-                if not exact:
-                    # No cuadra: el VENDEDOR decide a cuántos empaques ajustar.
-                    low = int(packs_f + eps); high = low + 1
-                    cands = sorted({n for n in (low, high) if 1 <= n <= max_packs} | ({max_packs} if float(quantity) > max_packs * qpp else set()))
-                    if not cands:
-                        cands = [1]
-                    return {
-                        'success': False,
-                        'needs_pack_choice': True,
-                        'message': (
-                            '%s se vende por empaque (%s = %g m²). %.2f m² no es '
-                            'un número exacto de empaques: elige cuántos quieres.'
-                        ) % (pname, pack.display_name, qpp, float(quantity)),
-                        'product_name': pname,
-                        'pack_name': pack.display_name,
-                        'qty_per_pack': qpp,
-                        'requested': float(quantity),
-                        'available': free_avail,
-                        'max_packs': max_packs,
-                        'options': [{'packs': n, 'qty': round(free_avail if n >= max_packs else n * qpp, 6)} for n in cands],
-                    }
-                packs_n = int(round(packs_f))
-                quantity = round(packs_n * qpp, 6)
-            pack_note = (' = lote completo, %s empaque(s) (%s).' if whole_lot else ' = %s empaque(s) de %g m² (%s).') % ((packs_n, pack.display_name) if whole_lot else (packs_n, qpp, pack.display_name))
+            packs_f = float(quantity) / qpp if qpp else 0.0
+            pack_note = ' = %.2f empaque(s) de %g (%s).' % (packs_f, qpp, pack.display_name)
 
         # Buscar si ya existe
         existing = self.search([('user_id', '=', self.env.user.id), ('quant_id', '=', quant_id)])
@@ -339,7 +278,7 @@ class ShoppingCart(models.Model):
             # Si ya existe, actualizamos la cantidad
             existing.write({'quantity': quantity})
             return {'success': True, 'message': 'Cantidad actualizada' + pack_note,
-                    'quantity': quantity, 'adjusted': bool(pack_info)}
+                    'quantity': quantity, 'adjusted': False}
 
         # Si no existe, creamos
         self.create({
@@ -349,7 +288,7 @@ class ShoppingCart(models.Model):
             'quantity': quantity,
             'location_name': location_name or ''
         })
-        return {'success': True, 'message': pack_note, 'quantity': quantity, 'adjusted': bool(pack_info)}
+        return {'success': True, 'message': pack_note, 'quantity': quantity, 'adjusted': False}
     
     @api.model
     def remove_from_cart(self, quant_id):

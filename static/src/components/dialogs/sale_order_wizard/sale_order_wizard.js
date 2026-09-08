@@ -241,13 +241,13 @@ export class SaleOrderWizard extends Component {
         if (exact) {
             return { exact, label: `= ${rounded} empaque(s) de ${pack.qty_per_pack}` };
         }
-        const low = Math.max(Math.floor(packs), 0);
-        const high = low + 1;
+        // EMPAQUE = REFERENCIA, NO CANTIDAD OBLIGATORIA (V/745, 8 sep 2026):
+        // una cantidad parcial de empaque es válida; solo se informa la
+        // equivalencia. exact=true para no bloquear el avance.
         return {
-            exact,
-            label: `⚠ ${qty.toFixed(2)} no es múltiplo de ${pack.qty_per_pack}: `
-                + `ajusta a ${low}× (${(low * pack.qty_per_pack).toFixed(2)}) `
-                + `o ${high}× (${(high * pack.qty_per_pack).toFixed(2)})`,
+            exact: true,
+            partial: true,
+            label: `= ${packs.toFixed(2)} empaque(s) de ${pack.qty_per_pack} (parcial)`,
         };
     }
 
