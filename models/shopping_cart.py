@@ -267,9 +267,38 @@ class ShoppingCart(models.Model):
         pack_note = ''
         pack_info = None if is_location_mover else self._som_pack_for_quant(quant, product_id)
         if pack_info:
+            # PIEZAS COMPLETAS con conversión exacta: 1 pieza = qpp (p. ej.
+            # 1.44 m²). La cantidad se ajusta HACIA ABAJO a piezas enteras
+            # (5 m² → 3 pzas = 4.32) y jamás al físico del lote: de 11.96 m²
+            # caben 8 pzas = 11.52 y los 0.44 se quedan en inventario.
             pack, qpp = pack_info
-            packs_f = float(quantity) / qpp if qpp else 0.0
-            pack_note = ' = %.2f empaque(s) de %g (%s).' % (packs_f, qpp, pack.display_name)
+            free_avail = free_qty if not is_location_mover else (quant.quantity or 0.0)
+            max_pieces = int((free_avail + 1e-6) // qpp) if qpp > 0 else 0
+            if max_pieces < 1:
+                return {
+                    'success': False,
+                    'message': (
+                        '%s se vende por pieza de %g m² (%s) y este lote solo tiene '
+                        '%.2f m² disponibles: no completa una pieza.'
+                    ) % (quant.product_id.display_name, qpp, pack.display_name, free_avail),
+                }
+            pieces = int((float(quantity) + 1e-6) // qpp)
+            if pieces < 1:
+                return {
+                    'success': False,
+                    'message': (
+                        'La cantidad mínima de %s es una pieza = %g m² (%s). '
+                        'Captura al menos %g.'
+                    ) % (quant.product_id.display_name, qpp, pack.display_name, qpp),
+                }
+            pieces = min(pieces, max_pieces)
+            snapped = round(pieces * qpp, 6)
+            if abs(snapped - float(quantity)) > 1e-6:
+                pack_note = ' Ajustado a %d pieza(s) completa(s) × %g = %g (%s; máximo %d).' % (
+                    pieces, qpp, snapped, pack.display_name, max_pieces)
+            else:
+                pack_note = ' = %d pieza(s) × %g (%s).' % (pieces, qpp, pack.display_name)
+            quantity = snapped
 
         # Buscar si ya existe
         existing = self.search([('user_id', '=', self.env.user.id), ('quant_id', '=', quant_id)])
@@ -278,7 +307,7 @@ class ShoppingCart(models.Model):
             # Si ya existe, actualizamos la cantidad
             existing.write({'quantity': quantity})
             return {'success': True, 'message': 'Cantidad actualizada' + pack_note,
-                    'quantity': quantity, 'adjusted': False}
+                    'quantity': quantity, 'adjusted': bool(pack_info)}
 
         # Si no existe, creamos
         self.create({
@@ -288,7 +317,7 @@ class ShoppingCart(models.Model):
             'quantity': quantity,
             'location_name': location_name or ''
         })
-        return {'success': True, 'message': pack_note, 'quantity': quantity, 'adjusted': False}
+        return {'success': True, 'message': pack_note, 'quantity': quantity, 'adjusted': bool(pack_info)}
     
     @api.model
     def remove_from_cart(self, quant_id):
