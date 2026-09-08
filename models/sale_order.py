@@ -2786,6 +2786,58 @@ class SaleOrder(models.Model):
         line_vals['standard_pack_id'] = pack.id
         line_vals['pack_qty'] = float(round(packs_n))
 
+    @api.model
+    def _som_low_price_products_payload(self, requested_low_prices, currency_code, company=None):
+        """[{product_id, name, price, threshold, threshold_label}] de los
+        productos por debajo del nivel del vendedor (para el asistente)."""
+        Product = self.env['product.template']
+        labels = {'medium': 'Precio 2', 'minimum': 'Precio 3',
+                  'level_4': 'Precio 4', 'level_5': 'Precio 5'}
+        try:
+            threshold_level = Product._get_user_threshold_level()
+        except Exception:  # noqa: BLE001
+            threshold_level = 'medium'
+        out = []
+        for pid_str, price in (requested_low_prices or {}).items():
+            rec = self.env['product.product'].browse(int(pid_str)).exists()
+            if not rec:
+                continue
+            try:
+                threshold = Product._get_price_level_value(
+                    rec.product_tmpl_id, threshold_level, currency_code, company=company)
+            except Exception:  # noqa: BLE001
+                threshold = 0.0
+            out.append({
+                'product_id': rec.id,
+                'name': rec.display_name,
+                'price': float(price or 0.0),
+                'threshold': float(threshold or 0.0),
+                'threshold_label': labels.get(threshold_level, threshold_level),
+                'currency': currency_code,
+            })
+        return out
+
+    @api.model
+    def _som_price_auth_reason_error(self, requested_low_prices, currency_code, company=None, action='continuar'):
+        """Mensaje claro cuando falta la razón de la solicitud de
+        autorización de precios: qué falta, en qué productos y dónde
+        capturarla."""
+        items = self._som_low_price_products_payload(
+            requested_low_prices, currency_code, company)
+        detail = '; '.join(
+            '%s a %.2f %s (mínimo de tu nivel %s: %.2f)' % (
+                it['name'], it['price'], it['currency'],
+                it['threshold_label'], it['threshold'])
+            for it in items[:5])
+        if len(items) > 5:
+            detail += ' y %d más' % (len(items) - 5)
+        return (
+            'Falta la razón de la solicitud de autorización de precios. '
+            'Hay precios por debajo de tu nivel: %s. Captura la razón en el '
+            'campo "Razón de la solicitud de autorización" y vuelve a %s; '
+            'esa razón es la que verá el autorizador.' % (detail or 'ver detalle', action)
+        )
+
     def create_from_shopping_cart(
         self,
         partner_id=None,
@@ -2796,9 +2848,14 @@ class SaleOrder(models.Model):
         apply_tax=True,
         project_id=None,
         architect_id=None,
+        price_auth_reason=None,
     ):
         if not partner_id:
             raise UserError("El cliente es obligatorio.")
+        # Razón de la solicitud de autorización de precios: campo propio del
+        # asistente (mismo dato que x_price_auth_reason en la orden manual).
+        # Compatibilidad: asistentes viejos la mandaban en Observaciones.
+        price_auth_reason = (price_auth_reason or '').strip()
 
         # Regla cliente→proyectos: validación en servidor.
         self.env['stock.quant']._som_assert_project_of_partner(partner_id, project_id)
@@ -2885,12 +2942,19 @@ class SaleOrder(models.Model):
             # debajo del nivel del vendedor, no se crea nada sin motivo.
             # Respuesta suave (no excepción): el asistente la muestra y deja
             # al vendedor capturarla.
-            if requested_low_prices and not (notes or '').strip():
+            if requested_low_prices and not price_auth_reason \
+                    and not (notes or '').strip():
                 return {
                     'success': False,
-                    'error': 'Hay precios por debajo de tu nivel: captura la justificación '
-                             'para el autorizador en Observaciones antes de crear la orden.',
+                    'needs_price_auth_reason': True,
+                    'low_price_products': self._som_low_price_products_payload(
+                        requested_low_prices, currency_code, company),
+                    'error': self._som_price_auth_reason_error(
+                        requested_low_prices, currency_code, company,
+                        action='crear la cotización'),
                 }
+            if requested_low_prices and not price_auth_reason:
+                price_auth_reason = (notes or '').strip()
 
             company_id = company.id
             invoice_id, shipping_id = self._resolve_partner_addresses(self.env, partner_id)
@@ -2905,6 +2969,7 @@ class SaleOrder(models.Model):
                 'x_architect_id': architect_id,
                 'company_id': company_id,
                 'user_id': self.env.user.id,
+                'x_price_auth_reason': price_auth_reason or False,
             })
 
             for pd in (products or []):
@@ -2997,7 +3062,7 @@ class SaleOrder(models.Model):
                     'project_id': project_id,
                     'currency_code': currency_code,
                     'notes': (
-                        f'Justificación del vendedor: {(notes or "").strip()}\n\n'
+                        f'Justificación del vendedor: {price_auth_reason}\n\n'
                         'Solicitud automática desde carrito: la orden '
                         f'{sale_order.name} se creó con los precios TOPADOS '
                         'al umbral del rol; al aprobarse bajarán a lo '

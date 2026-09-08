@@ -698,6 +698,7 @@ class StockQuant(models.Model):
         services=None,
         backorder_items=None,
         selected_quantities=None,
+        price_auth_reason=None,
     ):
         """
         Crear múltiples apartados desde el carrito.
@@ -816,13 +817,40 @@ class StockQuant(models.Model):
                 # JUSTIFICACIÓN OBLIGATORIA (3 sep 2026): sin motivo no se
                 # crea la solicitud ni el apartado; el asistente muestra el
                 # aviso y el vendedor la captura en Notas.
-                if not (notes or '').strip():
+                # Razón de la solicitud: campo propio del asistente; los
+                # asistentes viejos la mandaban en Notas (compatibilidad).
+                reason = (price_auth_reason or '').strip() or (notes or '').strip()
+                if not reason:
+                    low_items = [{
+                        'product_id': it.get('product_id'),
+                        'name': it.get('product_name'),
+                        'price': float(it.get('requested_price') or 0.0),
+                        'threshold': float(it.get('threshold_price') or 0.0),
+                        'threshold_label': it.get('threshold_label') or '',
+                        'currency': currency_code,
+                    } for it in (auth_check.get('products') or [])]
+                    detail = '; '.join(
+                        '%s a %.2f %s (mínimo de tu nivel %s: %.2f)' % (
+                            it['name'], it['price'], it['currency'],
+                            it['threshold_label'], it['threshold'])
+                        for it in low_items[:5])
+                    if len(low_items) > 5:
+                        detail += ' y %d más' % (len(low_items) - 5)
                     return {
                         'success': 0, 'errors': 0, 'failed': [],
                         'needs_authorization': False,
-                        'error': 'Hay precios por debajo de tu nivel: captura en Notas la '
-                                 'justificación para el autorizador antes de apartar.',
+                        'needs_price_auth_reason': True,
+                        'low_price_products': low_items,
+                        'error': (
+                            'Falta la razón de la solicitud de autorización de '
+                            'precios. Hay precios por debajo de tu nivel: %s. '
+                            'Captura la razón en el campo "Razón de la solicitud '
+                            'de autorización" y vuelve a apartar; esa razón es la '
+                            'que verá el autorizador.' % (detail or 'ver detalle')),
                     }
+                auth_notes = 'Justificación del vendedor: %s' % reason
+                if (notes or '').strip() and (notes or '').strip() != reason:
+                    auth_notes += '\n\nNotas del apartado: %s' % notes.strip()
                 result = self.create_price_authorization(
                     operation_type='hold',
                     partner_id=partner_id,
@@ -831,7 +859,8 @@ class StockQuant(models.Model):
                     currency_code=currency_code,
                     product_prices=auth_price_map,
                     product_groups=product_groups,
-                    notes=notes,
+                    notes=auth_notes,
+                    price_auth_reason=reason,
                     architect_id=architect_id,
                     selected_quantities=selected_qty_by_quant,
                     services=services,
@@ -867,6 +896,7 @@ class StockQuant(models.Model):
             'project_id': project_id,
             'arquitecto_id': architect_id,
             'notas': full_notes,
+            'x_price_auth_reason': (price_auth_reason or '').strip() or False,
             'company_id': company.id,
             'fecha_orden': fecha_orden,
             'fecha_expiracion': fecha_expiracion,
@@ -1112,6 +1142,7 @@ class StockQuant(models.Model):
         selected_quantities=None,
         services=None,
         backorder_items=None,
+        price_auth_reason=None,
     ):
         """Crea solicitud de autorización de precio"""
         self._som_assert_project_of_partner(partner_id, project_id)
@@ -1139,6 +1170,7 @@ class StockQuant(models.Model):
                 'product_prices': product_prices,
                 'product_groups': product_groups,
                 'architect_id': architect_id,
+                'price_auth_reason': (price_auth_reason or '').strip(),
                 'services': services or [],
                 'backorder_items': backorder_items or [],
             },

@@ -23,6 +23,14 @@ class StockLotHoldOrder(models.Model):
     # algún precio queda por debajo del nivel del vendedor.
     x_has_low_prices = fields.Boolean(
         string='Precios por debajo del nivel', compute='_compute_x_has_low_prices')
+    # Razón de la solicitud de autorización de precios (mismo dato que
+    # x_price_auth_reason en la orden de venta): obligatoria en el
+    # formulario cuando hay precios bajos; viaja al autorizador.
+    x_price_auth_reason = fields.Text(
+        string='Razón de la solicitud de autorización',
+        copy=False,
+        help='Motivo por el que se otorga un precio por debajo del nivel permitido '
+             '(cliente, volumen, competencia...). Llega al autorizador con la solicitud.')
 
     @api.depends('line_ids.precio_unitario', 'line_ids.product_id', 'line_ids.cantidad_m2')
     def _compute_x_has_low_prices(self):
@@ -667,7 +675,9 @@ class StockLotHoldOrder(models.Model):
                     'quantity': line.cantidad_m2 or 0.0,
                 })
 
-        notes = self.notas or ''
+        reason = (self.x_price_auth_reason or '').strip()
+        notes = (f"Justificación del vendedor: {reason}\n\n" if reason else '')
+        notes += self.notas or ''
         notes += f"\n\n=== SOLICITUD DESDE APARTADO MANUAL ===\n"
         notes += f"Apartado: {self.name}\n"
         notes += "Motivos:\n"

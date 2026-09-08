@@ -905,6 +905,7 @@ class PriceAuthorization(models.Model):
             product_prices=product_prices,
             services=services,
             backorder_items=backorder_items,
+            price_auth_reason=temp_data.get('price_auth_reason') or '',
         )
 
         if result.get('success', 0) == 0 and result.get('errors', 0) > 0:

@@ -696,12 +696,41 @@
                             </h4>
                         </div>
                         
+                        <!-- RAZÓN DE LA SOLICITUD DE AUTORIZACIÓN DE PRECIOS: aparece cuando el
+                             servidor detecta precios por debajo del nivel del vendedor. -->
+                        <div class="mb-3 p-3 rounded border" t-if="state.needsPriceAuthReason" style="border-color: #f1b5b9 !important; background: #fff8f8;">
+                            <label class="form-label fw-bold mb-1">
+                                <i class="fa fa-gavel text-danger me-2"></i>
+                                Razón de la solicitud de autorización de precios <span class="text-danger">(obligatoria)</span>
+                            </label>
+                            <div class="small text-muted mb-2">
+                                Hay precios por debajo de tu nivel. Esta razón llega al autorizador con la solicitud:
+                                <ul class="mb-0 mt-1">
+                                    <t t-foreach="state.lowPriceProducts" t-as="item" t-key="item_index">
+                                        <li>
+                                            <strong t-esc="item.name"></strong>: <t t-esc="formatNumber(item.price)"/> <t t-esc="item.currency"/>
+                                            (mínimo de tu nivel <t t-esc="item.threshold_label || 'Umbral'"/>: <t t-esc="formatNumber(item.threshold)"/>)
+                                        </li>
+                                    </t>
+                                </ul>
+                            </div>
+                            <textarea
+                                t-att-class="'form-control' + (!(state.priceAuthReason || '').trim() ? ' is-invalid' : '')"
+                                rows="3"
+                                placeholder="Explica al autorizador por qué se otorga este precio (cliente, volumen, competencia, proyecto...)"
+                                t-model="state.priceAuthReason"
+                            ></textarea>
+                            <div class="invalid-feedback d-block" t-if="!(state.priceAuthReason || '').trim()">
+                                Falta la razón de la solicitud de autorización.
+                            </div>
+                        </div>
+
                         <div class="mb-3">
                             <label class="form-label fw-bold">
                                 <i class="fa fa-commenting text-secondary me-2"></i>
-                                Notas <small class="text-muted fw-normal">(obligatorias si algún precio queda por debajo de tu nivel: son la justificación para el autorizador)</small>
+                                Notas <small class="text-muted fw-normal">(observaciones del apartado)</small>
                             </label>
-                            <textarea class="form-control" rows="3" placeholder="Justificación del precio / observaciones para el autorizador..." t-model="state.notas"></textarea>
+                            <textarea class="form-control" rows="3" placeholder="Observaciones del apartado..." t-model="state.notas"></textarea>
                         </div>
                         
                         <div class="alert alert-light border">

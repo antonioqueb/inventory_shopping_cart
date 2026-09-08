@@ -66,6 +66,11 @@ export class SaleOrderWizard extends Component {
             
             // Notas
             notas: '',
+            // Razón de la solicitud de autorización de precios (campo propio,
+            // mismo dato que x_price_auth_reason en la orden manual).
+            priceAuthReason: '',
+            // El servidor detectó precios bajos que el navegador no vio.
+            needsPriceAuthReason: false,
             applyTax: true,
             
             // UI
@@ -118,6 +123,7 @@ export class SaleOrderWizard extends Component {
                 productPacks: st.productPacks,
                 selectedServices: st.selectedServices,
                 notas: st.notas,
+                priceAuthReason: st.priceAuthReason,
                 applyTax: st.applyTax,
             };
             // Sin nada capturado no vale la pena guardar.
@@ -153,7 +159,7 @@ export class SaleOrderWizard extends Component {
                 "selectedProjectName", "selectedArchitectId",
                 "selectedArchitectName", "selectedPricelistId",
                 "selectedCurrency", "selectedServices", "notas",
-                "applyTax"]) {
+                "priceAuthReason", "applyTax"]) {
             if (draft[key] !== undefined && draft[key] !== null) {
                 st[key] = draft[key];
             }
@@ -740,14 +746,23 @@ export class SaleOrderWizard extends Component {
         this._saveDraft();
     }
     
+    // ¿Hace falta la razón de la solicitud de autorización? Con precios por
+    // debajo del nivel detectados en el navegador o por el servidor.
+    needsPriceAuthReason() {
+        return !!((this.state.lowPriceWarningProducts || []).length || this.state.needsPriceAuthReason);
+    }
+
     // ========== CREAR ORDEN ==========
     
     async createSaleOrder() {
         // JUSTIFICACIÓN OBLIGATORIA: con precios por debajo del nivel del
         // vendedor no se crea la orden sin motivo para el autorizador.
-        if ((this.state.lowPriceWarningProducts || []).length && !(this.state.notas || "").trim()) {
+        if (this.needsPriceAuthReason() && !(this.state.priceAuthReason || "").trim()) {
+            this.state.needsPriceAuthReason = true;
             this.notification.add(
-                "Hay precios por debajo de tu nivel: captura la justificación para el autorizador en Observaciones.",
+                "Falta la razón de la solicitud de autorización de precios. "
+                + "Hay precios por debajo de tu nivel: captura la razón en el campo "
+                + "\"Razón de la solicitud de autorización\" antes de crear la cotización.",
                 { type: "danger", sticky: true }
             );
             return;
@@ -784,6 +799,7 @@ export class SaleOrderWizard extends Component {
                 products: products,
                 services: services,
                 notes: finalNotes,
+                price_auth_reason: (this.state.priceAuthReason || '').trim(),
                 pricelist_id: this.state.selectedPricelistId,
                 apply_tax: this.state.applyTax,
                 project_id: this.state.selectedProjectId,
@@ -791,6 +807,17 @@ export class SaleOrderWizard extends Component {
             });
             
             if (result.error) {
+                if (result.needs_price_auth_reason) {
+                    // El servidor detectó precios bajos: se muestra el campo
+                    // de razón con el detalle para que el vendedor lo capture.
+                    this.state.needsPriceAuthReason = true;
+                    this.state.lowPriceWarningProducts = (result.low_price_products || []).map(it => ({
+                        name: it.name,
+                        price: it.price,
+                        medium: it.threshold,
+                        threshold_label: it.threshold_label,
+                    }));
+                }
                 this.notification.add(result.error, { type: "danger", sticky: true });
                 return;
             }

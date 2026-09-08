@@ -67,6 +67,10 @@ export class HoldWizard extends Component {
 
             // Notas
             notas: '',
+            // Razón de la solicitud de autorización de precios (campo propio).
+            priceAuthReason: '',
+            needsPriceAuthReason: false,
+            lowPriceProducts: [],
             
             // Vendedor
             sellerName: '',
@@ -586,6 +590,7 @@ export class HoldWizard extends Component {
                     architect_id: this.state.selectedArchitectId,
                     selected_lots: this.props.selectedLots,
                     notes: this.state.notas,
+                    price_auth_reason: (this.state.priceAuthReason || '').trim(),
                     currency_code: this.state.selectedCurrency,
                     product_prices: this.state.productPrices,
                     services: services,
@@ -593,9 +598,14 @@ export class HoldWizard extends Component {
                 }
             );
             
-            // Justificación de precios faltante: el servidor no crea nada y
-            // pide el motivo; el asistente sigue abierto para capturarlo.
+            // Razón de la solicitud de autorización faltante: el servidor no
+            // crea nada y devuelve el detalle de precios bajos; el asistente
+            // muestra el campo de razón y sigue abierto para capturarla.
             if (result.error) {
+                if (result.needs_price_auth_reason) {
+                    this.state.needsPriceAuthReason = true;
+                    this.state.lowPriceProducts = result.low_price_products || [];
+                }
                 this.notification.add(result.error, { type: "danger", sticky: true });
                 return;
             }
