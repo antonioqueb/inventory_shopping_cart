@@ -53,6 +53,22 @@
         <field name="implied_ids" eval="[(4, ref('group_dashboard_viewer'))]"/>
     </record>
 
+    <!-- Márgenes ALL-IN por línea en la orden de venta: SOLO quien tenga
+         este grupo ve la columna "Margen All-In %" (precio vs costo ALL-IN,
+         no el margen nativo sobre costo estándar). Los vendedores no lo
+         tienen. El Visor del Dashboard ya ve utilidad all-in, por eso lo
+         implica; se puede otorgar solo también. -->
+    <record id="group_margin_viewer" model="res.groups">
+        <field name="name">Ver Margen All-In por Línea (Ventas)</field>
+        <field name="privilege_id" ref="privilege_price_authorizer"/>
+        <field name="comment">Ve la columna "Margen All-In %" en las líneas de
+            la orden de venta (precio contra costo ALL-IN). Sin este grupo la
+            columna y el dato no existen para el usuario.</field>
+    </record>
+    <record id="group_dashboard_viewer" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_margin_viewer'))]"/>
+    </record>
+
     <!-- Selección operativa de comprometidas: solo usuarios sin rol de ventas. -->
     <record id="privilege_location_mover" model="res.groups.privilege">
         <field name="name">Movimientos de Ubicación</field>

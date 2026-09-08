@@ -364,6 +364,19 @@
                 <field name="x_requested_discount" optional="hide"/>
             </xpath>
 
+            <!-- ===================== MARGEN ALL-IN % ===================== -->
+            <!-- Solo para el grupo "Ver Margen All-In por Línea": el campo
+                 lleva groups= en Python (los vendedores no lo leen) y la
+                 columna aquí. Es % sobre costo ALL-IN, no el margen nativo. -->
+            <xpath expr="//field[@name='order_line']/list/field[@name='price_subtotal']" position="after">
+                <field name="x_margin_all_in_pct" optional="show"
+                       groups="inventory_shopping_cart.group_margin_viewer"
+                       widget="percentage"
+                       decoration-danger="x_margin_all_in_pct &lt; 0"
+                       decoration-warning="x_margin_all_in_pct &gt;= 0 and x_margin_all_in_pct &lt; 0.15"
+                       decoration-success="x_margin_all_in_pct &gt;= 0.30"/>
+            </xpath>
+
         </field>
     </record>
 

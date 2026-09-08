@@ -23,6 +23,51 @@ class SaleOrderLine(models.Model):
     _inherit = 'sale.order.line'
 
     # ------------------------------------------------------------------
+    # MARGEN ALL-IN POR LÍNEA (solo grupo group_margin_viewer)
+    # ------------------------------------------------------------------
+    # % = (subtotal − costo ALL-IN × cantidad) / subtotal. El costo es
+    # x_costo_mayor (Base + Logística + Arancel, MXN, company_dependent),
+    # convertido a la divisa de la orden. NO es el margen nativo de Odoo
+    # (ese usa el costo estándar y no refleja la realidad). Campo con
+    # groups=: los vendedores no lo leen ni por RPC. No almacenado: se
+    # calcula al abrir la orden con el costo vigente.
+    # Valor como RAZÓN (0.35 = 35 %): el widget percentage lo pinta en %.
+    x_margin_all_in_pct = fields.Float(
+        string='Margen All-In %',
+        compute='_compute_x_margin_all_in_pct',
+        digits=(16, 3),
+        groups='inventory_shopping_cart.group_margin_viewer',
+        help='Margen de la línea sobre el costo ALL-IN del producto '
+             '(base + logística + arancel), en porcentaje del subtotal. '
+             'Sin costo ALL-IN registrado se muestra vacío (0).',
+    )
+
+    @api.depends('price_subtotal', 'product_uom_qty', 'product_id',
+                 'currency_id', 'order_id.company_id', 'order_id.date_order')
+    def _compute_x_margin_all_in_pct(self):
+        for line in self:
+            pct = 0.0
+            try:
+                subtotal = line.price_subtotal or 0.0
+                product = line.product_id
+                if subtotal and product and not line.display_type \
+                        and product.type != 'service':
+                    company = line.order_id.company_id or line.company_id or self.env.company
+                    tmpl = product.product_tmpl_id.with_company(company)
+                    cost_unit = float(tmpl.x_costo_mayor or 0.0)
+                    if cost_unit > 0:
+                        cost_total = cost_unit * (line.product_uom_qty or 0.0)
+                        cur = line.currency_id or company.currency_id
+                        if cur and company.currency_id and cur != company.currency_id:
+                            date = line.order_id.date_order or fields.Date.context_today(line)
+                            cost_total = company.currency_id._convert(
+                                cost_total, cur, company, date)
+                        pct = (subtotal - cost_total) / subtotal
+            except Exception:  # noqa: BLE001 — jamás tumbar la orden por el margen
+                pct = 0.0
+            line.x_margin_all_in_pct = pct
+
+    # ------------------------------------------------------------------
     # DESCUENTOS: CLAMP HASTA AUTORIZAR (mismo patrón que precios mínimos)
     # ------------------------------------------------------------------
     # El descuento capturado que dispara autorización NO SE APLICA: se
