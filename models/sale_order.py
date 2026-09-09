@@ -1202,26 +1202,16 @@ class SaleOrder(models.Model):
                 )
 
             if hasattr(quant, 'x_tiene_hold') and quant.x_tiene_hold:
-                hold = quant.x_hold_activo_id
-
-                # Mismo cliente = mismo PARTNER COMERCIAL (contacto, empresa o
-                # dirección de entrega cuentan como uno solo). Además, el hold
-                # que se está CONVIRTIENDO a SO nunca se bloquea a sí mismo.
-                same_client = bool(
-                    hold and partner_id
-                    and hold.partner_id.commercial_partner_id.id
-                    == self.env['res.partner'].browse(partner_id).commercial_partner_id.id
-                )
-                converting_hold_order = self.env.context.get('hold_order_id')
-                own_hold = bool(
-                    hold and converting_hold_order
-                    and getattr(hold, 'hold_order_id', False)
-                    and hold.hold_order_id.id == converting_hold_order
-                )
-
-                if hold and not same_client and not own_hold:
+                # Mismo cliente comercial, hold de la reserva que se está
+                # convirtiendo, o formato/pieza con remanente libre: no
+                # bloquea (apartados parciales: varios holds por lote).
+                blocker = quant.som_hold_blocking_partner(
+                    partner_id=partner_id,
+                    hold_order_id=self.env.context.get('hold_order_id'),
+                ) if hasattr(quant, 'som_hold_blocking_partner') else False
+                if blocker:
                     raise UserError(
-                        f"El lote {quant.lot_id.name} ya está apartado para {hold.partner_id.name}.\n\n"
+                        f"El lote {quant.lot_id.name} ya está apartado para {blocker.name}.\n\n"
                         f"No se puede usar en esta operación."
                     )
 

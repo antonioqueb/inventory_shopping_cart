@@ -785,10 +785,10 @@ class PriceAuthorization(models.Model):
             for quant_id in product['selected_lots']:
                 quant = self.env['stock.quant'].browse(quant_id)
                 if quant.x_tiene_hold:
-                    hold_partner = quant.x_hold_activo_id.partner_id
-                    if hold_partner.id != self.partner_id.id:
+                    blocker = quant.som_hold_blocking_partner(partner_id=self.partner_id.id)
+                    if blocker:
                         raise UserError(
-                            f"El lote {quant.lot_id.name} está apartado para {hold_partner.name}"
+                            f"El lote {quant.lot_id.name} está apartado para {blocker.name}"
                         )
 
         addr = self.partner_id.address_get(['delivery', 'invoice'])
