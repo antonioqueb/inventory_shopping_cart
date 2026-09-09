@@ -1,9 +1,11 @@
 /** @odoo-module **/
 
 export function canSelectBlocked(cart = {}) {
+    // Movedor de Ubicaciones: SIEMPRE puede tomar comprometidas (aunque
+    // también venda). Inventario puro: solo sin rol de ventas.
+    if (cart.isLocationMover) return true;
     return !!(cart.salesPermissionsLoaded && cart.inventoryPermissionsLoaded
-        && !cart.hasSalesPermissions
-        && (cart.hasInventoryPermissions || cart.isLocationMover));
+        && !cart.hasSalesPermissions && cart.hasInventoryPermissions);
 }
 
 export function isCartDetailBlocked(detail) {

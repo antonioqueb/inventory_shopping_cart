@@ -106,10 +106,14 @@ class TestCartAvailability(unittest.TestCase):
                 self.assertFalse(self.add(quantity=qty)['success'])
         self.cart.create.assert_not_called()
 
-    def test_sales_permissions_override_location_mover(self):
+    def test_location_mover_always_selects_blocked(self):
+        # Movedor de Ubicaciones: siempre, aunque tenga rol de ventas.
         self.Quant.check_sales_permissions.return_value = True
         self.Quant.check_inventory_permissions.return_value = True
         self.Quant.check_cart_location_mover.return_value = True
+        self.assertTrue(can_select_blocked(self.Quant))
+        # Inventario puro con rol de ventas y sin grupo movedor: no.
+        self.Quant.check_cart_location_mover.return_value = False
         self.assertFalse(can_select_blocked(self.Quant))
         self.Quant.check_sales_permissions.return_value = False
         self.assertTrue(can_select_blocked(self.Quant))

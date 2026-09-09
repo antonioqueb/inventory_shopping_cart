@@ -81,7 +81,7 @@
         <field name="privilege_id" ref="privilege_location_mover"/>
         <field name="comment">Selecciona placas comprometidas (hold/venta/
             carrito de otro) en el inventario visual para cambios de
-            ubicación, siempre que no tenga rol de ventas. Las reservas fuertes se
+            ubicación, aunque también tenga rol de ventas. Las reservas fuertes se
             traspasan al bin destino al validar el traslado.</field>
     </record>
 

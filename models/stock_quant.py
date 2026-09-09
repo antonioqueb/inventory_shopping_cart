@@ -112,8 +112,15 @@ class StockQuant(models.Model):
 
     @api.model
     def _som_cart_can_select_blocked(self):
-        return not self.check_sales_permissions() and (
-            self.check_inventory_permissions() or self.check_cart_location_mover())
+        """Quién puede tomar material COMPROMETIDO en el carrito (para
+        traslados/etiquetas, no para vender):
+        - Movedor de Ubicaciones: SIEMPRE, tenga o no rol de ventas. Es el
+          propósito del grupo (regla original; el 4 sep 2026 se condicionó
+          a "sin rol de ventas" y los movedores con ventas dejaron de poder).
+        - Inventario puro (sin rol de ventas): también."""
+        if self.check_cart_location_mover():
+            return True
+        return not self.check_sales_permissions() and self.check_inventory_permissions()
 
     @api.model
     def get_current_user_info(self):
@@ -289,7 +296,8 @@ class StockQuant(models.Model):
     @api.model
     def check_cart_location_mover(self):
         """Grupo 'Carrito: Movedor de Ubicaciones': selecciona placas
-        comprometidas para traslados si el usuario no tiene rol de ventas."""
+        comprometidas (hold/venta/carrito ajeno) para traslados y etiquetas,
+        aunque el usuario también tenga rol de ventas."""
         return self.env.user.has_group(
             'inventory_shopping_cart.group_cart_location_mover')
 
