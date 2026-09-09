@@ -257,14 +257,20 @@
                                     <field name="product_uom_id"
                                            string="Unidad de Medida"/>
 
+                                    <!-- Igual que en la OV: al elegir Personalizado el
+                                         precio se captura en la MISMA celda del selector
+                                         (inline_price). La columna Precio/m² solo muestra
+                                         el valor vigente. -->
                                     <field name="x_price_selector"
                                            string="Nivel de Precio"
                                            widget="price_level_selector"
+                                           options="{'inline_price': True}"
+                                           style="width: 240px;"
                                            required="1"/>
 
                                     <field name="precio_unitario"
                                            string="Precio/m²"
-                                           readonly="x_price_selector != 'custom'"
+                                           readonly="1"
                                            force_save="1"/>
 
                                     <field name="precio_total"
@@ -339,11 +345,12 @@
                                             <field name="x_price_selector"
                                                    string="Nivel de Precio"
                                                    widget="price_level_selector"
+                                                   options="{'inline_price': True}"
                                                    required="1"/>
 
                                             <field name="precio_unitario"
                                                    string="Precio/m²"
-                                                   readonly="x_price_selector != 'custom'"
+                                                   readonly="1"
                                                    force_save="1"/>
 
                                             <field name="precio_total"
