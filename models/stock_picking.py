@@ -239,6 +239,50 @@ class StockPicking(models.Model):
         return touched
 
     @api.model
+    def _som_assert_no_pending_physical_reception(self, quants):
+        """CANDADO: un lote EN TRÁNSITO con recepción física de embarque
+        pendiente no se saca por el carrito/escáner.
+
+        Caso EMBARQUE/2026/0132: el carrito movió S127-09 de SOM/TRANSIT a
+        BODEGA 7 mientras la 2ª parcialidad (SOM/INT/00493) lo esperaba.
+        El traslado desplazó la reserva de la recepción y la re-ancló en
+        Existencias: la parcialidad quedó huérfana (Existencias →
+        Existencias) y con doble reserva contra la entrega del cliente.
+        La entrada a almacén de material de embarque se hace SOLO desde la
+        recepción física de Torre de Control."""
+        Picking = self.env['stock.picking']
+        if 'tc_reception_voyage_id' not in Picking._fields:
+            return
+        blockers = []
+        for quant in quants:
+            loc = quant.location_id
+            if not quant.lot_id or not loc:
+                continue
+            is_transit = (
+                loc._som_is_transit() if hasattr(loc, '_som_is_transit')
+                else loc.usage == 'transit')
+            if not is_transit:
+                continue
+            pending = self.env['stock.move.line'].sudo().search([
+                ('lot_id', '=', quant.lot_id.id),
+                ('state', 'not in', ('done', 'cancel')),
+                ('picking_id.state', 'not in', ('done', 'cancel')),
+                ('picking_id.tc_reception_voyage_id', '!=', False),
+            ], limit=1)
+            if pending:
+                blockers.append((quant.lot_id.name, pending.picking_id.name))
+        if blockers:
+            detail = '\n'.join(
+                '- %s → %s' % (lot, pick) for lot, pick in blockers[:20])
+            if len(blockers) > 20:
+                detail += '\n… y %s más.' % (len(blockers) - 20)
+            raise UserError(
+                'No se puede trasladar desde el carrito: estos lotes están '
+                'EN TRÁNSITO con una recepción física de embarque pendiente.\n'
+                '%s\n\nRecíbelos desde Torre de Control (Procesar PL físico '
+                'y validar la recepción); el carrito no debe sacar material '
+                'de tránsito.' % detail)
+
     def create_transfer_from_shopping_cart(self, selected_lots=None, location_dest_id=None, notes=None, partner_id=None):
         """
         Crea traslados internos desde el carrito de compras
@@ -271,6 +315,11 @@ class StockPicking(models.Model):
         
         if not location_groups:
             raise UserError("No hay lotes válidos para trasladar")
+
+        # Material de embarque en tránsito con parcialidad pendiente: el
+        # carrito NO lo saca (dejaba recepciones huérfanas).
+        self._som_assert_no_pending_physical_reception(
+            [q for group in location_groups.values() for q in group])
 
         # SUPERSESIÓN: un traslado de carrito PENDIENTE que retiene alguno de
         # estos mismos lotes es un residuo (el usuario está re-ordenando el
