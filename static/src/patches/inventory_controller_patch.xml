@@ -11,7 +11,20 @@
             <attribute name="selectAllCurrentProduct.bind">selectAllCurrentProduct</attribute>
             <attribute name="deselectAllCurrentProduct.bind">deselectAllCurrentProduct</attribute>
             <attribute name="cart">cart</attribute>
+            <!-- cart.items se REASIGNA en cada alta/baja del carrito: como
+                 prop nueva obliga a re-renderizar la fila y el detalle. Sin
+                 esto, ProductDetails solo leía el carrito a través de las
+                 funciones isInCart/... (cerradas sobre el controlador) y
+                 OWL no lo re-renderizaba: el checkbox del lote no se marcaba
+                 hasta recargar la página o volver a expandir el producto. -->
+            <attribute name="cartItems">cart.items</attribute>
             <attribute name="onCartStatusClick.bind">onCartStatusClick</attribute>
+        </xpath>
+    </t>
+
+    <t t-name="inventory_visual_enhanced.ProductRow" t-inherit="inventory_visual_enhanced.ProductRow" t-inherit-mode="extension" owl="1">
+        <xpath expr="//ProductDetails" position="attributes">
+            <attribute name="cartItems">props.cartItems</attribute>
         </xpath>
     </t>
     

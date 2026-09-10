@@ -6,7 +6,14 @@ import { registry } from "@web/core/registry";
 import { CartInfoDialog } from "../dialogs/cart_info/cart_info_dialog";
 import { PackChoiceDialog } from "../dialogs/pack_choice/pack_choice_dialog";
 import { ProductDetails } from "@inventory_visual_enhanced/components/product_details/product_details";
+import { ProductRow } from "@inventory_visual_enhanced/components/product_row/product_row";
 import { canSelectBlocked, isCartDetailBlocked, isCartDetailSelectable, cartDetailBlockReason } from "../../utils/cart_selection";
+
+// Prop reactiva del carrito: la lista de items se reasigna en cada cambio
+// y así ProductRow/ProductDetails se re-renderizan (checkbox marcado al
+// instante, sin F5 ni re-expandir el producto).
+ProductRow.props = { ...(ProductRow.props || {}), cartItems: { type: Array, optional: true } };
+ProductDetails.props = { ...(ProductDetails.props || {}), cartItems: { type: Array, optional: true } };
 
 patch(ProductDetails.prototype, {
     isCartDetailSelectable(detail) {
