@@ -282,6 +282,34 @@ class StockPicking(models.Model):
                 'y validar la recepción); el carrito no debe sacar material '
                 'de tránsito.' % detail)
 
+    def _som_assert_no_active_holds(self, quants):
+        """CANDADO INTERINO: una placa APARTADA (stock.lot.hold activo) no
+        cambia de bin desde el carrito. El apartado está anclado al quant
+        de la ubicación vieja (spec_holds_parciales §6): al mover la placa
+        el apartado se queda atrás y la placa aparece libre en el bin
+        nuevo. Hasta que el apartado viaje con la placa: liberar → mover →
+        volver a apartar."""
+        if 'stock.lot.hold' not in self.env:
+            return
+        quant_ids = [q.id for q in quants if q.lot_id]
+        if not quant_ids:
+            return
+        holds = self.env['stock.lot.hold'].sudo().search([
+            ('quant_id', 'in', quant_ids), ('estado', '=', 'activo')])
+        if not holds:
+            return
+        detail = '\n'.join(
+            '- %s → apartada para %s (%s)' % (
+                h.lot_id.name, h.partner_id.display_name or '-', h.name or '')
+            for h in holds[:20])
+        if len(holds) > 20:
+            detail += '\n… y %s más.' % (len(holds) - 20)
+        raise UserError(
+            'No se puede cambiar de bin desde el carrito: estas placas tienen '
+            'APARTADO activo y el apartado no viaja con la placa (quedaría '
+            'libre en el bin nuevo y apartada en el viejo).\n%s\n\n'
+            'Libera el apartado, mueve la placa y vuelve a apartarla.' % detail)
+
     @api.model
     def create_transfer_from_shopping_cart(self, selected_lots=None, location_dest_id=None, notes=None, partner_id=None):
         """
@@ -318,8 +346,10 @@ class StockPicking(models.Model):
 
         # Material de embarque en tránsito con parcialidad pendiente: el
         # carrito NO lo saca (dejaba recepciones huérfanas).
-        self._som_assert_no_pending_physical_reception(
-            [q for group in location_groups.values() for q in group])
+        selected = [q for group in location_groups.values() for q in group]
+        self._som_assert_no_pending_physical_reception(selected)
+        # Placa apartada: el apartado no sobrevive al cambio de bin.
+        self._som_assert_no_active_holds(selected)
 
         # SUPERSESIÓN: un traslado de carrito PENDIENTE que retiene alguno de
         # estos mismos lotes es un residuo (el usuario está re-ordenando el
