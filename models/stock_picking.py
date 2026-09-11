@@ -238,7 +238,6 @@ class StockPicking(models.Model):
             touched |= stale_picking
         return touched
 
-    @api.model
     def _som_assert_no_pending_physical_reception(self, quants):
         """CANDADO: un lote EN TRÁNSITO con recepción física de embarque
         pendiente no se saca por el carrito/escáner.
@@ -283,6 +282,7 @@ class StockPicking(models.Model):
                 'y validar la recepción); el carrito no debe sacar material '
                 'de tránsito.' % detail)
 
+    @api.model
     def create_transfer_from_shopping_cart(self, selected_lots=None, location_dest_id=None, notes=None, partner_id=None):
         """
         Crea traslados internos desde el carrito de compras
