@@ -23,7 +23,32 @@
         display:     flex;
         align-items: center;
         gap:         5px;
-        margin-top:  4px;
+        width:       100%;
+        min-height:  34px;
+    }
+
+    &__custom-tag {
+        flex-shrink:   0;
+        min-height:    30px;
+        padding:       3px 9px;
+        border:        1px solid rgba(92, 185, 242, 0.20);
+        border-radius: 10px;
+        background:    var(--isc-parchment, #edf7fd);
+        color:         var(--isc-bark, #284256);
+        font-size:     12px;
+        font-weight:   850;
+        line-height:   1;
+        cursor:        pointer;
+        white-space:   nowrap;
+
+        .fa {
+            margin-left: 3px;
+            font-size:   10px;
+        }
+
+        &:hover {
+            border-color: var(--isc-copper, #4BA4F2);
+        }
     }
 
     &__custom {

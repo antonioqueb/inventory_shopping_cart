@@ -19,9 +19,37 @@ export class PriceLevelSelectorField extends Component {
 
     setup() {
         this.selectRef = useRef("select");
+        this.priceInputRef = useRef("priceInput");
         // "Personalizado" solo se lee con el dropdown ABIERTO; cerrado
         // la opción se abrevia a "PP" para no comerse la columna.
-        this.ui = useState({ open: false });
+        // pickLevel: con Personalizado activo, el usuario pidió volver a
+        // la lista de niveles (la celda muestra el select en vez del monto).
+        // focusPrice: al elegir Personalizado, el input del monto toma el
+        // foco en cuanto se pinta.
+        this.ui = useState({ open: false, pickLevel: false, focusPrice: false });
+
+        useEffect(
+            () => {
+                const input = this.priceInputRef.el;
+                if (input && this.ui.focusPrice) {
+                    this.ui.focusPrice = false;
+                    input.focus();
+                    input.select();
+                }
+                const select = this.selectRef.el;
+                if (select && this.ui.pickLevel && !this.ui.open) {
+                    select.focus();
+                    if (typeof select.showPicker === "function") {
+                        try {
+                            select.showPicker();
+                        } catch (_e) {
+                            // showPicker exige gesto del usuario; el foco basta.
+                        }
+                    }
+                }
+            },
+            () => [this.value, this.ui.pickLevel, this.ui.focusPrice]
+        );
 
         useEffect(
             () => {
@@ -118,6 +146,25 @@ export class PriceLevelSelectorField extends Component {
         await this.props.record.update({ [fname]: val });
     }
 
+    onPriceKeydown(ev) {
+        // Enter confirma el monto sin salir de la fila; Escape regresa a
+        // la lista de niveles sin perder lo capturado.
+        if (ev.key === "Enter") {
+            ev.preventDefault();
+            ev.stopPropagation();
+            ev.target.blur();
+        } else if (ev.key === "Escape") {
+            ev.preventDefault();
+            ev.stopPropagation();
+            this.onReopenLevels();
+        }
+    }
+
+    onReopenLevels() {
+        this.ui.pickLevel = true;
+        this.ui.open = true;
+    }
+
     formatPrice(value, decimals = 0) {
         // Sin sufijo de divisa: la lista de precios de la orden ya la define.
         const num = Number(value) || 0;
@@ -193,7 +240,14 @@ export class PriceLevelSelectorField extends Component {
 
     onChange(ev) {
         this.ui.open = false;
-        this.props.record.update({ [this.props.name]: ev.target.value });
+        this.ui.pickLevel = false;
+        const newValue = ev.target.value;
+        if (newValue === "custom" && this.showInlinePrice) {
+            // El input del monto sustituye al select y queda listo para
+            // teclear: un solo clic en Personalizado y a escribir.
+            this.ui.focusPrice = true;
+        }
+        this.props.record.update({ [this.props.name]: newValue });
     }
 
     onSelectOpen() {
@@ -202,6 +256,8 @@ export class PriceLevelSelectorField extends Component {
 
     onSelectClose() {
         this.ui.open = false;
+        // Cerró la lista sin cambiar de nivel: la celda vuelve al monto.
+        this.ui.pickLevel = false;
     }
 }
 
