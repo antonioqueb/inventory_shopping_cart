@@ -5,7 +5,7 @@ import math
 
 from markupsafe import Markup
 
-from odoo import models, fields, api
+from odoo import models, fields, api, _
 from odoo.addons.inventory_shopping_cart.models.som_date_format import som_format_date
 from odoo.exceptions import UserError
 from odoo.tools import html2plaintext
@@ -249,9 +249,217 @@ class PriceAuthorization(models.Model):
         records = super().create(to_create) if to_create else self.browse()
 
         for record in records:
+            # UNA sola solicitud viva por orden/apartado: la anterior
+            # pendiente se expira (antes quedaba en el tablero para siempre
+            # cuando se aprobaba la nueva).
+            record._som_expire_siblings(
+                _('Sustituida por la nueva solicitud %s.') % record.name)
             record._notify_authorizers()
 
         return records | reused
+
+    # ══════════════════════════════════════════════════════════════════
+    # Vigencia: la solicitud se mantiene al día con lo que la originó
+    # ══════════════════════════════════════════════════════════════════
+
+    def _som_target_hold_id(self):
+        self.ensure_one()
+        td = self.temp_data if isinstance(self.temp_data, dict) else {}
+        try:
+            return int(td.get('hold_order_id') or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _som_target_order_id(self):
+        self.ensure_one()
+        if self.sale_order_id:
+            return self.sale_order_id.id
+        td = self.temp_data if isinstance(self.temp_data, dict) else {}
+        try:
+            return int(td.get('sale_order_id') or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _som_expire(self, reason):
+        """Expira la solicitud con motivo visible: cierra actividades de los
+        autorizadores y deja constancia en la solicitud y en su orden o
+        apartado. No toca precios ni documentos."""
+        for rec in self:
+            if rec.state != 'pending':
+                continue
+            rec._som_close_open_activities(_('Expirada: %s') % reason)
+            notes = (rec.authorization_notes or '').strip()
+            stamp = _('Expirada automáticamente: %s') % reason
+            rec.sudo().write({
+                'state': 'expired',
+                'authorization_notes': (notes + '\n' + stamp).strip(),
+            })
+            body = Markup('<p>⌛ %s</p>') % stamp
+            try:
+                rec.sudo().message_post(body=body, message_type='notification')
+            except Exception:  # noqa: BLE001
+                pass
+            target = None
+            order_id = rec._som_target_order_id()
+            hold_id = rec._som_target_hold_id()
+            if order_id:
+                target = self.env['sale.order'].sudo().browse(order_id).exists()
+            elif hold_id:
+                target = self.env['stock.lot.hold.order'].sudo().browse(hold_id).exists()
+            if target:
+                try:
+                    target.message_post(
+                        body=Markup('<p>⌛ Solicitud de precios <b>%s</b> expirada: %s</p>')
+                        % (rec.name, reason),
+                        message_type='notification')
+                except Exception:  # noqa: BLE001
+                    pass
+            _logger.info('[PRICE AUTH] %s expirada: %s', rec.name, reason)
+        return True
+
+    def _som_siblings_pending(self):
+        """Otras solicitudes PENDIENTES sobre la misma orden o apartado."""
+        self.ensure_one()
+        domain = [('state', '=', 'pending'), ('id', '!=', self.id),
+                  ('company_id', '=', self.company_id.id)]
+        order_id = self._som_target_order_id()
+        hold_id = self._som_target_hold_id()
+        # temp_data es Json: no se filtra en SQL, se resuelve en Python
+        # (las pendientes de una compañía son pocas).
+        if order_id:
+            candidates = self.sudo().search(domain + [('operation_type', '=', 'sale')])
+            return candidates.filtered(
+                lambda a: a._som_target_order_id() == order_id)
+        if hold_id:
+            candidates = self.sudo().search(domain + [('operation_type', '=', 'hold')])
+            return candidates.filtered(
+                lambda a: a._som_target_hold_id() == hold_id)
+        return self.browse()
+
+    def _som_expire_siblings(self, reason):
+        for rec in self:
+            siblings = rec._som_siblings_pending()
+            if siblings:
+                siblings.with_env(self.env)._som_expire(reason)
+        return True
+
+    def _som_order_low_prices(self, order):
+        """Precios ACTUALES por debajo del umbral del vendedor de la orden,
+        en la divisa de la orden: {pid_str: price_unit}. Mismo criterio que
+        action_request_authorization."""
+        Product = self.env['product.template']
+        threshold_level = Product._get_user_threshold_level(
+            user=order.user_id or self.env.user)
+        currency_code = order.pricelist_id.currency_id.name or 'USD' \
+            if order.pricelist_id else 'USD'
+        low = {}
+        for line in order.order_line:
+            if not line.product_id or line.display_type \
+                    or line.product_id.type == 'service':
+                continue
+            threshold = Product._get_price_level_value(
+                line.product_id.product_tmpl_id, threshold_level,
+                currency_code, company=order.company_id)
+            if threshold > 0 and line.price_unit < (threshold - 0.01):
+                low[str(line.product_id.id)] = float(line.price_unit or 0.0)
+        return low
+
+    def _som_requested_prices(self):
+        self.ensure_one()
+        td = self.temp_data if isinstance(self.temp_data, dict) else {}
+        prices = td.get('product_prices') or {}
+        if prices:
+            return {str(k): float(v or 0.0) for k, v in prices.items()}
+        return {str(l.product_id.id): float(l.requested_price or 0.0)
+                for l in self.line_ids if l.product_id}
+
+    def _som_stale_reason(self):
+        """Motivo por el que la solicitud pendiente ya no sirve, o False."""
+        self.ensure_one()
+        if self.state != 'pending':
+            return False
+
+        order_id = self._som_target_order_id()
+        hold_id = self._som_target_hold_id()
+
+        if self.operation_type == 'sale' and order_id:
+            order = self.env['sale.order'].sudo().browse(order_id).exists()
+            if not order:
+                return _('la orden ligada ya no existe')
+            if order.state == 'cancel':
+                return _('la orden %s está cancelada') % order.name
+            if order.state == 'done':
+                return _('la orden %s ya está cerrada') % order.name
+            if order.invoice_status == 'invoiced' and order.state == 'sale':
+                return _('la orden %s ya se facturó por completo sin resolver la solicitud') % order.name
+            linked = order.x_price_authorization_id
+            if linked and linked.id != self.id and linked.state in ('pending', 'approved'):
+                return _('la orden %s apunta a la solicitud %s') % (order.name, linked.name)
+            cur = order.pricelist_id.currency_id.name if order.pricelist_id else False
+            if cur and self.currency_code and cur != self.currency_code:
+                return _('la solicitud está en %s y la orden %s en %s') % (
+                    self.currency_code, order.name, cur)
+            if not order.x_has_low_prices:
+                return _('la orden %s ya no tiene precios por debajo del nivel permitido') % order.name
+            current = self._som_order_low_prices(order)
+            requested = self._som_requested_prices()
+            if current and requested:
+                if set(current) != set(requested) or any(
+                        abs(current[p] - requested[p]) > 0.01 for p in current):
+                    return _('los precios de la orden %s cambiaron después de solicitar') % order.name
+            return False
+
+        if self.operation_type == 'hold' and hold_id:
+            hold = self.env['stock.lot.hold.order'].sudo().browse(hold_id).exists()
+            if not hold:
+                return _('el apartado ligado ya no existe')
+            if hold.state not in ('draft', 'borrador'):
+                state_label = dict(hold._fields['state'].selection).get(hold.state, hold.state)
+                return _('el apartado %s ya está en estado %s') % (hold.name, state_label)
+            linked = hold.x_price_authorization_id if 'x_price_authorization_id' in hold._fields else False
+            if linked and linked.id != self.id and linked.state in ('pending', 'approved'):
+                return _('el apartado %s apunta a la solicitud %s') % (hold.name, linked.name)
+            cur = hold.currency_id.name if hold.currency_id else False
+            if cur and self.currency_code and cur != self.currency_code:
+                return _('la solicitud está en %s y el apartado %s en %s') % (
+                    self.currency_code, hold.name, cur)
+            return False
+
+        return False
+
+    @api.model
+    def _cron_som_expire_stale(self):
+        """Barrido diario del tablero de pendientes: expira las solicitudes
+        que ya no sirven y vuelve a solicitar donde la orden sigue con
+        precios bajos (para que la nueva nazca con los datos actuales)."""
+        pending = self.sudo().search([('state', '=', 'pending')], order='id')
+        seen_orders = {}
+        expired = 0
+        for auth in pending:
+            reason = auth._som_stale_reason()
+            if not reason:
+                # Duplicadas sobre la misma orden: se conserva la más nueva.
+                order_id = auth._som_target_order_id()
+                if order_id:
+                    prev = seen_orders.get(order_id)
+                    if prev and prev.state == 'pending':
+                        prev._som_expire(_('Sustituida por %s.') % auth.name)
+                        expired += 1
+                    seen_orders[order_id] = auth
+                continue
+            auth._som_expire(reason)
+            expired += 1
+            order_id = auth._som_target_order_id()
+            if auth.operation_type == 'sale' and order_id:
+                order = self.env['sale.order'].sudo().browse(order_id).exists()
+                if order and order.state in ('draft', 'sent', 'sale'):
+                    try:
+                        order.with_user(order.user_id or self.env.user)._som_price_auth_auto_request()
+                    except Exception:  # noqa: BLE001
+                        _logger.exception('[PRICE AUTH] No se pudo re-solicitar en %s', order.name)
+        _logger.info('[PRICE AUTH] Barrido: %d solicitudes expiradas de %d pendientes.',
+                     expired, len(pending))
+        return True
 
     @api.model
     def _som_authorizer_users(self):
@@ -616,6 +824,9 @@ class PriceAuthorization(models.Model):
         self._process_approved_authorization()
         self._som_write_authorized_floors()
         self._notify_seller(approved=True)
+        self._som_expire_siblings(
+            _('Sustituida por la solicitud %s, aprobada por %s.') % (
+                self.name, self.env.user.name))
 
     def _som_write_authorized_floors(self):
         """Graba en la orden el piso autorizado por producto. Bajar de ese
@@ -1090,6 +1301,15 @@ class PriceAuthorizationLine(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
+            # Una solicitud con precio 0 no sirve para autorizar nada
+            # (caso COT/988): se detiene aquí, en todos los flujos.
+            if float(vals.get('requested_price') or 0.0) <= 0:
+                product = self.env['product.product'].browse(
+                    vals.get('product_id') or 0).exists()
+                raise UserError(_(
+                    'No se puede solicitar autorización con precio 0 para %s. '
+                    'Captura el precio real de la línea y vuelve a guardar.'
+                ) % (product.display_name if product else _('el producto')))
             if 'requested_price' in vals:
                 vals['requested_price'] = math.ceil(vals['requested_price'])
 

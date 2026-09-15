@@ -453,6 +453,16 @@ class StockLotHoldOrder(models.Model):
 
         res = super().write(vals)
 
+        if vals.get('state') in ('cancel', 'done', 'confirmed') \
+                and not self.env.context.get('skip_authorization_check'):
+            for order in self:
+                auth = order.x_price_authorization_id
+                if auth and auth.state == 'pending':
+                    state_label = dict(order._fields['state'].selection).get(
+                        vals['state'], vals['state'])
+                    auth._som_expire(
+                        f"el apartado {order.name} pasó a {state_label}")
+
         if {'line_ids', 'hold_line_ids', 'partner_id', 'currency_id'} & set(vals):
             self._som_hold_auto_request()
 
@@ -1141,6 +1151,15 @@ class StockLotHoldOrder(models.Model):
                 continue
 
             order._stone_apply_hold_payload_to_sale_order(sale_order, payload)
+
+            # Solicitud PENDIENTE del apartado: la venta nueva crea la suya
+            # con sus datos, así que la del apartado se expira (antes
+            # quedaba huérfana en el tablero).
+            auth = order.x_price_authorization_id
+            if auth and auth.state == 'pending':
+                auth._som_expire(
+                    f"el apartado {order.name} se convirtió en la venta "
+                    f"{sale_order.name}, que lleva su propia solicitud")
 
             # La orden HEREDA la autorización aprobada del apartado: no se
             # vuelve a pedir al convertir (queja del cliente, 28 ago 2026).

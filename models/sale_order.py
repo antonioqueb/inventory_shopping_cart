@@ -1978,7 +1978,23 @@ class SaleOrder(models.Model):
     def _create_invoices(self, *args, **kwargs):
         if not self.env.context.get('skip_auth_check'):
             self._check_discount_authorization_block("facturar")
+            self._check_price_authorization_pending_block("facturar")
         return super()._create_invoices(*args, **kwargs)
+
+    def _check_price_authorization_pending_block(self, action_name="realizar esta acción"):
+        """Con solicitud de precios PENDIENTE nadie factura (V/924 y V/363
+        se facturaron al precio solicitado sin aprobación). Aplica a todos
+        los roles: el candado es del documento, no de quien da clic."""
+        for order in self:
+            auth = order.x_price_authorization_id
+            if not auth or auth.state != 'pending' or not order.x_has_low_prices:
+                continue
+            if order._som_is_migrated_order():
+                continue
+            raise UserError(
+                "No se puede %s la orden %s: la solicitud de autorización de "
+                "precios %s sigue PENDIENTE. Espera a que se apruebe o "
+                "rechace." % (action_name, order.name, auth.name))
 
     def action_quotation_send(self):
         self._check_seller_low_price_block("enviar")
@@ -2329,8 +2345,37 @@ class SaleOrder(models.Model):
                         f"(orden confirmada sin entrega: permitido; el TC "
                         f"se congela con la entrega).</p>"
                     ))
+                self._som_price_auth_after_write({'pricelist_id': pl_id})
                 return res
-        return super().write(vals)
+        res = super().write(vals)
+        self._som_price_auth_after_write(vals)
+        return res
+
+    def _som_price_auth_after_write(self, vals):
+        """Mantiene la solicitud de precios al día con la orden:
+        - cancelada/cerrada → la pendiente se expira;
+        - cambio de divisa → se re-evalúa (la pendiente en otra divisa se
+          expira y nace una nueva en la divisa correcta)."""
+        if self.env.context.get('som_price_auth_auto'):
+            return
+        if vals.get('state') in ('cancel', 'done'):
+            Auth = self.env['price.authorization'].sudo()
+            for order in self:
+                pending = Auth.search([
+                    ('state', '=', 'pending'),
+                    ('sale_order_id', '=', order.id)])
+                if order.x_price_authorization_id \
+                        and order.x_price_authorization_id.state == 'pending':
+                    pending |= order.x_price_authorization_id.sudo()
+                if pending:
+                    label = _('cancelada') if vals['state'] == 'cancel' else _('cerrada')
+                    pending.with_env(self.env)._som_expire(
+                        _('la orden %s fue %s') % (order.name, label))
+        if 'pricelist_id' in vals:
+            try:
+                self._som_price_auth_auto_request()
+            except Exception:  # noqa: BLE001
+                _logger.exception('[PRECIOS] Re-evaluación de solicitud tras cambio de divisa')
 
     @api.model
     def _som_recompute_low_price_flags(self):
@@ -2351,9 +2396,19 @@ class SaleOrder(models.Model):
         if self.env.context.get('som_price_auth_auto'):
             return
         for order in self:
-            if order.state not in ('draft', 'sent', 'sale') or not order.x_has_low_prices:
+            if order.state not in ('draft', 'sent', 'sale'):
                 continue
             if getattr(order, 'x_is_quote_backup', False):
+                continue
+            # Solicitud pendiente que ya no corresponde a la orden (precio
+            # cambiado, divisa cambiada, ya sin precios bajos): se expira
+            # y, si hace falta, nace una nueva con los datos actuales.
+            auth = order.x_price_authorization_id
+            if auth and auth.state == 'pending':
+                reason = auth._som_stale_reason()
+                if reason:
+                    auth._som_expire(reason)
+            if not order.x_has_low_prices:
                 continue
             auth = order.x_price_authorization_id
             if auth and auth.state in ('pending', 'approved'):
@@ -2362,6 +2417,10 @@ class SaleOrder(models.Model):
                 order.with_context(som_price_auth_auto=True).action_request_authorization()
             except UserError as e:
                 _logger.info('[PRECIOS] Sin solicitud automática en %s: %s', order.name, e)
+                if 'precio 0' in str(e):
+                    order.message_post(body=Markup(
+                        '<p>⚠️ No se creó la solicitud de autorización de precios: %s</p>'
+                    ) % str(e), message_type='notification')
                 continue
             if order.x_price_authorization_id:
                 order.message_post(body=Markup(
@@ -2423,6 +2482,16 @@ class SaleOrder(models.Model):
                     }
 
                 product_groups[pid_str]['total_quantity'] += line.product_uom_qty
+
+        zero_priced = [
+            group['name'] for pid_str, group in product_groups.items()
+            if float(product_prices.get(pid_str) or 0.0) <= 0
+        ]
+        if zero_priced:
+            raise UserError(
+                "No se puede solicitar autorización con precio 0 para: %s.\n\n"
+                "Captura el precio real de cada línea y vuelve a guardar; la "
+                "solicitud se creará sola con ese precio." % ', '.join(zero_priced))
 
         if not has_low:
             threshold_labels = {
