@@ -198,6 +198,57 @@ class SaleOrderLine(models.Model):
             currency.name or 'USD', company=order.company_id or self.company_id,
         )
 
+    def _som_notify_seller_qty_change(self, qty_before):
+        """Aviso en Odoo al VENDEDOR de la orden cuando la cantidad solicitada
+        de sus líneas la cambia otro usuario (almacén, taller, un cron, un
+        proceso de tránsito…). El vendedor que edita su propia orden no se
+        avisa a sí mismo. Un solo mensaje por orden, con el detalle por
+        línea (antes → después), publicado en el chatter con el vendedor
+        como destinatario para que le llegue a su bandeja de Odoo."""
+        if self.env.context.get('som_skip_qty_change_notify'):
+            return
+        actor = self.env.user
+        by_order = {}
+        for line in self:
+            if line.display_type or not line.product_id or not line.order_id:
+                continue
+            old = qty_before.get(line.id)
+            new = line.product_uom_qty or 0.0
+            if old is None or abs(new - old) < 0.0001:
+                continue
+            by_order.setdefault(line.order_id, []).append((line, old, new))
+
+        for order, changes in by_order.items():
+            seller = order.user_id
+            if not seller or not seller.partner_id or seller.share:
+                continue
+            if actor == seller and not self.env.context.get('som_force_qty_change_notify'):
+                continue
+            if order.state == 'cancel':
+                continue
+            rows = ''.join(
+                '<li><b>%s</b>: %s → <b>%s</b> %s</li>' % (
+                    Markup.escape(line.x_mask_name or line.product_id.display_name or ''),
+                    '%g' % old, '%g' % new,
+                    Markup.escape(line.product_uom_id.name or ''),
+                )
+                for line, old, new in changes
+            )
+            body = Markup(
+                '<p>📐 <b>Cantidad solicitada modificada</b> en %s por <b>%s</b> '
+                '(no es el vendedor de la orden).</p><ul>%s</ul>'
+            ) % (order.name, actor.name, Markup(rows))
+            try:
+                order.sudo().message_post(
+                    body=body,
+                    subject=_('Cantidad solicitada modificada en %s') % order.name,
+                    partner_ids=[seller.partner_id.id],
+                    message_type='comment',
+                    subtype_xmlid='mail.mt_note',
+                )
+            except Exception:  # noqa: BLE001
+                _logger.exception('[QTY NOTIFY] No se pudo avisar al vendedor en %s', order.name)
+
     def _som_reconcile_price_selector(self):
         """Etiqueta ≠ precio → 'Personalizado'. Devuelve las líneas
         reetiquetadas. Nunca modifica price_unit ni sube de custom a nivel:
@@ -321,7 +372,16 @@ class SaleOrderLine(models.Model):
                 for order in self.order_id
             }
 
+        # Cantidad solicitada ANTES del write: si la cambia alguien que no es
+        # el vendedor de la orden (almacén, taller, un proceso), se le avisa.
+        qty_before = None
+        if 'product_uom_qty' in vals:
+            qty_before = {l.id: (l.product_uom_qty or 0.0) for l in self}
+
         res = super().write(vals)
+
+        if qty_before is not None:
+            self._som_notify_seller_qty_change(qty_before)
         if (
             not self.env.context.get('som_skip_iva_force')
             and ('tax_ids' in vals or 'product_id' in vals)
