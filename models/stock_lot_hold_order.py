@@ -212,7 +212,7 @@ class StockLotHoldOrder(models.Model):
             self.delivery_address = ''
 
     x_total_m2 = fields.Float(
-        string='Total m²',
+        string='m² Totales (Carrito)',
         compute='_compute_hold_totals',
         store=True,
         digits='Product Unit of Measure',
@@ -1332,7 +1332,7 @@ class StockLotHoldOrderLine(models.Model):
     )
 
     x_subtotal = fields.Monetary(
-        string='Total',
+        string='Subtotal de Línea',
         compute='_compute_x_subtotal',
         store=True,
         currency_field='currency_id',
