@@ -707,6 +707,7 @@ class StockQuant(models.Model):
         backorder_items=None,
         selected_quantities=None,
         price_auth_reason=None,
+        product_price_levels=None,
     ):
         """
         Crear múltiples apartados desde el carrito.
@@ -1021,6 +1022,20 @@ class StockQuant(models.Model):
                         key = str(lot.id)
                         breakdown[key] = breakdown.get(key, 0.0) + float(item['quantity'] or 0.0)
 
+                    # NIVEL elegido en el asistente (manda sobre el precio):
+                    # el vendedor escogió "Precio 1"; el importe es su
+                    # consecuencia. Sin nivel (precio tecleado a mano) se
+                    # infiere del importe con tolerancia a redondeo/TC.
+                    level = (product_price_levels or {}).get(str(pid)) \
+                        or (product_price_levels or {}).get(pid)
+                    if level not in ('high', 'medium', 'minimum', 'level_4', 'level_5'):
+                        level = line_model._selector_from_price(
+                            pid,
+                            currency_code,
+                            precio_unitario,
+                            company=company,
+                            order=order,
+                        )
                     line_vals = {
                         'order_id': order.id,
                         'product_id': pid,
@@ -1029,12 +1044,7 @@ class StockQuant(models.Model):
                         'quant_id': first_quant.id,
                         'cantidad_m2': cantidad_m2,
                         'precio_unitario': precio_unitario,
-                        'x_price_selector': line_model._selector_from_price(
-                            pid,
-                            currency_code,
-                            precio_unitario,
-                            company=company,
-                        ),
+                        'x_price_selector': level,
                     }
                     if breakdown and 'x_lot_breakdown_json' in line_model._fields:
                         line_vals['x_lot_breakdown_json'] = breakdown
@@ -1071,6 +1081,7 @@ class StockQuant(models.Model):
                             currency_code,
                             price_unit,
                             company=company,
+                            order=order,
                         ),
                     })
 

@@ -54,6 +54,9 @@ export class HoldWizard extends Component {
             selectedPricelistId: null,
             productPrices: {},
             productPriceOptions: {},
+            // Nivel (high/medium/…) detrás de cada precio elegido; null si
+            // el vendedor tecleó un importe a mano (Personalizado).
+            productPriceLevels: {},
             
             // Servicios
             searchServiceTerm: '',
@@ -186,6 +189,25 @@ export class HoldWizard extends Component {
     onPriceChange(productId, value) {
         const numValue = parseFloat(value);
         this.state.productPrices[productId] = numValue;
+        this.state.productPriceLevels[productId] = this._levelForPrice(productId, numValue);
+    }
+
+    _levelForPrice(productId, price) {
+        const options = this.state.productPriceOptions[productId] || [];
+        const match = options.find(o => Math.abs(Number(o.value) - Number(price)) < 0.005);
+        return match ? match.level : null;
+    }
+
+    _currentPriceLevels() {
+        const levels = {};
+        for (const pid of Object.keys(this.state.productPrices)) {
+            const level = this.state.productPriceLevels[pid]
+                ?? this._levelForPrice(pid, this.state.productPrices[pid]);
+            if (level) {
+                levels[pid] = level;
+            }
+        }
+        return levels;
     }
     
     // ========== CLIENTE ==========
@@ -593,6 +615,7 @@ export class HoldWizard extends Component {
                     price_auth_reason: (this.state.priceAuthReason || '').trim(),
                     currency_code: this.state.selectedCurrency,
                     product_prices: this.state.productPrices,
+                    product_price_levels: this._currentPriceLevels(),
                     services: services,
                     backorder_items: backorders // NUEVO CAMPO ENVIADO
                 }

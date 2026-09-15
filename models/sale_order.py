@@ -3085,18 +3085,39 @@ class SaleOrder(models.Model):
                     for l in pd.get('lots_breakdown', [])
                 } if pd.get('lots_breakdown') else {}
 
+                # NIVEL DE PRECIO: antes toda línea nacía 'Personalizado'
+                # aunque el vendedor hubiera elegido Precio 1 en el
+                # apartado o en el asistente. Ahora: el nivel que manda el
+                # origen (apartado / asistente) o, sin él, el que empata con
+                # el importe (tolerante a redondeo); si no empata, custom.
+                # Con nivel, el precio de la línea es el de la LISTA en la
+                # divisa de la orden (el importe del apartado era una copia
+                # de esa lista, redondeada o con TC vivo).
+                selector = pd.get('price_selector')
+                if selector not in self.env['sale.order.line'].SOM_LEVEL_SELECTORS:
+                    selector = self.env['stock.lot.hold.order.line']._selector_from_price(
+                        rec.id, currency_code, pd['price_unit'], company=company)
+                price_unit = pd['price_unit']
+                if selector != 'custom':
+                    level_price = self.env['product.template']._get_price_level_value(
+                        rec.product_tmpl_id, selector, currency_code, company=company)
+                    if level_price > 0:
+                        price_unit = level_price
+                    else:
+                        selector = 'custom'
+
                 line_vals = {
                     'order_id': sale_order.id,
                     'name': rec.get_product_multiline_description_sale() or rec.name,
                     'product_id': rec.id,
                     'product_uom_id': rec.uom_id.id,
                     'product_uom_qty': pd['quantity'],
-                    'price_unit': pd['price_unit'],
+                    'price_unit': price_unit,
                     'tax_ids': tax_ids,
                     'x_selected_lots': [(6, 0, pd.get('selected_lots', []))],
                     'x_lot_breakdown_json': breakdown_json,
                     'company_id': company_id,
-                    'x_price_selector': 'custom',
+                    'x_price_selector': selector,
                 }
 
                 # Material sin existencia / "mandar a pedir": la reserva propaga

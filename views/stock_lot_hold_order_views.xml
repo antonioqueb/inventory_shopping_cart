@@ -259,8 +259,9 @@
 
                                     <!-- Igual que en la OV: al elegir Personalizado el
                                          precio se captura en la MISMA celda del selector
-                                         (inline_price). La columna Precio/m² solo muestra
-                                         el valor vigente. -->
+                                         (inline_price). La columna Precio/m² repetía el
+                                         importe que ya muestra el selector: queda oculta
+                                         por default (opcional). -->
                                     <field name="x_price_selector"
                                            string="Nivel de Precio"
                                            widget="price_level_selector"
@@ -271,7 +272,8 @@
                                     <field name="precio_unitario"
                                            string="Precio/m²"
                                            readonly="1"
-                                           force_save="1"/>
+                                           force_save="1"
+                                           optional="hide"/>
 
                                     <field name="precio_total"
                                            string="Total"
@@ -351,7 +353,8 @@
                                             <field name="precio_unitario"
                                                    string="Precio/m²"
                                                    readonly="1"
-                                                   force_save="1"/>
+                                                   force_save="1"
+                                                   optional="hide"/>
 
                                             <field name="precio_total"
                                                    string="Total"

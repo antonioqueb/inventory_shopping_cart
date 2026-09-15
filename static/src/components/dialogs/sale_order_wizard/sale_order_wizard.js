@@ -778,6 +778,14 @@ export class SaleOrderWizard extends Component {
                     quantity: group.total_quantity,
                     standard_pack_id: this.state.productPacks[productId] || null,
                     price_unit: parseFloat(this.state.productPrices[productId]),
+                    // Nivel elegido (o null si el precio se tecleó a mano):
+                    // la línea nace etiquetada con su nivel, no Personalizado.
+                    price_selector: (() => {
+                        const opts = this.state.productPriceOptions[productId] || [];
+                        const p = parseFloat(this.state.productPrices[productId]);
+                        const m = opts.find(o => Math.abs(Number(o.value) - p) < 0.005);
+                        return m ? m.level : null;
+                    })(),
                     selected_lots: group.lots.map(lot => lot.id),
                     lots_breakdown: group.lots.map(lot => ({ 
                         id: lot.id, 

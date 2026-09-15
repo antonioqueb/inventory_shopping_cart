@@ -1540,20 +1540,46 @@ class StockLotHoldOrderLine(models.Model):
                     line.cantidad_m2 = 0.0
 
     @api.model
-    def _selector_from_price(self, product_id, currency_code, price, company=None):
+    def _selector_from_price(self, product_id, currency_code, price, company=None, order=None):
+        """Nivel de la escalera que corresponde a un precio, o 'custom'.
+
+        El precio guardado siempre va redondeado hacia arriba (ceil) y en
+        MXN el nivel se calcula EN VIVO (USD × TC del apartado), así que el
+        emparejamiento exacto a 0.01 casi nunca daba y todo caía en
+        Personalizado. Se acepta el nivel si el precio coincide con el valor
+        de la escalera, con su redondeo, o con el valor vivo en MXN."""
         product = self.env['product.product'].browse(int(product_id))
         if not product.exists():
             return 'custom'
 
         Product = self.env['product.template']
         tmpl = product.product_tmpl_id
-
         price = float(price or 0.0)
+        if price <= 0:
+            return 'custom'
+
+        rate = 0.0
+        if order is not None and currency_code == 'MXN':
+            rate = float(getattr(order, 'x_exchange_rate', 0.0) or 0.0)
+
+        def _matches(candidate):
+            candidate = float(candidate or 0.0)
+            if candidate <= 0:
+                return False
+            return (
+                abs(price - candidate) <= 0.01
+                or abs(price - math.ceil(candidate)) <= 0.01
+            )
 
         for level in ('high', 'medium', 'minimum', 'level_4', 'level_5'):
-            level_price = Product._get_price_level_value(
-                tmpl, level, currency_code, company=company)
-            if level_price and abs(price - level_price) <= 0.01:
+            candidates = [Product._get_price_level_value(
+                tmpl, level, currency_code, company=company)]
+            if rate > 0:
+                usd = Product._get_price_level_value(
+                    tmpl, level, 'USD', company=company)
+                if usd > 0:
+                    candidates.append(usd * rate)
+            if any(_matches(c) for c in candidates):
                 return level
 
         return 'custom'
