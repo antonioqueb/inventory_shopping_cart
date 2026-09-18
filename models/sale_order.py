@@ -3002,6 +3002,7 @@ class SaleOrder(models.Model):
             'esa razón es la que verá el autorizador.' % (detail or 'ver detalle', action)
         )
 
+    @api.model
     def create_from_shopping_cart(
         self,
         partner_id=None,
