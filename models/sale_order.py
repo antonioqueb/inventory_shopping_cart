@@ -1914,12 +1914,14 @@ class SaleOrder(models.Model):
                 summary=summary,
                 note=note,
             )
-        if users.partner_id:
+        # Constancia en el chatter SIN destinatarios: el aviso ya llegó como
+        # actividad (Centro de Actividades); una mención lo duplicaba en la
+        # bandeja de mensajes y en correo.
+        if users:
             self.message_post(
                 body=Markup('<p><b>%s</b></p><p>%s</p>') % (summary, note),
-                partner_ids=users.partner_id.ids,
-                message_type='comment',
-                subtype_xmlid='mail.mt_comment',
+                message_type='notification',
+                subtype_xmlid='mail.mt_note',
             )
 
     def _som_user_can_remove_iva(self):

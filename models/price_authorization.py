@@ -541,13 +541,14 @@ class PriceAuthorization(models.Model):
                     '[PRICE AUTH] No se pudo agendar la actividad de %s '
                     'para %s.', self.name, authorizer.name)
 
+        # Constancia sin destinatarios: los autorizadores ya tienen su
+        # actividad en el Centro; la mención duplicaba el aviso.
         self.message_post(
             body=Markup(
                 '<p><b>🔐 Autorización de precios mínimos requerida: %s</b></p>%s'
             ) % (self.name, Markup(note)),
-            partner_ids=authorizers.partner_id.ids,
-            message_type='comment',
-            subtype_xmlid='mail.mt_comment',
+            message_type='notification',
+            subtype_xmlid='mail.mt_note',
         )
 
     def _som_close_open_activities(self, feedback):
@@ -588,19 +589,24 @@ class PriceAuthorization(models.Model):
         if self.authorization_notes:
             message_text += f"<p><strong>Comentarios:</strong><br/>{self.authorization_notes}</p>"
 
-        # Mención de chatter, NO actividad: el resultado es un aviso que el
-        # vendedor lee, no una tarea que alguien cierre. Como actividad se
-        # quedaba abierta para siempre — y encima se sumaba a la del
-        # autorizador, que tampoco se cerraba. Así llega igual por inbox y
-        # correo, y el reloj queda limpio.
-        if self.seller_id.partner_id:
-            self.message_post(
-                body=Markup('<p><b>%s</b></p>%s') % (
-                    activity_summary, Markup(message_text)),
-                partner_ids=self.seller_id.partner_id.ids,
-                message_type='comment',
-                subtype_xmlid='mail.mt_comment',
-            )
+        # Aviso al vendedor como actividad del Centro (tipo "aviso": botón
+        # Enterado y se archiva sola a los días). Sin mención: duplicaba el
+        # aviso en la bandeja de mensajes.
+        self.message_post(
+            body=Markup('<p><b>%s</b></p>%s') % (activity_summary, Markup(message_text)),
+            message_type='notification',
+            subtype_xmlid='mail.mt_note',
+        )
+        if self.seller_id and self.seller_id != self.env.user:
+            try:
+                self.activity_schedule(
+                    'mail.mail_activity_data_todo',
+                    user_id=self.seller_id.id,
+                    summary=activity_summary,
+                    note=message_text,
+                )
+            except Exception:  # noqa: BLE001
+                _logger.exception('[PRICE AUTH] No se pudo avisar al vendedor de %s.', self.name)
 
     # ------------------------------------------------------------------
     # ORDEN/COTIZACIÓN VINCULADA
