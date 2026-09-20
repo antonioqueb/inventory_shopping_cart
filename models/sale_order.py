@@ -1993,6 +1993,23 @@ class SaleOrder(models.Model):
         ))
         return True
 
+    def _som_iva_auth_mark_activities_done(self, feedback):
+        """Cierra "Autorizar quitar IVA" para TODOS los autorizadores (cada
+        uno recibió su propia actividad). La del usuario que decide se marca
+        hecha con mensaje en el chatter; las demás se archivan en silencio
+        para no llenar el chatter con N "hecho"."""
+        self.ensure_one()
+        acts = self.sudo().activity_ids.filtered(
+            lambda a: a.active and (a.summary or '').startswith('Autorizar quitar IVA'))
+        if not acts:
+            return
+        mine = acts.filtered(lambda a: a.user_id == self.env.user) or acts[:1]
+        try:
+            mine.action_feedback(feedback=feedback)
+        except Exception:
+            mine.unlink()
+        (acts - mine).filtered('active').write({'active': False, 'feedback': feedback})
+
     def action_approve_iva_exemption(self):
         self.ensure_one()
         if not self.env.user.has_group('inventory_shopping_cart.group_price_authorizer'):
@@ -2000,6 +2017,7 @@ class SaleOrder(models.Model):
         if self.x_iva_exempt_state != 'requested':
             raise UserError("No hay solicitud de exención de IVA pendiente.")
         self.x_iva_exempt_state = 'approved'
+        self._som_iva_auth_mark_activities_done(f"Aprobada por {self.env.user.name}")
         # Con la exención aprobada, se retira el IVA 16% de TODAS las líneas.
         self._som_remove_iva_from_lines()
         self.message_post(body=Markup(
@@ -2022,6 +2040,7 @@ class SaleOrder(models.Model):
         if self.x_iva_exempt_state != 'requested':
             raise UserError("No hay solicitud de exención de IVA pendiente.")
         self.x_iva_exempt_state = 'rejected'
+        self._som_iva_auth_mark_activities_done(f"Rechazada por {self.env.user.name}")
         self.message_post(body=Markup(
             f"<p>❌ <b>Exención de IVA RECHAZADA</b> por "
             f"{self.env.user.name}. La orden conserva el IVA 16%.</p>"
