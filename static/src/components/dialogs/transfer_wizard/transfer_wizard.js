@@ -149,7 +149,7 @@ export class TransferWizard extends Component {
             }
         } catch (error) {
             console.error("Error creando traslado:", error);
-            this.notification.add(error.message || "Error al crear traslado", { type: "danger" });
+            this.notification.add(error.data?.message || error.message || "Error al crear traslado", { type: "danger", sticky: true });
         } finally {
             this.state.isCreating = false;
         }

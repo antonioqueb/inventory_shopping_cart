@@ -864,7 +864,7 @@ export class HoldStoneExpandButton extends Component {
                 body.innerHTML = `
                     <div class="hold-stone-empty text-danger">
                         <i class="fa fa-exclamation-triangle me-2"></i>
-                        Error al cargar inventario: ${this._escapeHtml(error.message || error)}
+                        Error al cargar inventario: ${this._escapeHtml(error.data?.message || error.message || error)}
                     </div>
                 `;
             }

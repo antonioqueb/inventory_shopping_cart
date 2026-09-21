@@ -41,7 +41,7 @@ patch(InventoryVisualController.prototype, {
         } catch (error) {
             console.error("[SO POPUP] Error cargando información:", error);
             this.notification.add(
-                error.message || "Error al cargar la información de la orden.",
+                error.data?.message || error.message || "Error al cargar la información de la orden.",
                 { type: "danger" }
             );
         }

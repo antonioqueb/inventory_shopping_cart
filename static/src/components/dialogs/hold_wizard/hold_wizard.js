@@ -676,7 +676,7 @@ export class HoldWizard extends Component {
             }
         } catch (error) {
             console.error("Error creando apartados:", error);
-            this.notification.add("Error al crear apartados: " + error.message, { type: "danger" });
+            this.notification.add("Error al crear apartados: " + (error.data?.message || error.message), { type: "danger", sticky: true });
         } finally {
             if (this.state) this.state.isCreating = false;
         }

@@ -869,7 +869,7 @@ export class SaleOrderWizard extends Component {
             }
         } catch (error) {
             console.error("Error creando orden:", error);
-            this.notification.add(error.message || "Error al crear orden", { type: "danger" });
+            this.notification.add(error.data?.message || error.message || "Error al crear orden", { type: "danger", sticky: true });
         } finally {
             this.state.isCreating = false;
         }
