@@ -1132,7 +1132,7 @@ class StockQuant(models.Model):
             except Exception as e:
                 msg = str(e)
                 try:
-                    order.with_context(skip_hold_order_sync=True).unlink()
+                    order.sudo().with_context(skip_hold_order_sync=True).unlink()
                 except Exception:  # noqa: BLE001 — la limpieza jamás tapa el error real
                     pass
                 return {
@@ -1145,7 +1145,9 @@ class StockQuant(models.Model):
                 # Tras el unlink el recordset sigue siendo truthy: leer
                 # order.name abajo tronaba con MissingError ("Record does
                 # not exist") y TAPABA la lista real de errores por lote.
-                order.unlink()
+                # sudo: el vendedor no tiene permiso de borrar reservas y la
+                # limpieza dejaba el borrador huérfano (21 sep 2026).
+                order.sudo().with_context(skip_hold_order_sync=True).unlink()
                 order = None
 
         return {
