@@ -432,6 +432,10 @@ patch(InventoryVisualController.prototype, {
     updateCartSummary() {
         this.cart.totalLots = this.cart.items.length;
         this.cart.totalQuantity = this.cart.items.reduce((sum, item) => sum + item.quantity, 0);
+        // Etiqueta de unidad del total: la unidad común de los productos del
+        // carrito, o vacía si se mezclan (m² con piezas no se suman).
+        const uoms = new Set(this.cart.items.map((item) => item.uom_name || "m²"));
+        this.cart.uomLabel = uoms.size === 1 ? [...uoms][0] : "";
         
         // === CÁLCULO DE ETIQUETA DINÁMICA ===
         const uniqueTypes = new Set(this.cart.items.map(item => (item.product_type || 'placa').toLowerCase()));
@@ -461,6 +465,7 @@ patch(InventoryVisualController.prototype, {
             if (!groups[item.product_id]) {
                 groups[item.product_id] = {
                     name: item.product_name,
+                    uom_name: item.uom_name || "m²",
                     lots: [],
                     total_quantity: 0
                 };

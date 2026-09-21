@@ -671,7 +671,7 @@ export class HoldWizard extends Component {
             
             if (result.errors > 0) {
                 let msg = `${result.errors} errores:\n`;
-                result.failed.forEach(f => { msg += `\n• ${f.lot_name}: ${f.error}`; });
+                result.failed.forEach(f => { msg += `\n• ${f.lot_name || "Reserva"}: ${f.error}`; });
                 this.notification.add(msg, { type: "warning", sticky: true });
             }
         } catch (error) {

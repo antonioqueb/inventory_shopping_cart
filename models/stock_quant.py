@@ -1118,17 +1118,27 @@ class StockQuant(models.Model):
         has_content = success_count > 0 or has_backorders or has_services
 
         if has_content:
+            order_name = order.name
             try:
-                order.with_context(
-                    skip_authorization_check=True,
-                    skip_hold_line_quantity_sync=True,
-                ).action_confirm()
+                # Savepoint: si la confirmación truena, no queda ningún hold a
+                # medias ni la reserva en borrador (21 sep 2026: RES/00829 y
+                # RES/00830 quedaron huérfanas tras "Ya existe una reserva").
+                with self.env.cr.savepoint():
+                    order.with_context(
+                        skip_authorization_check=True,
+                        skip_hold_line_quantity_sync=True,
+                    ).action_confirm()
 
             except Exception as e:
+                msg = str(e)
+                try:
+                    order.with_context(skip_hold_order_sync=True).unlink()
+                except Exception:  # noqa: BLE001 — la limpieza jamás tapa el error real
+                    pass
                 return {
                     'success': 0,
                     'errors': 1,
-                    'failed': [{'error': f'Error confirmando: {str(e)}'}],
+                    'failed': [{'lot_name': order_name or 'Reserva', 'error': msg}],
                 }
         else:
             if order:

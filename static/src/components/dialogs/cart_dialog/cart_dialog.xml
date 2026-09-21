@@ -33,7 +33,7 @@
                                 <span class="isc-chip">
                                     <i class="fa fa-area-chart"></i>
                                     <strong t-esc="formatNumber(cart.totalQuantity)"></strong>
-                                    m²
+                                    <t t-esc="cart.uomLabel"/>
                                 </span>
                             </div>
                         </div>
@@ -68,7 +68,7 @@
                                         </div>
                                     </div>
                                     <span class="badge isc-cart-product-total">
-                                        <t t-esc="formatNumber(group.total_quantity)"/> m²
+                                        <t t-esc="formatNumber(group.total_quantity)"/> <t t-esc="group.uom_name || 'm²'"/>
                                     </span>
                                 </div>
                                 
@@ -101,7 +101,7 @@
                                                         <strong t-esc="lot.lot_name"></strong>
                                                     </td>
                                                     <td class="text-end">
-                                                        <t t-esc="formatNumber(lot.quantity)"/> m²
+                                                        <t t-esc="formatNumber(lot.quantity)"/> <t t-esc="lot.uom_name || 'm²'"/>
                                                     </td>
                                                     <td>
                                                         <span class="text-muted" t-esc="lot.location_name"/>
@@ -133,9 +133,9 @@
 
                     <div class="isc-summary-panel">
                         <h4>
-                            Seleccionado: <t t-esc="formatNumber(selQuantity)"/> m²
+                            Seleccionado: <t t-esc="formatNumber(selQuantity)"/> <t t-esc="cart.uomLabel"/>
                             <small class="text-muted" style="font-size: .65em;">
-                                de <t t-esc="formatNumber(cart.totalQuantity)"/> m² en carrito
+                                de <t t-esc="formatNumber(cart.totalQuantity)"/> <t t-esc="cart.uomLabel"/> en carrito
                             </small>
                         </h4>
                         <p>

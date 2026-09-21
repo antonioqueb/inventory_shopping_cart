@@ -143,7 +143,7 @@
                                             <t t-set="group" t-value="entry[1]"/>
                                             <tr>
                                                 <td><t t-esc="group.name"/></td>
-                                                <td class="text-end"><t t-esc="formatNumber(group.total_quantity)"/> m²</td>
+                                                <td class="text-end"><t t-esc="formatNumber(group.total_quantity)"/> <t t-esc="group.uom_name || 'm²'"/></td>
                                                 <td class="text-end">
                                                     <span class="badge bg-secondary">
                                                         <t t-esc="group.lots.length"/>

@@ -109,6 +109,7 @@ class ShoppingCart(models.Model):
                 'product_id': item.product_id.id,
                 'product_name': item.product_id.display_name,
                 'quantity': item.quantity,
+                'uom_name': item.product_id.uom_id.name or 'm²',
                 'location_name': item.location_name,
                 'tiene_hold': tiene_hold,
                 'hold_info': hold_info,

@@ -313,12 +313,12 @@
                                 <div class="card-body">
                                     <h6><t t-esc="group.name"/></h6>
                                     <small class="text-muted">
-                                        <t t-esc="formatNumber(group.total_quantity)"/> m² • 
+                                        <t t-esc="formatNumber(group.total_quantity)"/> <t t-esc="group.uom_name || 'm²'"/> • 
                                         <t t-esc="group.lots.length"/> lotes
                                     </small>
                                     
                                     <div class="mt-3">
-                                        <label class="form-label">Precio por m² *</label>
+                                        <label class="form-label">Precio por <t t-esc="group.uom_name || 'm²'"/> *</label>
                                         <t t-if="state.productPriceOptions[productId] and state.productPriceOptions[productId].length > 0">
                                             <select class="form-select mb-2" t-model.number="state.productPrices[productId]" t-on-change="(ev) => this.onPriceChange(productId, ev.target.value)">
                                                 <t t-foreach="state.productPriceOptions[productId]" t-as="option" t-key="option_index">
@@ -381,8 +381,8 @@
                                         <thead class="table-light">
                                             <tr>
                                                 <th style="width: 40%;">Producto</th>
-                                                <th class="text-center" style="width: 20%;">Cantidad m²</th>
-                                                <th class="text-end" style="width: 20%;">Precio/m²</th>
+                                                <th class="text-center" style="width: 20%;">Cantidad</th>
+                                                <th class="text-end" style="width: 20%;">Precio unit.</th>
                                                 <th class="text-end" style="width: 15%;">Total</th>
                                                 <th style="width: 5%;"></th>
                                             </tr>
@@ -610,7 +610,7 @@
                                         <tr>
                                             <th>Producto</th>
                                             <th class="text-end">Cantidad</th>
-                                            <th class="text-end">Precio/m²</th>
+                                            <th class="text-end">Precio unit.</th>
                                             <th class="text-end">Subtotal</th>
                                         </tr>
                                     </thead>
@@ -620,7 +620,7 @@
                                             <t t-set="group" t-value="entry[1]"/>
                                             <tr>
                                                 <td><t t-esc="group.name"/></td>
-                                                <td class="text-end"><t t-esc="formatNumber(group.total_quantity)"/> m²</td>
+                                                <td class="text-end"><t t-esc="formatNumber(group.total_quantity)"/> <t t-esc="group.uom_name || 'm²'"/></td>
                                                 <td class="text-end"><t t-esc="formatNumber(state.productPrices[productId])"/> <t t-esc="state.selectedCurrency"/></td>
                                                 <td class="text-end"><t t-esc="formatNumber(group.total_quantity * state.productPrices[productId])"/> <t t-esc="state.selectedCurrency"/></td>
                                             </tr>
@@ -648,7 +648,7 @@
                                         <t t-foreach="state.selectedBackorderItems" t-as="item" t-key="item_index">
                                             <tr>
                                                 <td><t t-esc="item.display_name"/></td>
-                                                <td class="text-end"><t t-esc="formatNumber(item.quantity)"/> m²</td>
+                                                <td class="text-end"><t t-esc="formatNumber(item.quantity)"/> <t t-esc="item.uom_name || 'm²'"/></td>
                                                 <td class="text-end"><t t-esc="formatNumber(item.price_unit)"/> <t t-esc="state.selectedCurrency"/></td>
                                                 <td class="text-end"><t t-esc="formatNumber(item.quantity * item.price_unit)"/> <t t-esc="state.selectedCurrency"/></td>
                                             </tr>
