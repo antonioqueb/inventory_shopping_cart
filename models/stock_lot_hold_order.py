@@ -1770,9 +1770,15 @@ class StockLotHoldOrderLine(models.Model):
                     lot = self.env['stock.lot'].browse(lot_id)
                     free_left[lot_id] = Line._som_lot_free_qty(lot)[2]
                 # Los lotes del propio apartado en edición se ofrecen por su
-                # físico (su cantidad ya está tomada por esta misma orden).
+                # físico MENOS lo que otros documentos tengan reservado
+                # (22 sep 2026, lote 21110-13: Disp. mostraba 23.04 con 2.40
+                # reservados en V/341, y la conversión luego rebotaba). Lo
+                # que toma ESTA orden sí se suma de vuelta; lo ajeno no.
                 if lot_id in own_lot_ids:
-                    row['som_free_qty'] = row.get('quantity') or 0.0
+                    own_quant = Quant.browse(row['id'])
+                    ajeno = sum(
+                        SaleOrder._get_native_reservation_blockers(own_quant).mapped('quantity'))
+                    row['som_free_qty'] = max((row.get('quantity') or 0.0) - ajeno, 0.0)
                     filtered.append(row)
                     continue
                 row_free = min(row.get('quantity') or 0.0, free_left[lot_id])

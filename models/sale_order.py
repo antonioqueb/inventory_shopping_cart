@@ -1213,12 +1213,20 @@ class SaleOrder(models.Model):
 
         return ', '.join(sorted(set(docs)))
 
+    @staticmethod
+    def _som_quant_is_fractionable(quant):
+        """FORMATO/PIEZA: el lote se comparte entre documentos por cantidad.
+        PLACA: atómica, cualquier compromiso la bloquea entera."""
+        tipo = str(getattr(quant.lot_id, 'x_tipo', '') or '').lower()
+        return tipo in ('formato', 'pieza')
+
     def _assert_quants_can_be_used(
         self,
         quants,
         partner_id=False,
         allowed_order=False,
         allowed_pickings=False,
+        qty_by_quant=None,
     ):
         """
         Bloquea:
@@ -1303,6 +1311,26 @@ class SaleOrder(models.Model):
 
             if blockers:
                 docs_txt = self._format_native_reservation_blockers(blockers)
+                # RESERVA PARCIAL (22 sep 2026, lote 21110-13 / RES/00815):
+                # un FORMATO/PIEZA se comparte por cantidad. Que otro
+                # documento tenga 2.40 de 23.04 no bloquea los 20.64 libres;
+                # solo bloquea si no queda remanente o si lo pedido no cabe.
+                # La PLACA sigue siendo todo o nada.
+                reservado_ajeno = sum(blockers.mapped('quantity'))
+                libre = max((quant.quantity or 0.0) - reservado_ajeno, 0.0)
+                pedido = (qty_by_quant or {}).get(quant.id)
+                if self._som_quant_is_fractionable(quant) and libre > 0.0001:
+                    if pedido is None or float(pedido) <= libre + 0.0001:
+                        continue
+                    raise UserError(
+                        f"El lote {quant.lot_id.name} solo tiene {libre:.2f} libres "
+                        f"y esta operación pide {float(pedido):.2f}.\n\n"
+                        f"Producto: {quant.product_id.display_name}\n"
+                        f"Ubicación: {quant.location_id.complete_name}\n"
+                        f"Cantidad física: {quant.quantity:.4f}\n"
+                        f"Comprometido en otra operación: {reservado_ajeno:.4f} ({docs_txt})\n\n"
+                        f"Baja la cantidad de este lote a {libre:.2f} o elige otro lote."
+                    )
 
                 raise UserError(
                     f"El lote {quant.lot_id.name} ya está reservado/asignado en otra operación activa.\n\n"
@@ -1326,7 +1354,25 @@ class SaleOrder(models.Model):
         return self._assert_quants_can_be_used(
             quants,
             partner_id=partner_id,
+            qty_by_quant=self._som_qty_by_quant_from_payload(products),
         )
+
+    @staticmethod
+    def _som_qty_by_quant_from_payload(products):
+        """Cantidad pedida por quant a partir de lots_breakdown del payload
+        (conversión de reserva, carrito). Sin desglose no hay entrada y el
+        candado solo exige que quede remanente."""
+        qty_by_quant = {}
+        for product in products or []:
+            for row in product.get('lots_breakdown') or []:
+                try:
+                    key = int(row.get('id'))
+                    qty = float(row.get('quantity') or 0.0)
+                except (TypeError, ValueError):
+                    continue
+                if qty > 0:
+                    qty_by_quant[key] = max(qty_by_quant.get(key, 0.0), qty)
+        return qty_by_quant
 
     # -------------------------------------------------------------------------
     # CAMPOS COMPUTADOS / PRECIOS
