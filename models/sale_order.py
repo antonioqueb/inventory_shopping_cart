@@ -3445,14 +3445,33 @@ class SaleOrder(models.Model):
                         tipo = str(quant.lot_id.x_tipo).lower()
 
                     if 'formato' in tipo or 'pieza' in tipo:
-                        if breakdown and quant.id in breakdown:
-                            qty = breakdown[quant.id]
-                        else:
+                        # El desglose puede venir con llave de QUANT (carrito)
+                        # o de LOTE (conversión de reserva). Antes solo se
+                        # buscaba por quant: con llave de lote caía al lote
+                        # COMPLETO y duplicaba la reserva (22 sep 2026,
+                        # 21110-13: pedía 20.64 y reservaba 23.04).
+                        qty = None
+                        if breakdown:
+                            if quant.id in breakdown:
+                                qty = breakdown[quant.id]
+                            elif quant.lot_id and quant.lot_id.id in breakdown:
+                                qty = breakdown[quant.lot_id.id]
+                        if qty is None:
                             cart_item = self.env['shopping.cart'].search([
                                 ('user_id', '=', cart_owner_id),
                                 ('quant_id', '=', quant.id),
                             ], limit=1)
                             qty = cart_item.quantity if cart_item else quant.quantity
+                        # Nunca por encima de lo LIBRE: otro documento puede
+                        # tener parte del formato comprometida (V/341 tenía
+                        # 2.40 de 23.04). Lo reservado por la PROPIA orden no
+                        # cuenta como ajeno (flujos de 2 pasos).
+                        ajeno = sum(self._get_native_reservation_blockers(
+                            quant,
+                            allowed_order=sale_order,
+                            allowed_pickings=pickings,
+                        ).mapped('quantity'))
+                        qty = min(qty, max((quant.quantity or 0.0) - ajeno, 0.0))
                     else:
                         qty = quant.quantity
 
