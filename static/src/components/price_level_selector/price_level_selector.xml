@@ -26,7 +26,8 @@
                        t-att-value="priceValue || ''"
                        t-on-click.stop=""
                        t-on-keydown="onPriceKeydown"
-                       t-on-change="onPriceChange"/>
+                       t-on-change="onPriceChange"
+                       t-on-blur="onPriceChange"/>
             </div>
 
             <select t-else=""

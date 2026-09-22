@@ -2,6 +2,7 @@
 
 import { Component, useEffect, useRef, useState } from "@odoo/owl";
 import { registry } from "@web/core/registry";
+import { useBus } from "@web/core/utils/hooks";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 
 // Niveles reservados al mayorista/autorizador (3 y 4). El Precio 5 es el
@@ -27,6 +28,17 @@ export class PriceLevelSelectorField extends Component {
         // focusPrice: al elegir Personalizado, el input del monto toma el
         // foco en cuanto se pinta.
         this.ui = useState({ open: false, pickLevel: false, focusPrice: false });
+
+        // CAPTURA PENDIENTE (21 sep 2026, RES/00837): el monto tecleado en el
+        // input inline solo llegaba al registro con el evento change (blur).
+        // Si el usuario pulsaba Guardar directo, el guardado corría antes de
+        // que el cambio se aplicara: la vista mostraba el precio nuevo pero
+        // la BD conservaba el viejo y al refrescar "se regresaba". Igual que
+        // useInputField del core, se confirma lo tecleado cuando el modelo lo
+        // pide antes de guardar.
+        const { model } = this.props.record;
+        useBus(model.bus, "WILL_SAVE_URGENTLY", () => this.commitPrice());
+        useBus(model.bus, "NEED_LOCAL_CHANGES", (ev) => ev.detail.proms.push(this.commitPrice()));
 
         useEffect(
             () => {
@@ -132,6 +144,21 @@ export class PriceLevelSelectorField extends Component {
     get priceValue() {
         const fname = this.priceFieldName;
         return fname ? Number(this.props.record.data[fname]) || 0 : 0;
+    }
+
+    async commitPrice() {
+        const el = this.priceInputRef.el;
+        const fname = this.priceFieldName;
+        if (!el || !fname || this.props.readonly) {
+            return;
+        }
+        let val = parseFloat(String(el.value).replace(",", "."));
+        if (!isFinite(val) || val < 0) {
+            val = 0;
+        }
+        if (Math.abs(val - this.priceValue) > 1e-9) {
+            await this.props.record.update({ [fname]: val });
+        }
     }
 
     async onPriceChange(ev) {
