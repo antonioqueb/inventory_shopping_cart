@@ -308,14 +308,15 @@
 
                 <field name="x_is_usd" invisible="1"/>
 
+                <!-- TC editable en cualquier estado (23 sep 2026): teclear
+                     un valor lo fija como Manual; Banorte/DOF lo recalculan. -->
                 <field name="x_exchange_rate_source"
-                       string="Fuente TC"
-                       invisible="not x_is_usd"/>
+                       string="Fuente TC"/>
 
+                <field name="x_manual_exchange_rate" invisible="1"/>
                 <field name="x_exchange_rate"
                        string="Tipo de Cambio MXN/USD"
-                       readonly="1"
-                       invisible="not x_is_usd"/>
+                       readonly="x_exchange_rate_source != 'manual'"/>
             </xpath>
 
             <!-- ===================== ORDER LINES: PRICE SELECTOR ===================== -->

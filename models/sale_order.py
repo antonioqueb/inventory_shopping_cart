@@ -949,12 +949,26 @@ class SaleOrder(models.Model):
     x_exchange_rate_source = fields.Selection([
         ('banorte', 'Banorte'),
         ('official', 'Diario Oficial (SAT)'),
+        ('manual', 'Manual'),
     ], string='Fuente Tipo de Cambio', default='banorte', tracking=True)
+
+    # TC MANUAL (23 sep 2026): el vendedor puede fijar el tipo de cambio de
+    # la orden en cualquier estado, confirmada incluida. Teclear el TC lo
+    # guarda aquí y pone la fuente en Manual; volver a Banorte/DOF lo
+    # descarta. Se usa en TODAS las conversiones de la orden (remapeo de
+    # precios al cambiar de divisa, descuentos en MXN, comisiones).
+    x_manual_exchange_rate = fields.Float(
+        string='TC manual',
+        digits=(12, 4),
+        copy=False,
+        tracking=True,
+    )
 
     x_exchange_rate = fields.Float(
         string='Tipo de Cambio',
         digits=(12, 4),
         compute='_compute_exchange_rate',
+        inverse='_inverse_exchange_rate',
     )
 
     x_is_usd = fields.Boolean(
@@ -1025,7 +1039,7 @@ class SaleOrder(models.Model):
             order.message_post(body=Markup(
                 f"<p>🔒 <b>Tipo de cambio congelado por entrega</b>: "
                 f"{rate:.4f} MXN/USD "
-                f"(fuente: {'Banorte' if order.x_exchange_rate_source == 'banorte' else 'DOF'}). "
+                f"(fuente: {dict(order._fields['x_exchange_rate_source'].selection).get(order.x_exchange_rate_source, 'Banorte')}). "
                 f"La divisa de la orden ya no puede cambiarse.</p>"
             ))
 
@@ -1424,14 +1438,33 @@ class SaleOrder(models.Model):
                 and order.pricelist_id.currency_id.name == 'USD'
             )
 
-    @api.depends('x_exchange_rate_source', 'pricelist_id', 'pricelist_id.currency_id')
+    @api.depends('x_exchange_rate_source', 'x_manual_exchange_rate',
+                 'pricelist_id', 'pricelist_id.currency_id')
     def _compute_exchange_rate(self):
         for order in self:
+            if (order.x_exchange_rate_source == 'manual'
+                    and (order.x_manual_exchange_rate or 0.0) > 0):
+                order.x_exchange_rate = order.x_manual_exchange_rate
+                continue
             banorte_rate = order._get_banorte_rate()
             official_rate = order._get_official_rate()
             order.x_exchange_rate = official_rate if order.x_exchange_rate_source == 'official' else banorte_rate
 
-    @api.onchange('x_exchange_rate_source', 'pricelist_id')
+    def _inverse_exchange_rate(self):
+        """Teclear el TC en la orden = fuente Manual con ese valor. Un valor
+        en cero regresa a la fuente automática (Banorte)."""
+        for order in self:
+            rate = order.x_exchange_rate or 0.0
+            if rate > 0:
+                vals = {'x_manual_exchange_rate': rate}
+                if order.x_exchange_rate_source != 'manual':
+                    vals['x_exchange_rate_source'] = 'manual'
+                order.write(vals)
+            elif order.x_exchange_rate_source == 'manual':
+                order.write({'x_exchange_rate_source': 'banorte',
+                             'x_manual_exchange_rate': 0.0})
+
+    @api.onchange('x_exchange_rate_source', 'pricelist_id', 'x_manual_exchange_rate')
     def _onchange_exchange_rate_fields(self):
         self._compute_is_usd()
         self._compute_exchange_rate()
