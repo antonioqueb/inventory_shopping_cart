@@ -4,6 +4,8 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
 
+from markupsafe import Markup
+
 from odoo import models, fields, api
 from odoo.exceptions import UserError
 
@@ -1899,10 +1901,15 @@ class StockLotHoldOrderLine(models.Model):
         return records
 
     def write(self, vals):
+        price_before = None
         if 'precio_unitario' in vals:
             vals['precio_unitario'] = math.ceil(float(vals.get('precio_unitario') or 0.0))
+            price_before = {l.id: (l.precio_unitario or 0.0) for l in self}
 
         res = super().write(vals)
+
+        if price_before is not None:
+            self._som_log_price_change(price_before)
 
         if any(field in vals for field in ['quant_id', 'lot_id', 'lot_ids', 'product_id']):
             self._sync_quantity_from_lots()
@@ -1911,6 +1918,37 @@ class StockLotHoldOrderLine(models.Model):
             self._sync_price_from_selector()
 
         return res
+
+    def _som_log_price_change(self, price_before):
+        """Bitácora de precio por línea en el chatter del apartado (antes →
+        después, quién): el precio del apartado no tenía rastro y un
+        repreciado automático (TC vivo) era invisible (RES/00731)."""
+        by_order = {}
+        for line in self:
+            if not line.product_id or not line.order_id:
+                continue
+            old = price_before.get(line.id)
+            new = line.precio_unitario or 0.0
+            if not old or abs(new - old) < 0.005:
+                continue
+            by_order.setdefault(line.order_id, []).append((line, old, new))
+        for order, changes in by_order.items():
+            rows = Markup('').join(
+                Markup('<li><b>%s</b>: %s → <b>%s</b></li>') % (
+                    line.x_mask_name or line.product_id.display_name or '',
+                    '{:,.2f}'.format(old), '{:,.2f}'.format(new),
+                )
+                for line, old, new in changes
+            )
+            try:
+                order.sudo().message_post(
+                    body=Markup('<p>💲 <b>Precio/m² modificado</b> por %s:</p><ul>%s</ul>')
+                    % (self.env.user.name, rows),
+                    message_type='comment',
+                    subtype_xmlid='mail.mt_note',
+                )
+            except Exception:  # noqa: BLE001
+                _logger.exception('[PRICE LOG] No se pudo registrar el cambio de precio en %s', order.name)
 
     def _sync_quantity_from_lots(self):
         if self.env.context.get('skip_hold_line_quantity_sync'):

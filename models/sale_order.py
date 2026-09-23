@@ -249,6 +249,37 @@ class SaleOrderLine(models.Model):
             except Exception:  # noqa: BLE001
                 _logger.exception('[QTY NOTIFY] No se pudo avisar al vendedor en %s', order.name)
 
+    def _som_log_price_change(self, price_before):
+        """Bitácora de precio por línea en el chatter de la orden (antes →
+        después, quién). El core solo rastrea el TOTAL de la orden: un
+        cambio de precio unitario no dejaba rastro legible (V/974)."""
+        by_order = {}
+        for line in self:
+            if line.display_type or not line.product_id or not line.order_id:
+                continue
+            old = price_before.get(line.id)
+            new = line.price_unit or 0.0
+            if not old or abs(new - old) < 0.005:
+                continue
+            by_order.setdefault(line.order_id, []).append((line, old, new))
+        for order, changes in by_order.items():
+            rows = Markup('').join(
+                Markup('<li><b>%s</b>: %s → <b>%s</b></li>') % (
+                    line.x_mask_name or line.product_id.display_name or '',
+                    '{:,.2f}'.format(old), '{:,.2f}'.format(new),
+                )
+                for line, old, new in changes
+            )
+            try:
+                order.sudo().message_post(
+                    body=Markup('<p>💲 <b>Precio unitario modificado</b> por %s:</p><ul>%s</ul>')
+                    % (self.env.user.name, rows),
+                    message_type='comment',
+                    subtype_xmlid='mail.mt_note',
+                )
+            except Exception:  # noqa: BLE001
+                _logger.exception('[PRICE LOG] No se pudo registrar el cambio de precio en %s', order.name)
+
     def _som_reconcile_price_selector(self):
         """Etiqueta ≠ precio → 'Personalizado'. Devuelve las líneas
         reetiquetadas. Nunca modifica price_unit ni sube de custom a nivel:
@@ -378,10 +409,16 @@ class SaleOrderLine(models.Model):
         if 'product_uom_qty' in vals:
             qty_before = {l.id: (l.product_uom_qty or 0.0) for l in self}
 
+        price_before = None
+        if 'price_unit' in vals:
+            price_before = {l.id: (l.price_unit or 0.0) for l in self}
+
         res = super().write(vals)
 
         if qty_before is not None:
             self._som_notify_seller_qty_change(qty_before)
+        if price_before is not None:
+            self._som_log_price_change(price_before)
         if (
             not self.env.context.get('som_skip_iva_force')
             and ('tax_ids' in vals or 'product_id' in vals)
@@ -3218,15 +3255,20 @@ class SaleOrder(models.Model):
                 # apartado o en el asistente. Ahora: el nivel que manda el
                 # origen (apartado / asistente) o, sin él, el que empata con
                 # el importe (tolerante a redondeo); si no empata, custom.
-                # Con nivel, el precio de la línea es el de la LISTA en la
-                # divisa de la orden (el importe del apartado era una copia
-                # de esa lista, redondeada o con TC vivo).
+                # El PRECIO manda: la venta nace con el importe del origen
+                # (el que vio el cliente en la reserva). Antes, con nivel, se
+                # reemplazaba por la escalera MXN almacenada, pero el apartado
+                # calcula el nivel como USD × TC vivo → la venta nacía más
+                # barata que la reserva (RES/00731 → V/974, 23 sep 2026). Si el
+                # importe no empata con el nivel vigente, la etiqueta honesta
+                # (_som_reconcile_price_selector) lo deja en Personalizado.
+                # La lista solo rellena cuando el origen no trae importe.
                 selector = pd.get('price_selector')
                 if selector not in self.env['sale.order.line'].SOM_LEVEL_SELECTORS:
                     selector = self.env['stock.lot.hold.order.line']._selector_from_price(
                         rec.id, currency_code, pd['price_unit'], company=company)
                 price_unit = pd['price_unit']
-                if selector != 'custom':
+                if selector != 'custom' and not (price_unit or 0.0) > 0:
                     level_price = self.env['product.template']._get_price_level_value(
                         rec.product_tmpl_id, selector, currency_code, company=company)
                     if level_price > 0:
