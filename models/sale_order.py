@@ -2402,6 +2402,7 @@ class SaleOrder(models.Model):
                         line.product_id,
                         line.x_selected_lots,
                         breakdown=breakdown_int,
+                        sale_line=line,
                     )
 
         # Copiar la selección real a lot_ids/breakdown para que el widget
@@ -3452,11 +3453,20 @@ class SaleOrder(models.Model):
                 "sigue en el asistente; corrige y vuelve a dar Crear.\n\n"
                 f"Detalle técnico: {str(e)}")
 
-    def _assign_specific_lots(self, pickings, product, selected_quants, breakdown=None):
+    def _assign_specific_lots(self, pickings, product, selected_quants, breakdown=None, sale_line=None):
         """
         Asigna lotes específicos a move lines del picking.
 
         Bloquea cualquier quant que ya esté reservado en otra operación activa.
+
+        - Con ``sale_line`` solo toca los moves de ESA línea. Filtrar por
+          producto a secas cargaba las placas de un renglón en los moves de
+          todos los renglones del mismo producto (V/150: 4 placas en el
+          renglón de 13.46 y los de 6.73 en cero).
+        - Solo crea líneas en moves cuyo origen CONTIENE la ubicación del
+          quant (el PICK). El OUT encadenado recibe los lotes por la reserva
+          nativa al validar el PICK; crearle líneas en el bin hacía que el OUT
+          descontara otra vez del bin en lugar de SOM/Salida (S58-04).
         """
         sale_order = self._resolve_sale_order_from_pickings(pickings)
         cart_owner_id = sale_order.user_id.id if sale_order and sale_order.user_id else self.env.user.id
@@ -3471,16 +3481,32 @@ class SaleOrder(models.Model):
                 allowed_pickings=pickings,
             )
 
-        if not breakdown:
-            sample_move = pickings.mapped('move_ids').filtered(
-                lambda m: m.product_id.id == product.id
-            )[:1]
+        def _move_matches(m):
+            if m.product_id.id != product.id:
+                return False
+            # Con línea conocida, solo sus moves; un move sin sale_line_id
+            # (picking armado a mano) se acepta por producto como antes.
+            if sale_line and m.sale_line_id:
+                return m.sale_line_id.id == sale_line.id
+            return True
 
-            if sample_move and sample_move.sale_line_id and sample_move.sale_line_id.x_lot_breakdown_json:
+        def _location_contains(parent, child):
+            return bool(
+                parent and child and child.parent_path and parent.parent_path
+                and child.parent_path.startswith(parent.parent_path)
+            )
+
+        if not breakdown:
+            source_line = sale_line
+            if not source_line:
+                sample_move = pickings.mapped('move_ids').filtered(_move_matches)[:1]
+                source_line = sample_move.sale_line_id if sample_move else False
+
+            if source_line and source_line.x_lot_breakdown_json:
                 try:
                     breakdown = {
                         int(k): float(v)
-                        for k, v in sample_move.sale_line_id.x_lot_breakdown_json.items()
+                        for k, v in source_line.x_lot_breakdown_json.items()
                     }
                 except Exception:
                     pass
@@ -3489,7 +3515,23 @@ class SaleOrder(models.Model):
             if picking.state in ['done', 'cancel']:
                 continue
 
-            for move in picking.move_ids.filtered(lambda m: m.product_id.id == product.id):
+            for move in picking.move_ids.filtered(_move_matches):
+                # Paso encadenado (OUT después del PICK): si ningún quant
+                # seleccionado vive bajo su origen, no se toca; la reserva
+                # nativa encadenada le pasa los lotes del PICK. Un move de un
+                # solo paso conserva el comportamiento previo (quants fuera
+                # de su origen, p. ej. SOM/TRANSIT, se reservan igual).
+                product_quants = selected_quants.filtered(
+                    lambda q: q.product_id.id == product.id
+                )
+                move_quants = product_quants.filtered(
+                    lambda q: _location_contains(move.location_id, q.location_id)
+                )
+                if not move_quants:
+                    if move.move_orig_ids:
+                        continue
+                    move_quants = product_quants
+
                 # El unlink de las líneas autoasignadas NO puede fallar en
                 # silencio: crear las líneas exactas ENCIMA de las automáticas
                 # duplica demanda y reserva en la entrega.
@@ -3510,8 +3552,8 @@ class SaleOrder(models.Model):
                 remaining = move.product_uom_qty
                 failed_lots = []
 
-                for quant in selected_quants:
-                    if quant.product_id.id != product.id or remaining <= 0:
+                for quant in move_quants:
+                    if remaining <= 0:
                         continue
 
                     tipo = 'placa'

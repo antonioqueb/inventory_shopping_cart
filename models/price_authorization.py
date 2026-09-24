@@ -1081,6 +1081,7 @@ class PriceAuthorization(models.Model):
                         picking,
                         line.product_id,
                         line.x_selected_lots,
+                        sale_line=line,
                     )
 
         self.write({'sale_order_id': sale_order.id})
