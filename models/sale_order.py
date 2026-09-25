@@ -964,6 +964,19 @@ class SaleOrder(models.Model):
         tracking=True,
     )
 
+    # TC DE ORIGEN CONGELADO (25 sep 2026): la cotización guarda el TC de
+    # su fuente (Banorte/DOF) al NACER y lo respeta siempre; antes se
+    # recalculaba en vivo y cambiaba cada día. La venta que nace de un
+    # apartado hereda el TC del apartado. Cambiar la fuente toma el TC del
+    # día de la nueva fuente; el TC manual sigue mandando sobre este.
+    x_frozen_exchange_rate = fields.Float(
+        string='TC de origen',
+        digits=(12, 4),
+        copy=False,
+        readonly=True,
+        tracking=True,
+    )
+
     x_exchange_rate = fields.Float(
         string='Tipo de Cambio',
         digits=(12, 4),
@@ -1439,6 +1452,7 @@ class SaleOrder(models.Model):
             )
 
     @api.depends('x_exchange_rate_source', 'x_manual_exchange_rate',
+                 'x_frozen_exchange_rate',
                  'pricelist_id', 'pricelist_id.currency_id')
     def _compute_exchange_rate(self):
         for order in self:
@@ -1446,9 +1460,60 @@ class SaleOrder(models.Model):
                     and (order.x_manual_exchange_rate or 0.0) > 0):
                 order.x_exchange_rate = order.x_manual_exchange_rate
                 continue
-            banorte_rate = order._get_banorte_rate()
-            official_rate = order._get_official_rate()
-            order.x_exchange_rate = official_rate if order.x_exchange_rate_source == 'official' else banorte_rate
+            if (order.x_frozen_exchange_rate or 0.0) > 0:
+                order.x_exchange_rate = order.x_frozen_exchange_rate
+                continue
+            order.x_exchange_rate = order._som_live_exchange_rate(
+                order.x_exchange_rate_source)
+
+    def _som_live_exchange_rate(self, source):
+        """TC del día de la fuente (Banorte por defecto, DOF si 'official')."""
+        if source == 'official':
+            return self._get_official_rate()
+        return self._get_banorte_rate()
+
+    @api.model
+    def _som_exchange_rate_at(self, source, when, company=None):
+        """TC de la fuente vigente en `when` (para rellenar el TC de origen
+        de documentos que nacieron antes del congelado). Banorte sale de su
+        bitácora; DOF de res.currency.rate. Sin histórico: el del día."""
+        company = company or self.env.company
+        if not when:
+            return self.with_company(company)._som_live_exchange_rate(source)
+        if source != 'official' and 'banorte.rate.log' in self.env:
+            log = self.env['banorte.rate.log'].sudo().search([
+                ('success', '=', True),
+                ('rate_sell', '>', 0),
+                ('requested_at', '<=', when),
+            ], order='requested_at desc', limit=1)
+            if not log:
+                # Anterior a la bitácora (arrancó 3 ago 2026): el primer TC
+                # registrado es el más cercano.
+                log = self.env['banorte.rate.log'].sudo().search([
+                    ('success', '=', True), ('rate_sell', '>', 0),
+                ], order='requested_at asc', limit=1)
+            if log:
+                return log.rate_sell
+            return self.with_company(company)._get_banorte_rate()
+        usd = self.env.ref('base.USD', raise_if_not_found=False)
+        mxn = self.env.ref('base.MXN', raise_if_not_found=False)
+        if usd and mxn:
+            day = fields.Date.to_date(when)
+            Rate = self.env['res.currency.rate'].sudo()
+            def _r(cur):
+                rec = Rate.search([
+                    ('currency_id', '=', cur.id), ('name', '<=', day),
+                    '|', ('company_id', '=', company.id),
+                    ('company_id', '=', False),
+                ], order='name desc, company_id', limit=1)
+                return rec.rate if rec else 1.0
+            usd_rate, mxn_rate = _r(usd), _r(mxn)
+            rate = mxn_rate / usd_rate if usd_rate > 0 else 0.0
+            if 0 < rate < 1:
+                rate = 1.0 / rate
+            if rate > 0:
+                return rate
+        return self.with_company(company)._som_live_exchange_rate(source)
 
     def _inverse_exchange_rate(self):
         """Teclear el TC en la orden = fuente Manual con ese valor. Un valor
@@ -1466,6 +1531,14 @@ class SaleOrder(models.Model):
 
     @api.onchange('x_exchange_rate_source', 'pricelist_id', 'x_manual_exchange_rate')
     def _onchange_exchange_rate_fields(self):
+        # Fuente nueva en el formulario = TC del día de esa fuente (al
+        # guardar, write() lo congela igual).
+        for order in self:
+            source = order.x_exchange_rate_source
+            if source != 'manual' and (
+                    not order.x_frozen_exchange_rate
+                    or source != order._origin.x_exchange_rate_source):
+                order.x_frozen_exchange_rate = order._som_live_exchange_rate(source)
         self._compute_is_usd()
         self._compute_exchange_rate()
 
@@ -2426,6 +2499,24 @@ class SaleOrder(models.Model):
                 )
                 vals['name'] = self._som_next_sequence(
                     'sale.quotation', company) or 'New'
+            # TC de origen: el que manda el documento de origen (apartado)
+            # por contexto o, si no, el del día de la fuente al nacer.
+            if not vals.get('x_frozen_exchange_rate'):
+                origin_rate = self.env.context.get('som_origin_exchange_rate')
+                if origin_rate:
+                    vals['x_frozen_exchange_rate'] = origin_rate
+                    origin_source = self.env.context.get(
+                        'som_origin_exchange_rate_source')
+                    if origin_source and 'x_exchange_rate_source' not in vals:
+                        vals['x_exchange_rate_source'] = origin_source
+                else:
+                    company = (
+                        self.env['res.company'].browse(vals['company_id'])
+                        if vals.get('company_id') else self.env.company
+                    )
+                    vals['x_frozen_exchange_rate'] = self.with_company(
+                        company)._som_live_exchange_rate(
+                        vals.get('x_exchange_rate_source') or 'banorte')
 
         orders = super().create(vals_list)
         orders._som_price_auth_auto_request()
@@ -2475,6 +2566,24 @@ class SaleOrder(models.Model):
                 line.price_unit = new_price
 
     def write(self, vals):
+        # Cambio de FUENTE del TC (Banorte⇄DOF, o regreso desde Manual):
+        # se congela el TC del día de la fuente nueva. Sin cambio de
+        # fuente, el TC de origen no se toca.
+        new_source = vals.get('x_exchange_rate_source')
+        if new_source and new_source != 'manual' \
+                and 'x_frozen_exchange_rate' not in vals:
+            changed = self.filtered(
+                lambda o: o.x_exchange_rate_source != new_source)
+            if changed:
+                for order in self:
+                    order_vals = dict(vals)
+                    order_vals['x_frozen_exchange_rate'] = (
+                        order._som_live_exchange_rate(new_source)
+                        if order in changed
+                        else order.x_frozen_exchange_rate)
+                    order.write(order_vals)
+                return True
+
         # ÓRDENES MIGRADAS: el core reescribe date_order al confirmar
         # (now() junto con state='sale'); para una orden migrada eso
         # destruye su fecha histórica y ensucia el mes actual en

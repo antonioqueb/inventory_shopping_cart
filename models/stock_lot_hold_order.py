@@ -111,6 +111,17 @@ class StockLotHoldOrder(models.Model):
         ('official', 'Diario Oficial (SAT)'),
     ], string='Fuente Tipo de Cambio', default='banorte', tracking=True)
 
+    # TC congelado al NACER el apartado (25 sep 2026): antes se leía en
+    # vivo y cambiaba cada día. Cambiar la fuente toma el TC del día de la
+    # fuente nueva. La venta que nace del apartado hereda este TC.
+    x_frozen_exchange_rate = fields.Float(
+        string='TC de origen',
+        digits=(12, 4),
+        copy=False,
+        readonly=True,
+        tracking=True,
+    )
+
     x_exchange_rate = fields.Float(
         string='Tipo de Cambio',
         digits=(12, 4),
@@ -129,7 +140,8 @@ class StockLotHoldOrder(models.Model):
                 order.currency_id and order.currency_id.name == 'USD'
             )
 
-    @api.depends('x_exchange_rate_source', 'currency_id', 'company_id')
+    @api.depends('x_exchange_rate_source', 'x_frozen_exchange_rate',
+                 'currency_id', 'company_id')
     def _compute_x_exchange_rate(self):
         SaleOrder = self.env['sale.order']
         banorte_rate = SaleOrder._get_banorte_rate()
@@ -137,6 +149,9 @@ class StockLotHoldOrder(models.Model):
         # compañía); se cachea por compañía para no repetir la búsqueda.
         official_by_company = {}
         for order in self:
+            if (order.x_frozen_exchange_rate or 0.0) > 0:
+                order.x_exchange_rate = order.x_frozen_exchange_rate
+                continue
             company = order.company_id or self.env.company
             if company.id not in official_by_company:
                 official_by_company[company.id] = SaleOrder.with_company(
@@ -406,7 +421,16 @@ class StockLotHoldOrder(models.Model):
         """Cambiar la fuente del TC (Banorte/DOF) reprecia las líneas: en MXN
         los niveles se calculan como precio USD × TC de la fuente elegida."""
         for order in self:
+            order.x_frozen_exchange_rate = order._som_live_exchange_rate(
+                order.x_exchange_rate_source)
             order.line_ids._sync_price_from_selector()
+
+    def _som_live_exchange_rate(self, source):
+        """TC del día de la fuente con la compañía del apartado."""
+        self.ensure_one()
+        company = self.company_id or self.env.company
+        return self.env['sale.order'].with_company(
+            company)._som_live_exchange_rate(source)
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -426,12 +450,37 @@ class StockLotHoldOrder(models.Model):
                     vals.get('x_hold_business_days') or 5,
                 )
 
+            if not vals.get('x_frozen_exchange_rate'):
+                company = (
+                    self.env['res.company'].browse(vals['company_id'])
+                    if vals.get('company_id') else self.env.company
+                )
+                vals['x_frozen_exchange_rate'] = self.env['sale.order'].with_company(
+                    company)._som_live_exchange_rate(
+                    vals.get('x_exchange_rate_source') or 'banorte')
+
         records = super().create(vals_list)
         records._sync_manual_defaults_and_lines()
         records._som_hold_auto_request()
         return records
 
     def write(self, vals):
+        # Cambio de fuente del TC: se congela el TC del día de la fuente
+        # nueva (antes de repreciar las líneas más abajo).
+        new_source = vals.get('x_exchange_rate_source')
+        if new_source and 'x_frozen_exchange_rate' not in vals:
+            changed = self.filtered(
+                lambda o: o.x_exchange_rate_source != new_source)
+            if changed:
+                for order in self:
+                    order_vals = dict(vals)
+                    order_vals['x_frozen_exchange_rate'] = (
+                        order._som_live_exchange_rate(new_source)
+                        if order in changed
+                        else order.x_frozen_exchange_rate)
+                    order.write(order_vals)
+                return True
+
         if vals.get('x_hold_business_days') is not None:
             try:
                 if int(vals.get('x_hold_business_days') or 0) <= 0:
@@ -1137,7 +1186,12 @@ class StockLotHoldOrder(models.Model):
             for order in self
         }
 
-        result = super().action_convert_to_sale_order()
+        # La venta nace con el TC DE ORIGEN del apartado (no el del día).
+        origin = self[:1]
+        result = super(StockLotHoldOrder, self.with_context(
+            som_origin_exchange_rate=origin.x_exchange_rate or False,
+            som_origin_exchange_rate_source=origin.x_exchange_rate_source or False,
+        )).action_convert_to_sale_order()
 
         for order in self:
             order.invalidate_recordset()
@@ -1153,6 +1207,16 @@ class StockLotHoldOrder(models.Model):
                 continue
 
             order._stone_apply_hold_payload_to_sale_order(sale_order, payload)
+
+            # Red de seguridad: si la venta no recibió el TC del apartado
+            # por contexto, se le fija aquí.
+            hold_rate = order.x_exchange_rate or 0.0
+            if hold_rate > 0 and sale_order.x_exchange_rate_source != 'manual' \
+                    and abs((sale_order.x_frozen_exchange_rate or 0.0) - hold_rate) > 0.00005:
+                sale_order.sudo().write({
+                    'x_exchange_rate_source': order.x_exchange_rate_source or 'banorte',
+                    'x_frozen_exchange_rate': hold_rate,
+                })
 
             # Solicitud PENDIENTE del apartado: la venta nueva crea la suya
             # con sus datos, así que la del apartado se expira (antes
