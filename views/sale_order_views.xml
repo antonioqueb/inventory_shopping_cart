@@ -477,4 +477,20 @@ if targets:
     action = targets[:1].action_remove_iva()
         </field>
     </record>
+
+    <!-- Buscar/agrupar por el proyecto que SÍ se captura (x_project_id). El
+         "Proyecto" nativo (project_id de sale_project) está vacío en todas
+         las órdenes, por eso la búsqueda por proyecto no encontraba nada. -->
+    <record id="view_sales_order_filter_som_project" model="ir.ui.view">
+        <field name="name">sale.order.search.som.project</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_sales_order_filter"/>
+        <field name="arch" type="xml">
+            <xpath expr="//search" position="inside">
+                <field name="x_project_id" string="Proyecto (Job Name)"/>
+                <filter name="group_som_project" string="Proyecto (Job Name)"
+                        context="{'group_by': 'x_project_id'}"/>
+            </xpath>
+        </field>
+    </record>
 </odoo>
