@@ -2,6 +2,7 @@
 # models/sale_order.py
 
 import math
+import unicodedata
 import logging
 import re
 
@@ -883,6 +884,44 @@ class SaleOrder(models.Model):
              'proyectos; una orden pertenece a uno. Crear un proyecto desde '
              'aquí lo registra a nombre del cliente.',
     )
+
+    # Búsqueda ABIERTA por proyecto (25 sep 2026): cada palabra tecleada
+    # debe aparecer en el nombre del proyecto, en cualquier orden, sin
+    # importar mayúsculas ni acentos ("cumbre casas" → "15 CASAS CUMBRE
+    # ALTA"). El ilike del many2one exigía el texto exacto y seguido.
+    x_project_search = fields.Char(
+        string='Proyecto',
+        compute='_compute_x_project_search',
+        search='_search_x_project_search',
+    )
+
+    def _compute_x_project_search(self):
+        for order in self:
+            order.x_project_search = order.x_project_id.display_name or False
+
+    @api.model
+    def _som_fold_text(self, text):
+        text = unicodedata.normalize('NFKD', str(text or '').lower())
+        return ''.join(c for c in text if not unicodedata.combining(c))
+
+    def _search_x_project_search(self, operator, value):
+        if operator not in ('ilike', 'like', '=', '=ilike', 'not ilike', '!=') \
+                or not isinstance(value, str):
+            return [('x_project_id', operator, value)]
+        terms = [t for t in self._som_fold_text(value).split() if t]
+        if not terms:
+            return []
+        # sudo: solo se resuelven NOMBRES de proyecto; qué órdenes ve cada
+        # quien lo siguen decidiendo las reglas de sale.order.
+        projects = self.env['project.project'].sudo().with_context(
+            active_test=False).search_read([], ['display_name'])
+        ids = [
+            p['id'] for p in projects
+            if all(t in self._som_fold_text(p['display_name']) for t in terms)
+        ]
+        if operator in ('not ilike', '!='):
+            return ['|', ('x_project_id', '=', False), ('x_project_id', 'not in', ids)]
+        return [('x_project_id', 'in', ids)]
 
     @api.onchange('partner_id')
     def _onchange_partner_som_project(self):

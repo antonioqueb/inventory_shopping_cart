@@ -478,17 +478,20 @@ if targets:
         </field>
     </record>
 
-    <!-- Buscar/agrupar por el proyecto que SÍ se captura (x_project_id). El
-         "Proyecto" nativo (project_id de sale_project) está vacío en todas
-         las órdenes, por eso la búsqueda por proyecto no encontraba nada. -->
+    <!-- UN SOLO "Proyecto" en el buscador de ventas: el project_id nativo
+         (sale_project) está vacío en todas las órdenes y confundía; se
+         reemplaza por x_project_search (búsqueda abierta por palabras sobre
+         x_project_id). Agrupar por proyecto también usa x_project_id. -->
     <record id="view_sales_order_filter_som_project" model="ir.ui.view">
         <field name="name">sale.order.search.som.project</field>
         <field name="model">sale.order</field>
-        <field name="inherit_id" ref="sale.view_sales_order_filter"/>
+        <field name="inherit_id" ref="sale_project.view_sales_order_filter_inherit_sale_project"/>
         <field name="arch" type="xml">
+            <xpath expr="//field[@name='project_id']" position="replace">
+                <field name="x_project_search" string="Proyecto"/>
+            </xpath>
             <xpath expr="//search" position="inside">
-                <field name="x_project_id" string="Proyecto (Job Name)"/>
-                <filter name="group_som_project" string="Proyecto (Job Name)"
+                <filter name="group_som_project" string="Proyecto"
                         context="{'group_by': 'x_project_id'}"/>
             </xpath>
         </field>
