@@ -937,10 +937,26 @@ class StockLotHoldOrder(models.Model):
                 continue
 
             lots = self._stone_get_line_lots_for_sale_sync(line)
+            unavailable = self.env['stock.lot']
+            # Mismo criterio que la conversión base (stock_lot_dimensions):
+            # una placa de lot_ids SIN apartado activo de esta línea no pasa
+            # a la venta. Con «Convertir solo con lo disponible» la base la
+            # poda, pero este payload se captura ANTES y la volvía a escribir
+            # en la venta (placa vendida aquí y apartada por otro cliente).
+            # Sin la poda la base no convierte, así que filtrar siempre es
+            # equivalente.
+            if 'lot_ids' in line._fields and 'hold_ids' in line._fields:
+                active_lot_ids = set(line.hold_ids.filtered(
+                    lambda h: h.estado == 'activo').mapped('lot_id').ids)
+                unavailable = line.lot_ids.filtered(
+                    lambda l: l.id not in active_lot_ids)
+                lots -= unavailable
             if not lots:
                 continue
 
             quants = self._stone_get_line_quants_for_sale_sync(line, lots)
+            if unavailable:
+                quants = quants.filtered(lambda q: q.lot_id not in unavailable)
             product_id = line.product_id.id
 
             data = payload_by_product[product_id]
