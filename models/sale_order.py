@@ -2720,8 +2720,13 @@ class SaleOrder(models.Model):
                 lambda o: o.state == 'sale'
                 and vals['pricelist_id'] != o.pricelist_id.id)
             if confirmed:
+                # ORDEN (27 sep 2026): primero la DIVISA, después las líneas.
+                # Antes se escribían primero los precios ya convertidos (p. ej.
+                # a USD) con la lista vieja (MXN) todavía puesta: 43 "pesos"
+                # quedaba bajo el mínimo y nacía sola una autorización falsa
+                # (en MXN, con precios de dólar) que se expiraba al instante,
+                # pero el aviso a los autorizadores ya había salido.
                 pl_id = vals.pop('pricelist_id')
-                res = super().write(vals) if vals else True
                 pl = self.env['product.pricelist'].browse(pl_id)
                 for order in self:
                     if order.pricelist_id.id == pl_id:
@@ -2740,9 +2745,19 @@ class SaleOrder(models.Model):
                         f"(orden confirmada sin entrega: permitido; el TC "
                         f"se congela con la entrega).</p>"
                     ))
+                # Líneas ya con la divisa nueva y SIN solicitud por línea:
+                # la autorización se evalúa UNA vez, al final, con la orden
+                # completa (_som_price_auth_after_write).
+                res = super(SaleOrder, self.with_context(som_price_auth_auto=True)).write(vals) \
+                    if vals else True
                 self._som_price_auth_after_write({'pricelist_id': pl_id})
                 return res
-        res = super().write(vals)
+        if 'pricelist_id' in vals:
+            # Cambio de divisa en cotización: mismo criterio, una sola
+            # evaluación al final y nunca a media escritura.
+            res = super(SaleOrder, self.with_context(som_price_auth_auto=True)).write(vals)
+        else:
+            res = super().write(vals)
         self._som_price_auth_after_write(vals)
         return res
 
