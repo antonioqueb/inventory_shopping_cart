@@ -7,7 +7,8 @@ from datetime import datetime, timedelta
 from markupsafe import Markup
 
 from odoo import models, fields, api
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
+from odoo.addons.stock_lot_dimensions.models.utils.business_days import BusinessDaysCalculator
 
 
 _logger = logging.getLogger(__name__)
@@ -311,13 +312,10 @@ class StockLotHoldOrder(models.Model):
         if business_days <= 0:
             business_days = 5
 
-        added = 0
-        while added < business_days:
-            current += timedelta(days=1)
-            if current.weekday() < 5:
-                added += 1
-
-        return current
+        # HORA DE MONTERREY: antes se contaba weekday() sobre UTC naive; un
+        # apartado del viernes 19:00 local (sábado 01:00 UTC) vencía un día
+        # hábil antes. Calculador canónico de stock_lot_dimensions.
+        return BusinessDaysCalculator.get_expiration_date(current, business_days)
 
     def _count_business_days_between(self, start_dt, end_dt):
         if not start_dt or not end_dt:
@@ -329,6 +327,9 @@ class StockLotHoldOrder(models.Model):
         if end_dt <= start_dt:
             return 0
 
+        # Días en hora de Monterrey (los datetimes de Odoo son UTC naive).
+        start_dt = BusinessDaysCalculator.to_local(start_dt)
+        end_dt = BusinessDaysCalculator.to_local(end_dt)
         current = start_dt
         count = 0
 
@@ -1411,6 +1412,36 @@ class StockLotHoldOrderLine(models.Model):
              'nombre en sale.order.line para preservar las parcialidades del '
              'apartado igual que en la orden de venta.',
     )
+
+    @api.constrains('x_lot_breakdown_json', 'lot_ids')
+    def _check_breakdown_per_lot_vs_libre(self):
+        """La parcialidad se valida LOTE POR LOTE contra su libre
+        (_som_lot_free_qty). El candado de la línea solo comparaba el TOTAL:
+        L1 (5 libres) = 15 y L2 (20 libres) = 5 sumaba 20 ≤ 25 y pasaba,
+        con L1 sobre-apartado por 10. Editar solo el desglose (botón de
+        piedra) tampoco re-validaba nada."""
+        for line in self:
+            breakdown = line.x_lot_breakdown_json or {}
+            if not isinstance(breakdown, dict) or not line.lot_ids:
+                continue
+            excesos = []
+            for lot in line.lot_ids:
+                tipo = str(getattr(lot, 'x_tipo', '') or '').lower()
+                if tipo not in ('formato', 'pieza'):
+                    continue
+                try:
+                    pedido = float(breakdown.get(str(lot.id)) or 0.0)
+                except (TypeError, ValueError):
+                    continue
+                if pedido <= 0:
+                    continue
+                libre = line._som_lot_free_qty(lot)[2]
+                if pedido > libre + 0.005:
+                    excesos.append('%s: pide %.2f, libres %.2f' % (lot.name, pedido, libre))
+            if excesos:
+                raise ValidationError(
+                    'La parcialidad de estos lotes supera su material libre:\n%s\n\n'
+                    'Baja la cantidad de esos lotes o elige otros.' % '\n'.join(excesos))
 
     product_uom_id = fields.Many2one(
         'uom.uom',
