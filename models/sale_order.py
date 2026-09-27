@@ -1679,10 +1679,11 @@ class SaleOrder(models.Model):
         return rate if rate > 0 else 1.0
 
     x_authorized_floor_json = fields.Json(
-        string='Pisos de precio autorizados',
+        string='Precios autorizados',
         copy=False,
-        help='Producto → precio mínimo autorizado. Se graba al aprobar una '
-             'autorización de precios; bajar de ahí re-bloquea la orden.',
+        help='Producto → precio YA autorizado (no el nivel del producto). Se '
+             'graba al aprobar una autorización de precios; bajar de ahí pide '
+             're-autorización. La llave "_cur" guarda la divisa de esos precios.',
     )
 
     def _som_is_migrated_order(self):
@@ -1692,6 +1693,83 @@ class SaleOrder(models.Model):
         no autorizados y sin bloqueo al enviar/confirmar)."""
         self.ensure_one()
         return bool(re.search(r'\d{3}', self.client_order_ref or ''))
+
+    def _som_applicable_floors(self):
+        """{product_id (str): precio autorizado} en la divisa ACTUAL de la
+        orden. Vacío si no hay o si se autorizaron en otra divisa (p. ej.
+        apartado en USD convertido a venta en MXN): no se comparan peras
+        con manzanas y la orden no se re-bloquea por eso."""
+        self.ensure_one()
+        floors = dict(self.x_authorized_floor_json or {})
+        cur = floors.pop('_cur', None) or (
+            self.x_price_authorization_id.currency_code
+            if self.x_price_authorization_id else None)
+        order_cur = self.pricelist_id.currency_id.name if self.pricelist_id else None
+        if cur and order_cur and cur != order_cur:
+            return {}
+        out = {}
+        for pid, price in floors.items():
+            try:
+                out[str(pid)] = float(price or 0.0)
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    def _som_price_auth_lines(self):
+        """Líneas que requieren autorización de precios — fuente ÚNICA para
+        la bandera, el banner, los candados, la solicitud automática y la
+        vigencia de la solicitud pendiente.
+
+        Una línea la requiere si su precio está por debajo del nivel del
+        VENDEDOR de la orden y además:
+          - hay precio YA autorizado para el producto y se bajó de él
+            (RE-AUTORIZACIÓN, 27 sep 2026: "te autorizo y lo puedes dar en
+            cinco pesos no tiene sentido"); quedarse en lo autorizado o
+            arriba no pide nada;
+          - o no hay precio autorizado para el producto y la orden no tiene
+            una autorización aprobada vigente.
+
+        Devuelve [{'line', 'threshold', 'floor', 'reauth'}]."""
+        self.ensure_one()
+        Product = self.env['product.template']
+        threshold_level = Product._get_user_threshold_level(
+            user=self.user_id or self.env.user)
+        currency_code = (self.pricelist_id.currency_id.name or 'USD') if self.pricelist_id else 'USD'
+        # Autorizada = la ligada está aprobada o la orden YA tuvo una
+        # aprobada: mientras la re-autorización está pendiente, lo que la
+        # aprobación anterior cubría sigue cubierto (si no, la solicitud
+        # recién creada se expiraba al siguiente guardado por "cambio").
+        approved = bool(
+            self.x_price_authorization_id
+            and self.x_price_authorization_id.state == 'approved')
+        if not approved and isinstance(self.id, int):
+            approved = bool(self.env['price.authorization'].sudo().search_count([
+                ('sale_order_id', '=', self.id),
+                ('state', '=', 'approved'),
+            ], limit=1))
+        floors = self._som_applicable_floors()
+        out = []
+        for line in self.order_line:
+            if not line.product_id or line.display_type or line.product_id.type == 'service':
+                continue
+            threshold = Product._get_price_level_value(
+                line.product_id.product_tmpl_id, threshold_level, currency_code,
+                company=self.company_id)
+            if not (threshold > 0 and line.price_unit < (threshold - 0.01)):
+                continue
+            floor = floors.get(str(line.product_id.id), 0.0)
+            if floor > 0:
+                if line.price_unit >= (floor - 0.01):
+                    continue
+                out.append({'line': line, 'threshold': threshold, 'floor': floor, 'reauth': True})
+                continue
+            # Sin precio autorizado para el producto: una autorización
+            # aprobada (vieja, sin precios grabados, o de otra divisa) deja
+            # pasar, como antes.
+            if approved:
+                continue
+            out.append({'line': line, 'threshold': threshold, 'floor': 0.0, 'reauth': False})
+        return out
 
     @api.depends(
         'order_line.price_unit',
@@ -1710,8 +1788,6 @@ class SaleOrder(models.Model):
         # mismo documento.
         Product = self.env['product.template']
         for order in self:
-            threshold_level = Product._get_user_threshold_level(
-                user=order.user_id or self.env.user)
             if order._som_is_migrated_order():
                 order.x_has_low_prices = False
                 continue
@@ -1723,117 +1799,51 @@ class SaleOrder(models.Model):
                     order.user_id or self.env.user):
                 order.x_has_low_prices = False
                 continue
-            approved = bool(
-                order.x_price_authorization_id
-                and order.x_price_authorization_id.state == 'approved')
-            floors = order.x_authorized_floor_json or {}
-
-            currency_code = order.pricelist_id.currency_id.name or 'USD' if order.pricelist_id else 'USD'
-            has_low = False
-
-            for line in order.order_line:
-                if not line.product_id or line.display_type or line.product_id.type == 'service':
-                    continue
-
-                # AUTORIZACIÓN APROBADA = puerta abierta (decisión 28 ago
-                # 2026): la orden ya no se vuelve a bloquear aunque un
-                # precio baje del piso autorizado; en ese caso solo se
-                # avisa a los autorizadores (_som_alert_floor_violation).
-                if approved:
-                    continue
-
-                tmpl = line.product_id.product_tmpl_id
-                threshold = Product._get_price_level_value(
-                    tmpl, threshold_level, currency_code,
-                    company=order.company_id)
-
-                if threshold > 0 and line.price_unit < (threshold - 0.01):
-                    has_low = True
-                    break
-
-            order.x_has_low_prices = has_low
+            order.x_has_low_prices = bool(order._som_price_auth_lines())
 
     def _get_violating_products(self):
         self.ensure_one()
-
-        Product = self.env['product.template']
-        threshold_level = Product._get_user_threshold_level(
+        threshold_level = self.env['product.template']._get_user_threshold_level(
             user=self.user_id or self.env.user)
-        threshold_label_map = {
+        threshold_label = {
             'medium': 'Precio 2',
             'minimum': 'Precio 3',
             'level_4': 'Precio 4',
             'level_5': 'Precio 5',
-        }
-        threshold_label = threshold_label_map.get(threshold_level, threshold_level)
-
-        currency_code = self.pricelist_id.currency_id.name or 'USD' if self.pricelist_id else 'USD'
+        }.get(threshold_level, threshold_level)
         violating = []
-        approved = bool(
-            self.x_price_authorization_id
-            and self.x_price_authorization_id.state == 'approved')
-        floors = self.x_authorized_floor_json or {}
-
-        for line in self.order_line:
-            if not line.product_id or line.display_type or line.product_id.type == 'service':
-                continue
-
-            if approved:
-                continue
-
-            tmpl = line.product_id.product_tmpl_id
-            threshold = Product._get_price_level_value(
-                tmpl, threshold_level, currency_code, company=self.company_id)
-
-            if threshold > 0 and line.price_unit < (threshold - 0.01):
+        for item in self._som_price_auth_lines():
+            line = item['line']
+            if item['reauth']:
                 violating.append(
                     f"{line.product_id.display_name} "
-                    f"(Precio: {line.price_unit:.2f}, {threshold_label}: {threshold:.2f})"
-                )
-
+                    f"(Precio: {line.price_unit:.2f}, ya autorizado: {item['floor']:.2f})")
+            else:
+                violating.append(
+                    f"{line.product_id.display_name} "
+                    f"(Precio: {line.price_unit:.2f}, {threshold_label}: {item['threshold']:.2f})")
         return violating
 
     def _som_authorized_floor_violations(self):
-        """Líneas por debajo del precio YA autorizado (piso)."""
+        """Líneas por debajo del precio YA autorizado (piden re-autorización)."""
         self.ensure_one()
-        floors = self.x_authorized_floor_json or {}
-        if not floors:
-            return []
-        out = []
-        for line in self.order_line:
-            if not line.product_id or line.display_type:
-                continue
-            floor = float(floors.get(str(line.product_id.id), 0) or 0)
-            if floor > 0 and line.price_unit < (floor - 0.01):
-                out.append(
-                    f"{line.product_id.display_name} "
-                    f"(Precio: {line.price_unit:.2f}, Autorizado: {floor:.2f})"
-                )
-        return out
+        return [
+            f"{i['line'].product_id.display_name} "
+            f"(Precio: {i['line'].price_unit:.2f}, Autorizado: {i['floor']:.2f})"
+            for i in self._som_price_auth_lines() if i['reauth']
+        ]
 
     def _som_alert_floor_violation(self, violations):
-        """El vendedor bajó un precio por debajo de lo autorizado: la orden
-        NO se bloquea (ya cuenta con autorización), pero queda constancia y
-        los autorizadores reciben aviso."""
+        """Se bajó un precio por debajo de lo YA autorizado: la orden vuelve
+        a quedar bloqueada y la re-autorización se pide sola
+        (_som_price_auth_auto_request); a los autorizadores les llega esa
+        solicitud, no un aviso aparte."""
         self.ensure_one()
         listado = "\n".join(f"• {v}" for v in violations)
         self.message_post(body=Markup(
-            f"<p>⚠️ <b>Precio por debajo de lo autorizado</b> — la orden "
-            f"sigue autorizada y puede continuar; los autorizadores fueron "
-            f"avisados.</p><pre>{listado}</pre>"
-        ))
-        group = self.env.ref(
-            'inventory_shopping_cart.group_price_authorizer',
-            raise_if_not_found=False)
-        if group:
-            self._som_notify_users(
-                self._som_group_users(group),
-                f"Precio bajo lo autorizado: {self.name}",
-                f"{self.env.user.name} bajó precios por debajo de lo YA "
-                f"autorizado en la orden {self.name} "
-                f"(cliente {self.partner_id.display_name or ''}). La orden "
-                f"sigue autorizada; revisa si procede.\n{listado}",
-            )
+            "<p>🔁 <b>Precio por debajo de lo ya autorizado</b> — la orden "
+            "requiere RE-AUTORIZACIÓN: queda bloqueada hasta que se apruebe "
+            "la nueva solicitud.</p><pre>%s</pre>") % listado)
 
     def _check_seller_low_price_block(self, action_name="realizar esta acción"):
         for order in self:
@@ -2777,7 +2787,9 @@ class SaleOrder(models.Model):
     def _som_price_auth_auto_request(self):
         """Cotización/orden con precios bajos → la solicitud de autorización
         se crea SOLA al guardar (28 ago 2026), sin esperar el botón. Una por
-        orden mientras haya una pendiente o aprobada."""
+        orden mientras haya una pendiente. Con autorización aprobada solo se
+        pide otra si se bajó un precio de lo YA autorizado (re-autorización,
+        27 sep 2026): en cualquier otro caso la bandera no prende."""
         if self.env.context.get('som_price_auth_auto'):
             return
         for order in self:
@@ -2796,7 +2808,7 @@ class SaleOrder(models.Model):
             if not order.x_has_low_prices:
                 continue
             auth = order.x_price_authorization_id
-            if auth and auth.state in ('pending', 'approved'):
+            if auth and auth.state == 'pending':
                 continue
             try:
                 order.with_context(som_price_auth_auto=True).action_request_authorization()
@@ -2807,11 +2819,13 @@ class SaleOrder(models.Model):
                         '<p>⚠️ No se creó la solicitud de autorización de precios: %s</p>'
                     ) % str(e), message_type='notification')
                 continue
-            if order.x_price_authorization_id:
+            new_auth = order.x_price_authorization_id
+            if new_auth and new_auth != auth:
                 order.message_post(body=Markup(
-                    '<p>📝 Solicitud de autorización de precios creada automáticamente: '
+                    '<p>📝 Solicitud de %s de precios creada automáticamente: '
                     '<b>%s</b>. La orden queda pendiente de autorización.</p>'
-                ) % order.x_price_authorization_id.name)
+                ) % ('RE-autorización' if auth and auth.state == 'approved' else 'autorización',
+                     new_auth.name))
 
     def action_request_authorization(self):
         self.ensure_one()
@@ -2838,35 +2852,37 @@ class SaleOrder(models.Model):
         product_prices = {}
         product_groups = {}
         detail_rows = []
-        has_low = False
+        # Mismas líneas que prenden la bandera: en una re-autorización solo
+        # van las que bajaron de lo ya autorizado (lo demás sigue cubierto).
+        auth_lines = self._som_price_auth_lines()
+        has_low = bool(auth_lines)
+        previous = self.x_price_authorization_id
+        reauth_rows = []
 
-        for line in self.order_line:
-            if not line.product_id or line.display_type:
-                continue
+        for item in auth_lines:
+            line = item['line']
+            threshold = item['threshold']
+            pid_str = str(line.product_id.id)
+            product_prices[pid_str] = line.price_unit
+            detail_rows.append(
+                '• %s: precio %.2f vs mínimo permitido %.2f %s '
+                '(faltan %.2f)' % (
+                    line.product_id.display_name, line.price_unit,
+                    threshold, currency_code,
+                    threshold - line.price_unit))
+            if item['reauth']:
+                reauth_rows.append('• %s: %.2f (ya autorizado: %.2f %s)' % (
+                    line.product_id.display_name, line.price_unit,
+                    item['floor'], currency_code))
 
-            tmpl = line.product_id.product_tmpl_id
-            threshold = Product._get_price_level_value(
-                tmpl, threshold_level, currency_code, company=company)
+            if pid_str not in product_groups:
+                product_groups[pid_str] = {
+                    'name': line.product_id.display_name,
+                    'lots': [],
+                    'total_quantity': 0,
+                }
 
-            if threshold > 0 and line.price_unit < (threshold - 0.01):
-                has_low = True
-                pid_str = str(line.product_id.id)
-                product_prices[pid_str] = line.price_unit
-                detail_rows.append(
-                    '• %s: precio %.2f vs mínimo permitido %.2f %s '
-                    '(faltan %.2f)' % (
-                        line.product_id.display_name, line.price_unit,
-                        threshold, currency_code,
-                        threshold - line.price_unit))
-
-                if pid_str not in product_groups:
-                    product_groups[pid_str] = {
-                        'name': line.product_id.display_name,
-                        'lots': [],
-                        'total_quantity': 0,
-                    }
-
-                product_groups[pid_str]['total_quantity'] += line.product_uom_qty
+            product_groups[pid_str]['total_quantity'] += line.product_uom_qty
 
         zero_priced = [
             group['name'] for pid_str, group in product_groups.items()
@@ -2903,7 +2919,11 @@ class SaleOrder(models.Model):
             # La justificación del vendedor (obligatoria en el formulario
             # cuando hay precios bajos) viaja al autorizador en las notas.
             'notes': (
-                (f"Justificación del vendedor: {(self.x_price_auth_reason or '').strip()}\n\n"
+                (f"RE-AUTORIZACIÓN: se bajó el precio por debajo de lo ya autorizado"
+                 f"{(' en ' + previous.name) if previous and previous.state == 'approved' else ''}.\n"
+                 + "\n".join(reauth_rows) + "\n\n"
+                 if reauth_rows else '')
+                + (f"Justificación del vendedor: {(self.x_price_auth_reason or '').strip()}\n\n"
                  if (self.x_price_auth_reason or '').strip() else '')
                 + f"Solicitud desde Orden Manual {self.name}. "
                 + f"{html2plaintext(self.note) if self.note else ''}"),

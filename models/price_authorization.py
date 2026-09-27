@@ -344,25 +344,15 @@ class PriceAuthorization(models.Model):
         return True
 
     def _som_order_low_prices(self, order):
-        """Precios ACTUALES por debajo del umbral del vendedor de la orden,
-        en la divisa de la orden: {pid_str: price_unit}. Mismo criterio que
-        action_request_authorization."""
-        Product = self.env['product.template']
-        threshold_level = Product._get_user_threshold_level(
-            user=order.user_id or self.env.user)
-        currency_code = order.pricelist_id.currency_id.name or 'USD' \
-            if order.pricelist_id else 'USD'
-        low = {}
-        for line in order.order_line:
-            if not line.product_id or line.display_type \
-                    or line.product_id.type == 'service':
-                continue
-            threshold = Product._get_price_level_value(
-                line.product_id.product_tmpl_id, threshold_level,
-                currency_code, company=order.company_id)
-            if threshold > 0 and line.price_unit < (threshold - 0.01):
-                low[str(line.product_id.id)] = float(line.price_unit or 0.0)
-        return low
+        """Precios ACTUALES que requieren autorización en la orden, en su
+        divisa: {pid_str: price_unit}. Mismo criterio que la bandera y que
+        action_request_authorization (sale.order._som_price_auth_lines):
+        en una re-autorización solo cuentan las líneas que bajaron de lo ya
+        autorizado."""
+        return {
+            str(i['line'].product_id.id): float(i['line'].price_unit or 0.0)
+            for i in order._som_price_auth_lines()
+        }
 
     def _som_requested_prices(self):
         self.ensure_one()
@@ -512,6 +502,9 @@ class PriceAuthorization(models.Model):
             activity_type = self.env['mail.activity.type'].search([('name', '=', 'To Do')], limit=1)
 
         reason = html2plaintext(self.notes or '').strip() if self.notes else ''
+        # Re-autorización: se bajó un precio de lo ya autorizado
+        # (sale.order.action_request_authorization marca las notas).
+        verb = 'Re-autorizar precios' if reason.startswith('RE-AUTORIZACIÓN') else 'Autorizar precios'
         note = (
             f"<p>Se requiere su autorización para:</p>"
             f"<ul>"
@@ -532,7 +525,7 @@ class PriceAuthorization(models.Model):
             try:
                 self.activity_schedule(
                     'mail.mail_activity_data_todo',
-                    summary=f'Autorizar precios · {self.name}',
+                    summary=f'{verb} · {self.name}',
                     note=note,
                     user_id=authorizer.id,
                 )
@@ -545,8 +538,8 @@ class PriceAuthorization(models.Model):
         # actividad en el Centro; la mención duplicaba el aviso.
         self.message_post(
             body=Markup(
-                '<p><b>🔐 Autorización de precios mínimos requerida: %s</b></p>%s'
-            ) % (self.name, Markup(note)),
+                '<p><b>🔐 %s: %s</b></p>%s'
+            ) % (verb, self.name, Markup(note)),
             message_type='notification',
             subtype_xmlid='mail.mt_note',
         )
@@ -827,6 +820,11 @@ class PriceAuthorization(models.Model):
             'authorization_date': fields.Datetime.now(),
         })
 
+        # Precios autorizados ANTES de aplicarlos a la orden: si no, al
+        # escribir el precio nuevo (más bajo) la orden lo compararía contra
+        # lo autorizado anterior y pediría otra re-autorización. Después se
+        # vuelve a grabar para las órdenes que nacen de la aprobación.
+        self._som_write_authorized_floors()
         self._process_approved_authorization()
         self._som_write_authorized_floors()
         self._notify_seller(approved=True)
@@ -835,18 +833,22 @@ class PriceAuthorization(models.Model):
                 self.name, self.env.user.name))
 
     def _som_write_authorized_floors(self):
-        """Graba en la orden el piso autorizado por producto. Bajar de ese
-        piso después re-bloquea la orden aunque la autorización siga
-        aprobada (sale.order._compute_has_low_prices)."""
+        """Graba en la orden el precio autorizado por producto (con su
+        divisa en "_cur"). Bajar de ese precio después pide RE-AUTORIZACIÓN
+        (sale.order._som_price_auth_lines). Precios de otra divisa se
+        descartan: no son comparables con los nuevos."""
         self.ensure_one()
         order = self.sale_order_id
         if not order:
             return
         floors = dict(order.x_authorized_floor_json or {})
+        if floors.get('_cur') and floors.get('_cur') != self.currency_code:
+            floors = {}
         for line in self.line_ids:
             if line.product_id and line.authorized_price:
                 floors[str(line.product_id.id)] = math.ceil(line.authorized_price)
-        if floors:
+        if any(k != '_cur' for k in floors):
+            floors['_cur'] = self.currency_code
             order.x_authorized_floor_json = floors
 
     def action_reject(self):
@@ -930,7 +932,9 @@ class PriceAuthorization(models.Model):
             )
 
             for order_line in order_lines:
-                order_line.write({
+                # Aplicar lo aprobado no es un cambio del vendedor: no pide
+                # otra solicitud.
+                order_line.with_context(som_price_auth_auto=True).write({
                     'price_unit': math.ceil(line.authorized_price),
                     'x_price_selector': 'custom',
                 })

@@ -1249,9 +1249,13 @@ class StockLotHoldOrder(models.Model):
             auth = order.x_price_authorization_id
             if auth and auth.state == 'approved' and not sale_order.x_price_authorization_id:
                 floors = dict(sale_order.x_authorized_floor_json or {})
+                if floors.get('_cur') and floors.get('_cur') != auth.currency_code:
+                    floors = {}
                 for aline in auth.line_ids:
                     if aline.product_id and aline.authorized_price:
                         floors[str(aline.product_id.id)] = aline.authorized_price
+                if any(k != '_cur' for k in floors):
+                    floors['_cur'] = auth.currency_code
                 sale_order.sudo().write({
                     'x_price_authorization_id': auth.id,
                     'x_authorized_floor_json': floors or False,
