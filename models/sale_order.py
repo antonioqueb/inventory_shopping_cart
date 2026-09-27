@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # models/sale_order.py
 
+import json
 import math
 import unicodedata
 import logging
@@ -1165,6 +1166,40 @@ class SaleOrder(models.Model):
 
         return quants.exists()
 
+    def _som_selected_qty_by_quant(self):
+        """{quant_id: m² pedidos} de FORMATOS/PIEZAS en x_selected_lots, con
+        el desglose de la línea (llave de quant del carrito o de lote de la
+        conversión, como _assign_specific_lots). Sin desglose, una línea de
+        un solo lote pide su cantidad; si no, no hay entrada (el candado
+        solo exige remanente). Las placas no entran: son atómicas."""
+        qty_by_quant = {}
+        for line in self.mapped('order_line'):
+            if line.display_type or not line.x_selected_lots:
+                continue
+            breakdown = {}
+            raw = line.x_lot_breakdown_json if 'x_lot_breakdown_json' in line._fields else False
+            if raw:
+                try:
+                    data = json.loads(raw) if isinstance(raw, str) else dict(raw)
+                    for k, v in data.items():
+                        breakdown[int(k)] = float(v or 0.0)
+                except (TypeError, ValueError, AttributeError):
+                    breakdown = {}
+            quants = line.x_selected_lots.sudo()
+            for quant in quants:
+                if not self._som_quant_is_fractionable(quant):
+                    continue
+                qty = None
+                if quant.id in breakdown:
+                    qty = breakdown[quant.id]
+                elif quant.lot_id and quant.lot_id.id in breakdown:
+                    qty = breakdown[quant.lot_id.id]
+                elif len(quants) == 1:
+                    qty = line.product_uom_qty or 0.0
+                if qty:
+                    qty_by_quant[quant.id] = qty_by_quant.get(quant.id, 0.0) + qty
+        return qty_by_quant
+
     def _resolve_sale_order_from_pickings(self, pickings):
         sale_order = self.env['sale.order'].sudo()
 
@@ -1376,9 +1411,12 @@ class SaleOrder(models.Model):
                 # Mismo cliente comercial, hold de la reserva que se está
                 # convirtiendo, o formato/pieza con remanente libre: no
                 # bloquea (apartados parciales: varios holds por lote).
+                # Con la cantidad pedida del quant el apartado parcial
+                # AJENO se respeta: antes bastaba cualquier remanente.
                 blocker = quant.som_hold_blocking_partner(
                     partner_id=partner_id,
                     hold_order_id=self.env.context.get('hold_order_id'),
+                    qty=(qty_by_quant or {}).get(quant.id),
                 ) if hasattr(quant, 'som_hold_blocking_partner') else False
                 if blocker:
                     raise UserError(
@@ -2481,6 +2519,7 @@ class SaleOrder(models.Model):
                     selected_quants,
                     partner_id=order.partner_id.id,
                     allowed_order=order,
+                    qty_by_quant=order._som_selected_qty_by_quant(),
                 )
 
         self._sync_lot_ids_from_selected_lots()
@@ -3736,7 +3775,17 @@ class SaleOrder(models.Model):
                             allowed_order=sale_order,
                             allowed_pickings=pickings,
                         ).mapped('quantity'))
-                        qty = min(qty, max((quant.quantity or 0.0) - ajeno, 0.0))
+                        # Los apartados AJENOS no crean reserva nativa: lo que
+                        # retienen se resta aparte (antes solo se topaba
+                        # contra move lines y el apartado parcial se comía).
+                        apartado_ajeno = 0.0
+                        if hasattr(quant, 'som_hold_free_qty_for') and sale_order:
+                            apartado_ajeno = (quant.quantity or 0.0) - quant.som_hold_free_qty_for(
+                                sale_order.partner_id.id,
+                                self.env.context.get('hold_order_id'),
+                            )
+                        qty = min(qty, max(
+                            (quant.quantity or 0.0) - ajeno - apartado_ajeno, 0.0))
                     else:
                         qty = quant.quantity
 
