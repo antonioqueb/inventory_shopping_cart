@@ -3419,6 +3419,34 @@ class SaleOrder(models.Model):
         )
 
     @api.model
+    @api.model
+    def _som_hold_authorized_prices(self, currency_code):
+        """Precios YA autorizados del apartado que se está convirtiendo
+        (contexto hold_order_id de action_convert_to_sale_order), en la
+        divisa de la venta: {product_id (str): precio}. Vacío si no viene de
+        un apartado con autorización aprobada. Autorizado en otra divisa: se
+        convierte con el TC de origen del apartado (misma regla que el cambio
+        de divisa — lo autorizado se mantiene)."""
+        hold_id = self.env.context.get('hold_order_id')
+        if not hold_id or 'stock.lot.hold.order' not in self.env:
+            return {}
+        hold = self.env['stock.lot.hold.order'].sudo().browse(int(hold_id)).exists()
+        auth = hold.x_price_authorization_id if hold and 'x_price_authorization_id' in hold._fields else False
+        if not auth or auth.state != 'approved':
+            return {}
+        rate = (hold.x_exchange_rate if 'x_exchange_rate' in hold._fields else 0.0) or 0.0
+        out = {}
+        for line in auth.line_ids:
+            price = float(line.authorized_price or 0.0)
+            if not line.product_id or price <= 0:
+                continue
+            if auth.currency_code and currency_code and auth.currency_code != currency_code:
+                if rate <= 0:
+                    continue
+                price = price * rate if currency_code == 'MXN' else price / rate
+            out[str(line.product_id.id)] = price
+        return out
+
     def create_from_shopping_cart(
         self,
         partner_id=None,
@@ -3497,6 +3525,7 @@ class SaleOrder(models.Model):
             # lo tecleado. (Antes se topaba al umbral y el vendedor veía
             # precios que él no puso.)
             requested_low_prices = {}
+            hold_authorized = self._som_hold_authorized_prices(currency_code)
             if not self.env.context.get('skip_auth_check'):
                 auth_result = self.env['product.template'].check_price_authorization_needed(
                     prices_map,
@@ -3517,6 +3546,13 @@ class SaleOrder(models.Model):
                                 company=company)
                             price = float(pd.get('price_unit') or 0.0)
                             if threshold > 0 and price < (threshold - 0.01):
+                                # Apartado YA autorizado que se convierte en
+                                # venta: su precio autorizado lo cubre (la
+                                # venta hereda la autorización al terminar la
+                                # conversión). Solo pide lo que baje de ahí.
+                                covered = hold_authorized.get(str(pd['product_id']), 0.0)
+                                if covered > 0 and price >= covered - max(0.01, covered * 0.0001):
+                                    continue
                                 requested_low_prices[str(pd['product_id'])] = price
 
             # JUSTIFICACIÓN OBLIGATORIA (3 sep 2026): si hay precios por

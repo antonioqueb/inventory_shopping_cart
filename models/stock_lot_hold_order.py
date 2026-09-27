@@ -1204,11 +1204,19 @@ class StockLotHoldOrder(models.Model):
         }
 
         # La venta nace con el TC DE ORIGEN del apartado (no el del día).
+        # SIN solicitud automática al crearla (som_price_auth_auto): antes la
+        # venta nacía con precios bajos, pedía una autorización NUEVA en su
+        # create() y, como ya "tenía" autorización, la aprobada del apartado
+        # nunca se heredaba (en prod: RES/00866→V/1045, RES/00832→V/1039,
+        # RES/00568→V/924 volvieron a pedir). La autorización se evalúa UNA
+        # vez al final, ya con la herencia hecha.
         origin = self[:1]
         result = super(StockLotHoldOrder, self.with_context(
             som_origin_exchange_rate=origin.x_exchange_rate or False,
             som_origin_exchange_rate_source=origin.x_exchange_rate_source or False,
+            som_price_auth_auto=True,
         )).action_convert_to_sale_order()
+        converted_sales = self.env['sale.order']
 
         for order in self:
             order.invalidate_recordset()
@@ -1224,6 +1232,7 @@ class StockLotHoldOrder(models.Model):
                 continue
 
             order._stone_apply_hold_payload_to_sale_order(sale_order, payload)
+            converted_sales |= sale_order
 
             # Red de seguridad: si la venta no recibió el TC del apartado
             # por contexto, se le fija aquí.
@@ -1256,15 +1265,31 @@ class StockLotHoldOrder(models.Model):
                         floors[str(aline.product_id.id)] = aline.authorized_price
                 if any(k != '_cur' for k in floors):
                     floors['_cur'] = auth.currency_code
-                sale_order.sudo().write({
+                sale_order.sudo().with_context(som_price_auth_auto=True).write({
                     'x_price_authorization_id': auth.id,
                     'x_authorized_floor_json': floors or False,
                 })
                 if not auth.sale_order_id:
                     auth.sudo().write({'sale_order_id': sale_order.id})
+                # Apartado autorizado en otra divisa que la venta: los
+                # precios autorizados se convierten con el TC de la venta (el
+                # de origen del apartado) — misma regla que el cambio de
+                # divisa: lo autorizado se mantiene y sigue protegido.
+                if auth.currency_code and sale_order.pricelist_id \
+                        and auth.currency_code != sale_order.pricelist_id.currency_id.name:
+                    sale_order._som_convert_authorized_floors({sale_order.id: auth.currency_code})
                 sale_order.message_post(body=(
                     f"Autorización de precios <b>{auth.name}</b> heredada del apartado "
                     f"{order.name}: la orden no requiere nueva autorización."))
+
+        # Una sola evaluación, con la autorización del apartado ya heredada:
+        # solo pide si algo quedó por debajo de lo autorizado (o no estaba
+        # autorizado en el apartado).
+        for sale_order in converted_sales:
+            try:
+                sale_order._som_price_auth_auto_request()
+            except Exception:  # noqa: BLE001 — la conversión no truena por la re-evaluación
+                _logger.exception('[HOLD→SO] Re-evaluación de autorización de %s', sale_order.name)
 
         return result
 
