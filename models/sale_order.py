@@ -1715,6 +1715,54 @@ class SaleOrder(models.Model):
                 continue
         return out
 
+    def _som_convert_authorized_floors(self, old_currency_by_id):
+        """Cambio de divisa (27 sep 2026, decisión del cliente): un precio
+        YA autorizado en USD sigue autorizado al pasar la orden a MXN (y
+        viceversa). Los precios autorizados se convierten con el MISMO TC con
+        el que la pantalla convierte los precios de las líneas
+        (x_exchange_rate: manual, congelado o del día), así que la línea
+        convertida queda exactamente en su precio autorizado: no pide nada.
+        Bajarlo después en la divisa nueva sí pide re-autorización."""
+        for order in self:
+            floors = dict(order.x_authorized_floor_json or {})
+            if not any(k != '_cur' for k in floors):
+                continue
+            old_cur = old_currency_by_id.get(order.id)
+            new_cur = order.pricelist_id.currency_id.name if order.pricelist_id else None
+            floors_cur = floors.get('_cur') or old_cur
+            if not new_cur or floors_cur == new_cur or floors_cur != old_cur:
+                # Ya estaban en la divisa nueva, o en una tercera que no es
+                # la que se está convirtiendo: no se tocan.
+                if floors_cur == new_cur and floors.get('_cur') != new_cur:
+                    floors['_cur'] = new_cur
+                    order.sudo().with_context(som_price_auth_auto=True).write(
+                        {'x_authorized_floor_json': floors})
+                continue
+            rate = order.x_exchange_rate or 0.0
+            if rate <= 0:
+                continue
+            converted = {}
+            for pid, price in floors.items():
+                if pid == '_cur':
+                    continue
+                try:
+                    price = float(price or 0.0)
+                except (TypeError, ValueError):
+                    continue
+                if old_cur == 'USD' and new_cur == 'MXN':
+                    converted[pid] = price * rate
+                elif old_cur == 'MXN' and new_cur == 'USD':
+                    converted[pid] = price / rate
+            if not converted:
+                continue
+            converted['_cur'] = new_cur
+            order.sudo().with_context(som_price_auth_auto=True).write(
+                {'x_authorized_floor_json': converted})
+            order.message_post(body=Markup(
+                '<p>💱 Precios autorizados convertidos de %s a %s con TC %s: la '
+                'autorización se mantiene.</p>') % (old_cur, new_cur, '%.4f' % rate),
+                message_type='notification', subtype_xmlid='mail.mt_note')
+
     def _som_price_auth_lines(self):
         """Líneas que requieren autorización de precios — fuente ÚNICA para
         la bandera, el banner, los candados, la solicitud automática y la
@@ -1759,7 +1807,8 @@ class SaleOrder(models.Model):
                 continue
             floor = floors.get(str(line.product_id.id), 0.0)
             if floor > 0:
-                if line.price_unit >= (floor - 0.01):
+                # Tolerancia: centavo o 0.01 % (conversiones por TC).
+                if line.price_unit >= floor - max(0.01, floor * 0.0001):
                     continue
                 out.append({'line': line, 'threshold': threshold, 'floor': floor, 'reauth': True})
                 continue
@@ -2697,7 +2746,10 @@ class SaleOrder(models.Model):
 
         # La divisa solo puede cambiarse mientras no haya entrega validada
         # ni factura publicada (el TC se congela con la entrega).
+        old_currency_by_id = {}
         if 'pricelist_id' in vals:
+            old_currency_by_id = {
+                o.id: (o.pricelist_id.currency_id.name if o.pricelist_id else None) for o in self}
             for order in self:
                 if (
                     order.x_pricelist_locked
@@ -2750,12 +2802,16 @@ class SaleOrder(models.Model):
                 # completa (_som_price_auth_after_write).
                 res = super(SaleOrder, self.with_context(som_price_auth_auto=True)).write(vals) \
                     if vals else True
+                # Autorización ya aprobada: sus precios pasan a la divisa
+                # nueva ANTES de re-evaluar (si no, la conversión pedía otra).
+                self._som_convert_authorized_floors(old_currency_by_id)
                 self._som_price_auth_after_write({'pricelist_id': pl_id})
                 return res
         if 'pricelist_id' in vals:
             # Cambio de divisa en cotización: mismo criterio, una sola
             # evaluación al final y nunca a media escritura.
             res = super(SaleOrder, self.with_context(som_price_auth_auto=True)).write(vals)
+            self._som_convert_authorized_floors(old_currency_by_id)
         else:
             res = super().write(vals)
         self._som_price_auth_after_write(vals)
