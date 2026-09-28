@@ -590,16 +590,23 @@ class PriceAuthorization(models.Model):
             message_type='notification',
             subtype_xmlid='mail.mt_note',
         )
-        if self.seller_id and self.seller_id != self.env.user:
+        # A quién: quien pidió la autorización Y el vendedor de la orden
+        # (27 sep 2026: si la pidió alguien más, el vendedor no se enteraba).
+        # Nunca a quien decidió. El aviso (bandeja, correo y celular) abre
+        # la ORDEN (theme_list_modern.action_notify, tipo price_auth_result).
+        order = self.x_linked_order_id if 'x_linked_order_id' in self._fields else self.sale_order_id
+        recipients = (self.seller_id | (order.user_id if order else self.env['res.users'])).filtered(
+            lambda u: u and u.active and not u.share and u != self.env.user)
+        for user in recipients:
             try:
                 self.activity_schedule(
                     'mail.mail_activity_data_todo',
-                    user_id=self.seller_id.id,
+                    user_id=user.id,
                     summary=activity_summary,
                     note=message_text,
                 )
             except Exception:  # noqa: BLE001
-                _logger.exception('[PRICE AUTH] No se pudo avisar al vendedor de %s.', self.name)
+                _logger.exception('[PRICE AUTH] No se pudo avisar a %s de %s.', user.name, self.name)
 
     # ------------------------------------------------------------------
     # ORDEN/COTIZACIÓN VINCULADA

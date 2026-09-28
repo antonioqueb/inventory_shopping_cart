@@ -68,6 +68,17 @@
                         groups="inventory_shopping_cart.group_price_authorizer"/>
             </xpath>
 
+            <!-- ===================== AUTORIZACIÓN DE PRECIOS (botón inteligente) ===================== -->
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <button name="action_open_price_authorization" type="object" class="oe_stat_button"
+                        icon="fa-shield" invisible="not x_price_authorization_id">
+                    <div class="o_stat_info">
+                        <span class="o_stat_value"><field name="x_price_authorization_id" readonly="1" nolabel="1" options="{'no_open': True}"/></span>
+                        <span class="o_stat_text"><field name="x_price_auth_state" readonly="1" nolabel="1"/></span>
+                    </div>
+                </button>
+            </xpath>
+
             <!-- ===================== DIVISA EDITABLE HASTA LA ENTREGA ===================== -->
             <!-- La confirmación NO congela la divisa: la lista de precios se
                  puede cambiar (con remapeo de precios) mientras no haya
@@ -104,15 +115,7 @@
                      diagonal «NO AUTORIZADO» lo pone sale_order_status_watermark. -->
                 <div class="alert alert-danger" role="alert"
                      invisible="not x_has_low_prices or state == 'cancel'">
-                    <strong>🔒 Precios no autorizados:</strong>
-                    <span groups="inventory_shopping_cart.group_seller,!inventory_shopping_cart.group_price_authorizer">no se puede enviar, imprimir ni confirmar hasta que se autoricen.</span>
-                    <span groups="inventory_shopping_cart.group_price_authorizer">como autorizador puedes continuar.</span>
-                    <span invisible="x_price_auth_state == 'pending'"> Usa <b>Solicitar Autorización de Precio</b>.</span>
-                    <span invisible="x_price_auth_state != 'pending'"> Solicitud
-                        <field name="x_price_authorization_id" readonly="1" class="d-inline fw-bold"/> pendiente de aprobación.</span>
-                    <div style="white-space: pre-line; margin-top: 4px;">
-                        <field name="x_low_price_details" readonly="1" nolabel="1"/>
-                    </div>
+                    <strong>🔒 Precios no autorizados</strong>
                 </div>
             </xpath>
 
@@ -231,10 +234,6 @@
 
             <!-- ===================== COLUMNA IZQUIERDA (order_details) ===================== -->
             <xpath expr="//group[@name='order_details']/field[@name='payment_term_id']" position="after">
-                <field name="x_price_authorization_id"
-                       string="Autorización de Precio"
-                       readonly="1"
-                       invisible="not x_price_authorization_id"/>
 
                 <field name="x_is_usd" invisible="1"/>
 

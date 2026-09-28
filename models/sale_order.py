@@ -2882,6 +2882,19 @@ class SaleOrder(models.Model):
                 if reason:
                     auth._som_expire(reason)
 
+    def action_open_price_authorization(self):
+        """Botón inteligente: abre la solicitud de autorización de precios."""
+        self.ensure_one()
+        if not self.x_price_authorization_id:
+            raise UserError(_('La orden %s no tiene autorización de precios.') % self.name)
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'price.authorization',
+            'res_id': self.x_price_authorization_id.id,
+            'view_mode': 'form',
+            'target': 'current',
+        }
+
     def action_open_price_auth_wizard(self):
         """Botón «Solicitar Autorización de Precio»: asistente con los
         productos y precios por debajo y la justificación obligatoria."""
