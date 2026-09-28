@@ -1777,8 +1777,12 @@ class SaleOrder(models.Model):
             (RE-AUTORIZACIÓN, 27 sep 2026: "te autorizo y lo puedes dar en
             cinco pesos no tiene sentido"); quedarse en lo autorizado o
             arriba no pide nada;
-          - o no hay precio autorizado para el producto y la orden no tiene
-            una autorización aprobada vigente.
+          - o el producto NO está autorizado: pide autorización normal
+            aunque la orden ya tenga otra aprobada (27 sep 2026: autorizar
+            el producto A no libera al B ni a los que se agreguen después).
+            Única excepción: autorizaciones viejas SIN precios por producto
+            (antes del 5 ago) o en otra divisa, que no tienen con qué
+            compararse y dejan la orden como estaba.
 
         Devuelve [{'line', 'threshold', 'floor', 'reauth'}]."""
         self.ensure_one()
@@ -1815,10 +1819,10 @@ class SaleOrder(models.Model):
                     continue
                 out.append({'line': line, 'threshold': threshold, 'floor': floor, 'reauth': True})
                 continue
-            # Sin precio autorizado para el producto: una autorización
-            # aprobada (vieja, sin precios grabados, o de otra divisa) deja
-            # pasar, como antes.
-            if approved:
+            # Producto SIN precio autorizado: pide autorización normal. Solo
+            # una autorización aprobada sin precios comparables (vieja o en
+            # otra divisa) deja pasar, como antes.
+            if approved and not floors:
                 continue
             out.append({'line': line, 'threshold': threshold, 'floor': 0.0, 'reauth': False})
         return out
