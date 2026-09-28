@@ -4,7 +4,8 @@
     <record id="view_stock_lot_hold_order_tree_manual_pricing" model="ir.ui.view">
         <field name="name">stock.lot.hold.order.list.manual.pricing</field>
         <field name="model">stock.lot.hold.order</field>
-        <field name="priority">1</field>
+        <!-- 20: la lista por defecto es la visual de stock_lot_dimensions. -->
+        <field name="priority">20</field>
         <field name="arch" type="xml">
             <list decoration-info="state == 'draft'"
                   decoration-success="state == 'confirmed'"
