@@ -20,3 +20,5 @@ access_sto_ptt_presence_user,sto.ptt.presence.user,model_sto_ptt_presence,base.g
 access_sto_ptt_presence_manager,sto.ptt.presence.manager,model_sto_ptt_presence,inventory_shopping_cart.group_ptt_manager,1,1,1,1
 access_sto_ptt_call_user,sto.ptt.call.user,model_sto_ptt_call,base.group_user,1,0,0,0
 access_sto_ptt_call_manager,sto.ptt.call.manager,model_sto_ptt_call,inventory_shopping_cart.group_ptt_manager,1,1,1,1
+access_sale_price_auth_request_wizard,sale.price.auth.request.wizard,model_sale_price_auth_request_wizard,base.group_user,1,1,1,1
+access_sale_price_auth_request_wizard_line,sale.price.auth.request.wizard.line,model_sale_price_auth_request_wizard_line,base.group_user,1,1,1,1

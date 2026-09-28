@@ -10,12 +10,15 @@
 
             <!-- ===================== BOTÓN SOLICITAR AUTORIZACIÓN ===================== -->
             <xpath expr="//header/button[@name='action_quotation_send']" position="after">
-                <button name="action_request_authorization"
+                <!-- Abre el asistente (productos + precios + justificación
+                     obligatoria). Guardar ya no crea la solicitud (27 sep 2026). -->
+                <button name="action_open_price_auth_wizard"
                         string="Solicitar Autorización de Precio"
                         type="object"
                         class="btn-warning"
-                        invisible="state == 'cancel' or not x_has_low_prices"
+                        invisible="state == 'cancel' or not x_has_low_prices or x_price_auth_state == 'pending'"
                         groups="inventory_shopping_cart.group_seller"/>
+                <field name="x_price_auth_state" invisible="1"/>
 
                 <!-- Autorización de DESCUENTOS altos. Cubre AMBOS casos:
                      aplicado sobre umbral (orden bloqueada) y RETENIDO
@@ -95,25 +98,20 @@
             <xpath expr="//sheet" position="before">
                 <field name="x_has_low_prices" invisible="1"/>
 
-                <!-- PRECIOS NO AUTORIZADOS (27 sep 2026): una sola barra
-                     DELGADA en lugar de la caja de justificación + el panel
-                     rojo enorme (y el amarillo del autorizador). La marca de
-                     agua diagonal "NO AUTORIZADO" sobre la hoja la pone
-                     sale_order_status_watermark (como "CANCELADO"). La
-                     justificación sigue siendo obligatoria: va en la misma
-                     barra. Estilos: static/src/scss/unauth_bar.scss. -->
-                <div class="o_som_unauth_bar" invisible="not x_has_low_prices or state == 'cancel'">
-                    <div class="o_som_unauth_bar__main">
-                        <span class="o_som_unauth_bar__tag"><i class="fa fa-lock" title="Precios no autorizados"/> Precios no autorizados</span>
-                        <span class="o_som_unauth_bar__msg" groups="inventory_shopping_cart.group_seller,!inventory_shopping_cart.group_price_authorizer">No se puede enviar, imprimir ni confirmar hasta que se autoricen.</span>
-                        <span class="o_som_unauth_bar__msg" groups="inventory_shopping_cart.group_price_authorizer">Como autorizador puedes continuar.</span>
-                        <field name="x_low_price_details" readonly="1" nolabel="1" class="o_som_unauth_bar__details"/>
-                    </div>
-                    <div class="o_som_unauth_bar__reason">
-                        <label for="x_price_auth_reason" string="Justificación *"/>
-                        <field name="x_price_auth_reason" nolabel="1"
-                               placeholder="Cliente, volumen, competencia, proyecto…"
-                               required="x_has_low_prices and state != 'cancel'"/>
+                <!-- PRECIOS NO AUTORIZADOS: mismo alert (ancho y estilo) que
+                     «Entrega autorizada manualmente». La justificación ya NO va
+                     aquí: se pide en el asistente al solicitar. El sello
+                     diagonal «NO AUTORIZADO» lo pone sale_order_status_watermark. -->
+                <div class="alert alert-danger" role="alert"
+                     invisible="not x_has_low_prices or state == 'cancel'">
+                    <strong>🔒 Precios no autorizados:</strong>
+                    <span groups="inventory_shopping_cart.group_seller,!inventory_shopping_cart.group_price_authorizer">no se puede enviar, imprimir ni confirmar hasta que se autoricen.</span>
+                    <span groups="inventory_shopping_cart.group_price_authorizer">como autorizador puedes continuar.</span>
+                    <span invisible="x_price_auth_state == 'pending'"> Usa <b>Solicitar Autorización de Precio</b>.</span>
+                    <span invisible="x_price_auth_state != 'pending'"> Solicitud
+                        <field name="x_price_authorization_id" readonly="1" class="d-inline fw-bold"/> pendiente de aprobación.</span>
+                    <div style="white-space: pre-line; margin-top: 4px;">
+                        <field name="x_low_price_details" readonly="1" nolabel="1"/>
                     </div>
                 </div>
             </xpath>

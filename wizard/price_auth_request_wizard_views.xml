@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_sale_price_auth_request_wizard_form" model="ir.ui.view">
+        <field name="name">sale.price.auth.request.wizard.form</field>
+        <field name="model">sale.price.auth.request.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Solicitar autorización de precio">
+                <field name="is_reauth" invisible="1"/>
+                <field name="currency_id" invisible="1"/>
+                <div class="alert alert-warning mb-3" role="alert" invisible="is_reauth">
+                    Estos productos tienen un precio por debajo del <b>precio mínimo</b> que puedes dar sin autorización.
+                </div>
+                <div class="alert alert-warning mb-3" role="alert" invisible="not is_reauth">
+                    Estos productos bajaron de un precio <b>ya autorizado</b>: se pide re-autorización.
+                </div>
+                <group>
+                    <field name="sale_order_id"/>
+                    <field name="partner_id"/>
+                </group>
+                <field name="line_ids" nolabel="1">
+                    <list create="0" delete="0">
+                        <field name="product_id"/>
+                        <field name="quantity"/>
+                        <field name="uom_name" string=""/>
+                        <field name="price_unit"/>
+                        <field name="reference_price"/>
+                        <field name="difference_pct" widget="percentage" decoration-danger="difference_pct &lt; 0"/>
+                        <field name="kind"/>
+                    </list>
+                </field>
+                <group>
+                    <field name="reason" placeholder="Explica por qué se otorga este precio: cliente, volumen, competencia, proyecto…"/>
+                </group>
+                <footer>
+                    <button name="action_confirm" type="object" string="Enviar solicitud" class="btn-primary" icon="fa-paper-plane"/>
+                    <button string="Cancelar" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

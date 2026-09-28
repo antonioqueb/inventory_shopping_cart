@@ -946,6 +946,9 @@ class SaleOrder(models.Model):
         copy=False,
         readonly=True,
     )
+    x_price_auth_state = fields.Selection(
+        related='x_price_authorization_id.state',
+        string='Estado de la solicitud de precios')
 
     x_is_quote_backup = fields.Boolean(
         string="Es Respaldo de Cotización",
@@ -1927,7 +1930,7 @@ class SaleOrder(models.Model):
                 estado = (
                     f"Solicitud {auth.name} pendiente de autorización."
                     if auth and auth.state == 'pending'
-                    else "Guarde la orden: la solicitud de autorización se crea sola."
+                    else "Usa «Solicitar Autorización de Precio» y escribe la justificación."
                 )
                 top = "\n".join(f"• {v}" for v in violating[:3])
                 extra = (f"\n…y {len(violating) - 3} más."
@@ -2856,11 +2859,16 @@ class SaleOrder(models.Model):
         return True
 
     def _som_price_auth_auto_request(self):
-        """Cotización/orden con precios bajos → la solicitud de autorización
-        se crea SOLA al guardar (28 ago 2026), sin esperar el botón. Una por
-        orden mientras haya una pendiente. Con autorización aprobada solo se
-        pide otra si se bajó un precio de lo YA autorizado (re-autorización,
-        27 sep 2026): en cualquier otro caso la bandera no prende."""
+        """Mantiene al día la solicitud de precios de la orden al guardar.
+
+        27 sep 2026 (decisión del cliente): guardar YA NO crea la solicitud
+        ni exige justificación. Un precio bajo solo marca la orden como no
+        autorizada (bandera + candados de enviar/imprimir/confirmar); la
+        solicitud nace cuando el vendedor pulsa «Solicitar Autorización de
+        Precio» y justifica en el asistente (sale.price.auth.request.wizard).
+        Aquí solo se expira la solicitud PENDIENTE que ya no corresponde a la
+        orden (precio o divisa cambiados, ya sin precios bajos): el vendedor
+        la vuelve a pedir con los datos actuales."""
         if self.env.context.get('som_price_auth_auto'):
             return
         for order in self:
@@ -2868,35 +2876,29 @@ class SaleOrder(models.Model):
                 continue
             if getattr(order, 'x_is_quote_backup', False):
                 continue
-            # Solicitud pendiente que ya no corresponde a la orden (precio
-            # cambiado, divisa cambiada, ya sin precios bajos): se expira
-            # y, si hace falta, nace una nueva con los datos actuales.
             auth = order.x_price_authorization_id
             if auth and auth.state == 'pending':
                 reason = auth._som_stale_reason()
                 if reason:
                     auth._som_expire(reason)
-            if not order.x_has_low_prices:
-                continue
-            auth = order.x_price_authorization_id
-            if auth and auth.state == 'pending':
-                continue
-            try:
-                order.with_context(som_price_auth_auto=True).action_request_authorization()
-            except UserError as e:
-                _logger.info('[PRECIOS] Sin solicitud automática en %s: %s', order.name, e)
-                if 'precio 0' in str(e):
-                    order.message_post(body=Markup(
-                        '<p>⚠️ No se creó la solicitud de autorización de precios: %s</p>'
-                    ) % str(e), message_type='notification')
-                continue
-            new_auth = order.x_price_authorization_id
-            if new_auth and new_auth != auth:
-                order.message_post(body=Markup(
-                    '<p>📝 Solicitud de %s de precios creada automáticamente: '
-                    '<b>%s</b>. La orden queda pendiente de autorización.</p>'
-                ) % ('RE-autorización' if auth and auth.state == 'approved' else 'autorización',
-                     new_auth.name))
+
+    def action_open_price_auth_wizard(self):
+        """Botón «Solicitar Autorización de Precio»: asistente con los
+        productos y precios por debajo y la justificación obligatoria."""
+        self.ensure_one()
+        if not self.x_has_low_prices:
+            raise UserError(_('La orden %s no tiene precios por autorizar.') % self.name)
+        if self.x_price_authorization_id and self.x_price_authorization_id.state == 'pending':
+            raise UserError(_('La orden %s ya tiene la solicitud %s pendiente de aprobación.') % (
+                self.name, self.x_price_authorization_id.name))
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Solicitar autorización de precio'),
+            'res_model': 'sale.price.auth.request.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {'default_sale_order_id': self.id},
+        }
 
     def action_request_authorization(self):
         self.ensure_one()
@@ -2962,8 +2964,8 @@ class SaleOrder(models.Model):
         if zero_priced:
             raise UserError(
                 "No se puede solicitar autorización con precio 0 para: %s.\n\n"
-                "Captura el precio real de cada línea y vuelve a guardar; la "
-                "solicitud se creará sola con ese precio." % ', '.join(zero_priced))
+                "Captura el precio real de cada línea, guarda y vuelve a "
+                "solicitar la autorización." % ', '.join(zero_priced))
 
         if not has_low:
             threshold_labels = {
