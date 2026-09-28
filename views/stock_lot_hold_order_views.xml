@@ -433,11 +433,7 @@
         <field name="inherit_id" ref="stock_lot_dimensions.view_stock_lot_hold_order_tree"/>
         <field name="arch" type="xml">
             <xpath expr="//field[@name='x_estatus_reserva']" position="after">
-                <field name="x_price_auth_status" widget="badge" optional="show"
-                       decoration-danger="x_price_auth_status in ('required', 'rejected')"
-                       decoration-warning="x_price_auth_status == 'pending'"
-                       decoration-success="x_price_auth_status == 'approved'"
-                       decoration-muted="x_price_auth_status == 'expired'"/>
+                <field name="x_price_auth_status" string="Autorización" widget="som_hold_auth" optional="show"/>
             </xpath>
         </field>
     </record>
