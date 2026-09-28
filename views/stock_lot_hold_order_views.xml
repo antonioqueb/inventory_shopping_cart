@@ -425,6 +425,23 @@
         </field>
     </record>
 
+    <!-- Lista de reservas (app Holds): estatus de la solicitud de
+         autorización de precio como badge, junto al estatus de la reserva. -->
+    <record id="view_stock_lot_hold_order_tree_price_auth" model="ir.ui.view">
+        <field name="name">stock.lot.hold.order.tree.price.auth</field>
+        <field name="model">stock.lot.hold.order</field>
+        <field name="inherit_id" ref="stock_lot_dimensions.view_stock_lot_hold_order_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='x_estatus_reserva']" position="after">
+                <field name="x_price_auth_status" widget="badge" optional="show"
+                       decoration-danger="x_price_auth_status in ('required', 'rejected')"
+                       decoration-warning="x_price_auth_status == 'pending'"
+                       decoration-success="x_price_auth_status == 'approved'"
+                       decoration-muted="x_price_auth_status == 'expired'"/>
+            </xpath>
+        </field>
+    </record>
+
     <record id="action_stock_lot_hold_order_manual_pricing" model="ir.actions.act_window">
         <field name="name">Apartados / Reservaciones</field>
         <field name="res_model">stock.lot.hold.order</field>

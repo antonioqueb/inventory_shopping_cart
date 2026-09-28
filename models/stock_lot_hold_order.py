@@ -46,6 +46,32 @@ class StockLotHoldOrder(models.Model):
                     flag = False
             order.x_has_low_prices = flag
 
+    # Estatus de la solicitud de autorización de precios para la LISTA de
+    # reservas (27 sep 2026): badge visual. Vacío = no requiere autorización.
+    x_price_auth_status = fields.Selection([
+        ('required', 'Por solicitar'),
+        ('pending', 'Pendiente'),
+        ('approved', 'Autorizada'),
+        ('rejected', 'Rechazada'),
+        ('expired', 'Expirada'),
+    ], string='Autorización de precio', compute='_compute_x_price_auth_status')
+
+    @api.depends('x_price_authorization_id.state', 'state', 'line_ids.precio_unitario')
+    def _compute_x_price_auth_status(self):
+        for order in self:
+            auth_state = order.x_price_authorization_id.state if order.x_price_authorization_id else False
+            if auth_state in ('pending', 'approved'):
+                order.x_price_auth_status = auth_state
+                continue
+            # Sin solicitud viva: solo importa si el borrador sigue con precios bajos.
+            low = order.state in ('draft', 'borrador') and order.x_has_low_prices
+            if low:
+                order.x_price_auth_status = 'required'
+            elif auth_state in ('rejected', 'expired'):
+                order.x_price_auth_status = auth_state
+            else:
+                order.x_price_auth_status = False
+
     # Utilidad global de la reserva (suma de líneas). Mismo candado de
     # grupo que la utilidad por línea.
     x_utilidad_total = fields.Monetary(
