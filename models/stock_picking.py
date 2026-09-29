@@ -313,10 +313,17 @@ class StockPicking(models.Model):
                         + (' … y %s más' % (len(holds) - 30) if len(holds) > 30 else ''))))
 
     @api.model
-    def create_transfer_from_shopping_cart(self, selected_lots=None, location_dest_id=None, notes=None, partner_id=None):
+    def create_transfer_from_shopping_cart(self, selected_lots=None, location_dest_id=None, notes=None, partner_id=None,
+                                           auto_validate=False):
         """
         Crea traslados internos desde el carrito de compras
         Agrupa los lotes por ubicación origen y crea un picking por cada ubicación
+
+        auto_validate: valida en el acto TODOS los traslados creados (uno por
+        ubicación origen). Sin esto el carrito web abría solo el primero y los
+        de las demás ubicaciones se quedaban en 'Listo' sin mover la placa
+        (caso Adriana, 29 sep 2026: "solo cambia las que están en una misma
+        ubicación"). El escáner móvil valida por su cuenta (no lo manda).
         """
         if not self.env.user.has_group('stock.group_stock_user'):
             raise UserError("No tiene permisos para crear traslados internos")
@@ -480,14 +487,57 @@ class StockPicking(models.Model):
                 'location_origin': location_origin.complete_name,
                 'moves_count': len(picking.move_ids)
             })
-        
+
+        if auto_validate:
+            for info in created_pickings:
+                picking = self.browse(info['id'])
+                error = picking._som_cart_auto_validate()
+                info['state'] = picking.state
+                info['validated'] = picking.state == 'done'
+                if error:
+                    info['error'] = error
+
         self.env['shopping.cart'].clear_cart()
 
         return {
             'success': True,
             'pickings': created_pickings,
-            'total_pickings': len(created_pickings)
+            'total_pickings': len(created_pickings),
+            'auto_validated': bool(auto_validate),
+            'validated_count': sum(1 for p in created_pickings if p.get('validated')),
         }
+
+    def _som_cart_auto_validate(self):
+        """Valida un traslado de carrito sin intervención. Aislado en un
+        savepoint: si falla, el traslado queda en 'Listo' para validarlo a mano
+        y se regresa el motivo (los demás traslados siguen)."""
+        self.ensure_one()
+        if self.state == 'done':
+            return False
+        if self.state not in ('assigned', 'confirmed', 'waiting'):
+            return 'El traslado quedó en estado %s.' % self.state
+        try:
+            with self.env.cr.savepoint():
+                moves = self.move_ids.filtered(lambda m: m.state not in ('done', 'cancel'))
+                moves.write({'picked': True})
+                res = self.with_context(
+                    skip_backorder=True,
+                    cancel_backorder=True,
+                    skip_sms=True,
+                    skip_immediate=True,
+                ).button_validate()
+                if self.state != 'done':
+                    raise UserError(
+                        'Odoo pidió confirmar algo más (%s).'
+                        % (isinstance(res, dict) and res.get('res_model') or 'sin detalle'))
+        except Exception as e:  # noqa: BLE001
+            _logger.warning('[CARRITO] no se pudo validar %s: %s', self.name, e)
+            # El rollback del savepoint deja la caché del ORM rancia.
+            self.env.invalidate_all(flush=False)
+            msg = getattr(e, 'args', [str(e)])[0] if getattr(e, 'args', None) else str(e)
+            self.message_post(body='No se pudo validar automáticamente: %s' % msg)
+            return str(msg)
+        return False
 
     def button_validate(self):
         res = super().button_validate()

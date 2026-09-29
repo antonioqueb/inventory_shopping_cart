@@ -122,27 +122,50 @@ export class TransferWizard extends Component {
                     selected_lots: this.props.selectedLots,
                     location_dest_id: this.state.selectedLocationId,
                     notes: this.state.notes,
-                    partner_id: this.state.userId  // ✅ AGREGAR USUARIO ACTUAL
+                    partner_id: this.state.userId,  // ✅ AGREGAR USUARIO ACTUAL
+                    // Se validan TODOS en el acto (uno por ubicación origen):
+                    // antes solo se abría el primero y los demás se quedaban
+                    // sin validar, así que esas placas no se movían.
+                    auto_validate: true,
                 }
             );
-            
+
             if (result.success) {
-                let message = `${result.total_pickings} traslado(s) creado(s) exitosamente:\n\n`;
-                result.pickings.forEach(p => {
-                    message += `• ${p.name} (${p.location_origin} → ${this.state.selectedLocationName})\n`;
-                });
-                
-                this.notification.add(message, { type: "success", sticky: true });
+                const failed = result.pickings.filter(p => !p.validated);
+                const done = result.pickings.length - failed.length;
+                if (done) {
+                    let message = `Listo: ${done} traslado(s) validado(s), placas movidas a ${this.state.selectedLocationName}:\n\n`;
+                    result.pickings.filter(p => p.validated).forEach(p => {
+                        message += `• ${p.name} (${p.location_origin})\n`;
+                    });
+                    this.notification.add(message, { type: "success" });
+                }
+                if (failed.length) {
+                    let message = `${failed.length} traslado(s) no se pudieron validar solos; revísalos:\n\n`;
+                    failed.forEach(p => {
+                        message += `• ${p.name} (${p.location_origin}): ${p.error || "pendiente"}\n`;
+                    });
+                    this.notification.add(message, { type: "danger", sticky: true });
+                }
                 this.props.onSuccess();
                 this.props.close();
-                
-                // Abrir el primer traslado
-                if (result.pickings.length > 0) {
+
+                // Solo se abre algo si quedó pendiente de validar.
+                if (failed.length === 1) {
                     this.action.doAction({
                         type: 'ir.actions.act_window',
                         res_model: 'stock.picking',
-                        res_id: result.pickings[0].id,
+                        res_id: failed[0].id,
                         views: [[false, 'form']],
+                        target: 'current',
+                    });
+                } else if (failed.length > 1) {
+                    this.action.doAction({
+                        type: 'ir.actions.act_window',
+                        name: 'Traslados pendientes de validar',
+                        res_model: 'stock.picking',
+                        domain: [['id', 'in', failed.map(p => p.id)]],
+                        views: [[false, 'list'], [false, 'form']],
                         target: 'current',
                     });
                 }

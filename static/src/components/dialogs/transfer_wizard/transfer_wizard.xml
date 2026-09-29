@@ -177,10 +177,9 @@
                             <div>
                                 <strong class="d-block mb-1">Información Importante</strong>
                                 <ul class="mb-0">
-                                    <li>Los lotes se agruparán por ubicación origen</li>
-                                    <li>Se creará un traslado por cada ubicación origen diferente</li>
-                                    <li>Los traslados se confirmarán automáticamente</li>
-                                    <li>Podrá validar los traslados desde Operaciones → Traslados</li>
+                                    <li>Las placas se mueven al instante, vengan de una o de varias ubicaciones</li>
+                                    <li>Se crea un traslado por cada ubicación origen y todos quedan validados</li>
+                                    <li>No hace falta entrar a validar nada; si alguno no se pudo, se te avisa y se abre</li>
                                 </ul>
                             </div>
                         </div>
@@ -224,7 +223,7 @@
                 >
                     <t t-if="!state.isCreating">
                         <i class="fa fa-check me-2"></i>
-                        Crear Traslado
+                        Mover placas
                     </t>
                     <t t-else="">
                         <i class="fa fa-spinner fa-spin me-2"></i>
